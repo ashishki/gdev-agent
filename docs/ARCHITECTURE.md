@@ -59,7 +59,7 @@ patterns, approval latency < 1 h, cost ≤ $0.01/request.
 | Rate limiting | — | ❌ Not implemented |
 | Linear API integration | — | ❌ Stub only |
 | Telegram bot integration | — | ❌ Stub only |
-| n8n workflow artifacts | `/n8n/` | ❌ Not committed |
+| n8n workflow artifacts | `/n8n/` | ✅ Committed — `workflow_triage.json`, `workflow_approval_callback.json`, `README.md` |
 | Google Sheets audit log | — | ❌ Not implemented |
 | Eval dataset (25 cases) | `eval/cases.jsonl` | ❌ 6 cases only |
 

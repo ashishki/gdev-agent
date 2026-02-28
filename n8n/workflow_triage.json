@@ -1,0 +1,375 @@
+{
+  "name": "gdev-agent — Triage",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "gdev-triage-trigger",
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "// Normalize a Telegram message into a WebhookRequest body.\n// Handles missing fields gracefully.\nconst msg = $input.item.json.message;\n\nif (!msg || !msg.text) {\n  // Skip non-text messages (stickers, photos, etc.)\n  return [];\n}\n\nreturn [{\n  json: {\n    message_id: String(msg.message_id),\n    user_id:    String(msg.from.id),\n    text:       msg.text.trim(),\n    metadata: {\n      chat_id:  String(msg.chat.id),\n      username: msg.from.username || null\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "POST /webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AGENT_BASE_URL }}/webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "X-Webhook-Signature",
+              "value": "=sha256={{ $hmac($env.WEBHOOK_SECRET, JSON.stringify($json)) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true
+            }
+          }
+        },
+        "onError": "continueErrorOutput"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "Status == pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-status-pending",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "pending",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "Send Approval Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $credentials.telegramApi.accessToken }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_APPROVAL_CHAT_ID }}\",\n  \"text\": \"🔔 Approval Required\\n\\nCategory: {{ $('POST /webhook').item.json.classification.category }} | Urgency: {{ $('POST /webhook').item.json.classification.urgency }}\\nReason: {{ $('POST /webhook').item.json.action.risk_reason }}\\nConfidence: {{ $('POST /webhook').item.json.classification.confidence }}\\n\\nDraft reply:\\n\\\"{{ $('POST /webhook').item.json.draft_response }}\\\"\",\n  \"reply_markup\": {\n    \"inline_keyboard\": [[\n      { \"text\": \"✅ Approve\", \"callback_data\": \"approve:{{ $('POST /webhook').item.json.pending.pending_id }}\" },\n      { \"text\": \"❌ Reject\",  \"callback_data\": \"reject:{{ $('POST /webhook').item.json.pending.pending_id }}\" }\n    ]]\n  },\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {
+          "timeout": 10000
+        },
+        "onError": "continueRegularOutput"
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "Sheets — Log Pending",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 180],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "audit_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp":   "={{ new Date().toISOString() }}",
+            "request_id":  "={{ $execution.id }}",
+            "message_id":  "={{ $('Normalize').item.json.message_id }}",
+            "user_id":     "={{ $('Normalize').item.json.user_id }}",
+            "category":    "={{ $('POST /webhook').item.json.classification.category }}",
+            "urgency":     "={{ $('POST /webhook').item.json.classification.urgency }}",
+            "confidence":  "={{ $('POST /webhook').item.json.classification.confidence }}",
+            "action":      "={{ $('POST /webhook').item.json.action.tool }}",
+            "status":      "pending",
+            "approved_by": "",
+            "ticket_id":   "",
+            "latency_ms":  "={{ $('POST /webhook').item.json.context?.latency_ms || '' }}",
+            "cost_usd":    "={{ $('POST /webhook').item.json.context?.cost_usd || '' }}",
+            "pending_id":  "={{ $('POST /webhook').item.json.pending.pending_id }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Audit"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "Sheets — Log Executed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 420],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "audit_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp":   "={{ new Date().toISOString() }}",
+            "request_id":  "={{ $execution.id }}",
+            "message_id":  "={{ $('Normalize').item.json.message_id }}",
+            "user_id":     "={{ $('Normalize').item.json.user_id }}",
+            "category":    "={{ $('POST /webhook').item.json.classification.category }}",
+            "urgency":     "={{ $('POST /webhook').item.json.classification.urgency }}",
+            "confidence":  "={{ $('POST /webhook').item.json.classification.confidence }}",
+            "action":      "={{ $('POST /webhook').item.json.action.tool }}",
+            "status":      "executed",
+            "approved_by": "auto",
+            "ticket_id":   "={{ $('POST /webhook').item.json.action_result?.ticket?.ticket_id || '' }}",
+            "latency_ms":  "={{ $('POST /webhook').item.json.context?.latency_ms || '' }}",
+            "cost_usd":    "={{ $('POST /webhook').item.json.context?.cost_usd || '' }}",
+            "pending_id":  ""
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Audit"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [900, 560],
+      "parameters": {}
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "Check Attempt Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 560],
+      "parameters": {
+        "jsCode": "// Track retry attempt count using execution static data.\n// Returns attempt number and whether we should retry or give up.\nconst workflowStaticData = $getWorkflowStaticData('node');\nconst executionId = $execution.id;\n\nif (!workflowStaticData[executionId]) {\n  workflowStaticData[executionId] = { attempts: 0, firstSeen: Date.now() };\n}\n\nworkflowStaticData[executionId].attempts += 1;\nconst attempt = workflowStaticData[executionId].attempts;\n\n// Clean up stale entries (older than 1 hour)\nfor (const id of Object.keys(workflowStaticData)) {\n  if (workflowStaticData[id].firstSeen < Date.now() - 3_600_000) {\n    delete workflowStaticData[id];\n  }\n}\n\nreturn [{\n  json: {\n    attempt,\n    shouldRetry: attempt < 3,\n    delay_ms: attempt === 1 ? 30_000 : 90_000,\n    error: $input.item.json.error?.message || 'Unknown error',\n    execution_id: $execution.id\n  }\n}];"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000010",
+      "name": "Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 560],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "condition-should-retry",
+              "leftValue": "={{ $json.shouldRetry }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000011",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 480],
+      "parameters": {
+        "amount": "={{ $json.delay_ms / 1000 }}",
+        "unit": "seconds"
+      },
+      "webhookId": "gdev-triage-wait"
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000012",
+      "name": "Notify Ops — Agent Unreachable",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 640],
+      "parameters": {
+        "chatId": "={{ $env.OPS_TELEGRAM_CHAT_ID }}",
+        "text": "=❌ gdev-agent unreachable after 3 attempts\\n\\nExecution: {{ $('Check Attempt Count').item.json.execution_id }}\\nError: {{ $('Check Attempt Count').item.json.error }}\\nTime: {{ new Date().toISOString() }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          { "node": "Normalize", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          { "node": "POST /webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "POST /webhook": {
+      "main": [
+        [
+          { "node": "Status == pending?", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Error Trigger", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Status == pending?": {
+      "main": [
+        [
+          { "node": "Send Approval Message", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Sheets — Log Executed", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Send Approval Message": {
+      "main": [
+        [
+          { "node": "Sheets — Log Pending", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          { "node": "Check Attempt Count", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Check Attempt Count": {
+      "main": [
+        [
+          { "node": "Should Retry?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Should Retry?": {
+      "main": [
+        [
+          { "node": "Wait Before Retry", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Notify Ops — Agent Unreachable", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          { "node": "POST /webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "gdev-agent — Triage"
+  },
+  "id": "gdev-triage-001",
+  "tags": [
+    { "id": "gdev-agent", "name": "gdev-agent" }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "REPLACE_WITH_YOUR_N8N_INSTANCE_ID"
+  }
+}
