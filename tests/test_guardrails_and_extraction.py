@@ -20,6 +20,9 @@ class SafeLLMClient:
         return TriageResult(
             classification=ClassificationResult(category="other", urgency="low", confidence=0.95),
             extracted=ExtractedFields(user_id=user_id),
+            draft_text="Thanks for contacting support.",
+            input_tokens=100,
+            output_tokens=50,
         )
 
 

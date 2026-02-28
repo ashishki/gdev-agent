@@ -37,6 +37,8 @@ class JsonFormatter(logging.Formatter):
             payload["event"] = record.event
         if hasattr(record, "context"):
             payload["context"] = record.context
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False)
 
 

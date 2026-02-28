@@ -26,6 +26,11 @@ class SignatureMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         body = await request.body()
+
+        async def _receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive  # type: ignore[attr-defined]
         expected = "sha256=" + hmac.new(
             self.settings.webhook_secret.encode(),
             body,
@@ -35,4 +40,3 @@ class SignatureMiddleware(BaseHTTPMiddleware):
         if not hmac.compare_digest(expected, received):
             return JSONResponse({"detail": "Invalid signature"}, status_code=401)
         return await call_next(request)
-

@@ -83,7 +83,9 @@ class AgentService:
         triage = self.llm_client.run_agent(payload.text, payload.user_id)
         classification = triage.classification
         extracted = triage.extracted
-        action, draft_response = self.propose_action(payload, classification, extracted)
+        action, fallback_draft = self.propose_action(payload, classification, extracted)
+        draft_response = triage.draft_text or fallback_draft
+        cost_usd = self._estimate_llm_cost_usd(triage.input_tokens, triage.output_tokens)
 
         guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
         if guard_result.blocked:
@@ -133,7 +135,16 @@ class AgentService:
                 pending=pending,
             )
 
-        action_result = self.execute_action(action, payload.user_id, draft_response)
+        action_result = self.execute_action(
+            action,
+            payload.user_id,
+            draft_response,
+            event_context={
+                "input_tokens": triage.input_tokens,
+                "output_tokens": triage.output_tokens,
+                "cost_usd": cost_usd,
+            },
+        )
         latency_ms = round((time.monotonic() - start) * 1000)
         LOGGER.info(
             "action executed",
@@ -163,7 +174,7 @@ class AgentService:
                 approved_by="auto",
                 ticket_id=str(action_result.get("ticket", {}).get("ticket_id", "")),
                 latency_ms=latency_ms,
-                cost_usd=0.0,
+                cost_usd=cost_usd,
             )
         )
 
@@ -261,7 +272,13 @@ class AgentService:
         _ = (text, classification)
         return action.risky
 
-    def execute_action(self, action: ProposedAction, user_id: str | None, draft_response: str) -> dict[str, object]:
+    def execute_action(
+        self,
+        action: ProposedAction,
+        user_id: str | None,
+        draft_response: str,
+        event_context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         """Execute tool handlers from the tool registry."""
         handler = TOOL_REGISTRY.get(action.tool)
         if handler is None:
@@ -270,7 +287,10 @@ class AgentService:
         payload = dict(action.payload)
         payload["draft_response"] = draft_response
         result = handler(payload, user_id)
-        self.store.log_event("action_executed", result)
+        event_payload = dict(result)
+        if event_context:
+            event_payload.update(event_context)
+        self.store.log_event("action_executed", event_payload)
         return result
 
     def _guard_input(self, text: str) -> None:
@@ -319,10 +339,17 @@ class AgentService:
         if not self.sheets_client:
             return
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             if loop.is_running():
                 loop.run_in_executor(None, self.sheets_client.append_log, entry)
                 return
         except RuntimeError:
             pass
         threading.Thread(target=self.sheets_client.append_log, args=(entry,), daemon=True).start()
+
+    def _estimate_llm_cost_usd(self, input_tokens: int, output_tokens: int) -> float:
+        """Estimate LLM cost in USD from token usage."""
+        return (
+            (input_tokens / 1000) * self.settings.anthropic_input_cost_per_1k
+            + (output_tokens / 1000) * self.settings.anthropic_output_cost_per_1k
+        )

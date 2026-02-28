@@ -27,6 +27,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         body = await request.body()
+
+        async def _receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive  # type: ignore[attr-defined]
         try:
             payload = json.loads(body.decode("utf-8") or "{}")
         except json.JSONDecodeError:
@@ -35,16 +40,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not user_id:
             return await call_next(request)
 
-        key = f"ratelimit:{user_id}"
+        minute_key = f"ratelimit:{user_id}"
+        burst_key = f"ratelimit_burst:{user_id}"
         try:
-            count = int(self.redis.incr(key))
-            if count == 1:
-                self.redis.expire(key, 60)
-            if count > self.settings.rate_limit_rpm:
-                return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
+            minute_count = int(self.redis.incr(minute_key))
+            if minute_count == 1:
+                self.redis.expire(minute_key, 60)
+
+            burst_count = int(self.redis.incr(burst_key))
+            if burst_count == 1:
+                self.redis.expire(burst_key, 10)
+
+            if minute_count > self.settings.rate_limit_rpm or burst_count > self.settings.rate_limit_burst:
+                return JSONResponse(
+                    {"detail": "Rate limit exceeded"},
+                    status_code=429,
+                    headers={"Retry-After": "60"},
+                )
         except Exception:
             LOGGER.warning("rate limiter unavailable", extra={"event": "rate_limit_bypass", "context": {}})
             return await call_next(request)
 
         return await call_next(request)
-

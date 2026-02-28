@@ -10,6 +10,7 @@ import pytest
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
+from app.llm_client import TOOLS
 from app.schemas import ProposedAction
 from app.store import EventStore
 from app.tools import TOOL_REGISTRY, ToolHandler
@@ -52,3 +53,11 @@ def test_registry_annotation() -> None:
     hints = get_type_hints(__import__("app.tools", fromlist=["TOOL_REGISTRY"]))
     assert hints["TOOL_REGISTRY"] == dict[str, ToolHandler]
     assert isinstance(TOOL_REGISTRY, dict)
+
+
+def test_llm_tools_and_registry_stay_in_sync() -> None:
+    local_only_tools = {"classify_request", "extract_entities", "lookup_faq", "draft_reply", "flag_for_human"}
+    tool_names = {tool["name"] for tool in TOOLS}
+    assert local_only_tools <= tool_names
+    assert local_only_tools.isdisjoint(set(TOOL_REGISTRY))
+    assert "create_ticket_and_reply" in TOOL_REGISTRY

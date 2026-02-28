@@ -399,7 +399,7 @@ audit field (`pending_id`) used to match the pending row for update on approval/
 | J | `approved_by` | `ApproveRequest.reviewer` or `"auto"` | `support_lead_id` |
 | K | `ticket_id` | `action_result.ticket.ticket_id` | `ENG-42` |
 | L | `latency_ms` | End-to-end agent latency | `312` |
-| M | `cost_usd` | Estimated LLM cost | `0.003` (currently `0.0` — see ARCHITECTURE.md §12 gap G-3) |
+| M | `cost_usd` | Estimated LLM cost | `0.003` |
 | N | `pending_id` | `pending.pending_id` | `a1b2c3...` (hidden — used for row update) |
 
 ### Row write timing
@@ -440,8 +440,7 @@ Log to Google Sheets with `status = "guard_blocked"`. Optionally reply to user w
 n8n behaviour: wait for `Retry-After` header value (or 60 s if absent), retry once. If the second
 attempt also returns 429, notify ops channel.
 
-**Note:** The agent currently does not emit a `Retry-After` header on HTTP 429 responses. n8n will
-always fall back to 60 s. This is tracked as finding M-7 in `REVIEW_NOTES.md §1.2`.
+The agent emits `Retry-After: 60` on HTTP 429; keep the 60 s fallback for compatibility.
 
 ### 8.4 Output Guard 500 (HTTP 500 with specific `detail`)
 

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_input_cost_per_1k: float = 0.003
+    anthropic_output_cost_per_1k: float = 0.015
     max_input_length: int = 2000
     auto_approve_threshold: float = 0.85
     approval_categories: list[str] = Field(default_factory=lambda: ["billing"])

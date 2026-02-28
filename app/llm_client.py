@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
+from tenacity import Retrying, before_sleep_log, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.config import Settings
 from app.schemas import ClassificationResult, ExtractedFields
+
+LOGGER = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are a game support triage assistant. "
@@ -111,6 +115,9 @@ class TriageResult:
 
     classification: ClassificationResult
     extracted: ExtractedFields
+    draft_text: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMClient:
@@ -122,6 +129,7 @@ class LLMClient:
             import anthropic  # type: ignore
         except ImportError as exc:  # pragma: no cover - environment-specific
             raise RuntimeError("anthropic package is required. Install with: pip install anthropic") from exc
+        self._anthropic = anthropic
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
@@ -129,9 +137,12 @@ class LLMClient:
         messages: list[dict[str, Any]] = [{"role": "user", "content": text}]
         classification: ClassificationResult | None = None
         extracted = ExtractedFields(user_id=user_id)
+        draft_text: str | None = None
+        input_tokens = 0
+        output_tokens = 0
 
         for _ in range(max_turns):
-            response = self._client.messages.create(
+            response = self._create_message(
                 model=self.settings.anthropic_model,
                 max_tokens=700,
                 system=SYSTEM_PROMPT,
@@ -139,6 +150,9 @@ class LLMClient:
                 tool_choice={"type": "auto"},
                 messages=messages,
             )
+            usage = getattr(response, "usage", None)
+            input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
 
             assistant_content: list[dict[str, Any]] = []
             tool_results: list[dict[str, Any]] = []
@@ -159,6 +173,10 @@ class LLMClient:
                     classification = ClassificationResult(**tool_output)
                 elif tool_name == "extract_entities":
                     extracted = ExtractedFields(**tool_output)
+                elif tool_name == "draft_reply":
+                    candidate = str(tool_output.get("draft_text", "")).strip()
+                    if candidate:
+                        draft_text = candidate
 
                 assistant_content.append(
                     {
@@ -190,7 +208,41 @@ class LLMClient:
             classification = ClassificationResult(category="other", urgency="low", confidence=0.0)
         if extracted.user_id is None:
             extracted.user_id = user_id
-        return TriageResult(classification=classification, extracted=extracted)
+        return TriageResult(
+            classification=classification,
+            extracted=extracted,
+            draft_text=draft_text,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+    def _create_message(self, **kwargs: Any) -> Any:
+        """Call Claude messages API with retries on transient 5xx responses."""
+
+        def _should_retry(exc: BaseException) -> bool:
+            api_status_error = getattr(self._anthropic, "APIStatusError", None)
+            if api_status_error and isinstance(exc, api_status_error):
+                status_code = int(getattr(exc, "status_code", 0) or 0)
+                return 500 <= status_code < 600
+            return False
+
+        retrying_kwargs: dict[str, Any] = {}
+        if hasattr(self, "_retry_sleep"):
+            retrying_kwargs["sleep"] = self._retry_sleep
+
+        retrying = Retrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=30),
+            retry=retry_if_exception(_should_retry),
+            before_sleep=before_sleep_log(LOGGER, logging.WARNING),
+            reraise=True,
+            **retrying_kwargs,
+        )
+        for attempt in retrying:
+            with attempt:
+                return self._client.messages.create(**kwargs)
+
+        raise RuntimeError("unreachable")
 
     def _dispatch_tool(self, name: str, tool_input: dict[str, Any], user_id: str | None) -> dict[str, Any]:
         """Dispatch local tool handlers for model tool_use blocks."""

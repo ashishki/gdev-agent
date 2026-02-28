@@ -33,7 +33,6 @@ class RedisApprovalStore:
         text = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
         decision = PendingDecision.model_validate_json(text)
         if decision.expires_at < datetime.now(UTC):
-            self.redis.delete(key)
             LOGGER.info(
                 "pending expired",
                 extra={"event": "pending_expired", "context": {"pending_id": pending_id}},
@@ -57,4 +56,3 @@ class RedisApprovalStore:
             )
             return None
         return decision
-

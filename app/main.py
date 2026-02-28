@@ -44,6 +44,14 @@ async def lifespan(app: FastAPI):
     """Initialize runtime dependencies on startup."""
     settings = get_settings()
     configure_logging(settings.log_level)
+    if not settings.webhook_secret:
+        LOGGER.warning(
+            "webhook signature verification disabled",
+            extra={
+                "event": "security_degraded",
+                "context": {"reason": "WEBHOOK_SECRET not set - inbound signature verification skipped"},
+            },
+        )
 
     redis_client = redis.from_url(settings.redis_url)
     try:

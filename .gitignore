@@ -1,0 +1,26 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Local temp/runtime artifacts
+.tmp/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+
+# Coverage / test artifacts
+.coverage
+htmlcov/

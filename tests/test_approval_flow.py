@@ -33,6 +33,9 @@ class FakeLLMClient:
                 confidence=0.95,
             ),
             extracted=ExtractedFields(user_id=user_id, platform="unknown"),
+            draft_text="We are reviewing your billing request.",
+            input_tokens=100,
+            output_tokens=50,
         )
 
 

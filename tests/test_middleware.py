@@ -14,9 +14,9 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
 
 
-def _build_app(secret: str | None = None, rpm: int = 10) -> FastAPI:
+def _build_app(secret: str | None = None, rpm: int = 10, burst: int = 3) -> FastAPI:
     app = FastAPI()
-    settings = Settings(webhook_secret=secret, rate_limit_rpm=rpm)
+    settings = Settings(webhook_secret=secret, rate_limit_rpm=rpm, rate_limit_burst=burst)
     app.add_middleware(RateLimitMiddleware, settings=settings, redis_client=fakeredis.FakeRedis())
     app.add_middleware(SignatureMiddleware, settings=settings)
 
@@ -59,15 +59,25 @@ def test_signature_skipped_when_secret_missing() -> None:
 
 
 def test_rate_limit_exceeded_for_same_user() -> None:
-    client = TestClient(_build_app(secret=None, rpm=10))
+    client = TestClient(_build_app(secret=None, rpm=10, burst=100))
     for _ in range(10):
         ok = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
         assert ok.status_code == 200
     blocked = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
     assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "60"
 
 
 def test_rate_limits_are_independent_per_user() -> None:
-    client = TestClient(_build_app(secret=None, rpm=1))
+    client = TestClient(_build_app(secret=None, rpm=1, burst=10))
     assert client.post("/webhook", json={"user_id": "u1", "text": "hi"}).status_code == 200
     assert client.post("/webhook", json={"user_id": "u2", "text": "hi"}).status_code == 200
+
+
+def test_burst_limit_exceeded_for_same_user() -> None:
+    client = TestClient(_build_app(secret=None, rpm=100, burst=3))
+    for _ in range(3):
+        assert client.post("/webhook", json={"user_id": "u1", "text": "hi"}).status_code == 200
+    blocked = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "60"

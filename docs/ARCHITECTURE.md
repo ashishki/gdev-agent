@@ -27,7 +27,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 - Classification accuracy ≥ 0.85 (per `eval/runner.py`)
 - Guard block rate = 1.00 on all known injection patterns
 - Approval latency < 1 h (enforced by `APPROVAL_TTL_SECONDS`)
-- Cost ≤ $0.01/request (tracked via `AuditLogEntry.cost_usd` — currently not populated; see §12)
+- Cost ≤ $0.01/request (tracked via `AuditLogEntry.cost_usd`)
 
 ---
 
@@ -64,9 +64,9 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Docker Compose full stack | `docker-compose.yml` | ✅ Implemented |
 | Eval dataset (25 cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
-| Exception info (`exc_info`) in JSON logs | `app/logging.py` | ❌ Not implemented — see §12 |
-| `RATE_LIMIT_BURST` enforcement | `app/middleware/rate_limit.py` | ❌ Config exists; not enforced — see §12 |
-| LLM cost tracking (`cost_usd`) | `app/agent.py`, `AuditLogEntry` | ❌ Field present; always 0.0 — see §12 |
+| Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
+| `RATE_LIMIT_BURST` enforcement | `app/middleware/rate_limit.py` | ✅ Implemented |
+| LLM cost tracking (`cost_usd`) | `app/agent.py`, `AuditLogEntry` | ✅ Implemented |
 
 ### 2.2 Repository Layout
 
@@ -156,8 +156,8 @@ gdev-agent/
 │    classify_request   → ClassificationResult {category, urgency,  │
 │                          confidence}                               │
 │    extract_entities   → ExtractedFields {platform, txn_id, …}    │
-│    draft_reply        → draft text (NOTE: currently unused —       │
-│                          see §12 gap G)                           │
+│    draft_reply        → draft text (primary reply; fallback to      │
+│                          `_draft_response()` when absent)           │
 │    lookup_faq         → stub KB articles                           │
 │    flag_for_human     → signals human review needed               │
 │                                                                    │
@@ -535,7 +535,7 @@ Written asynchronously to Google Sheets after each completed action (executed, a
 | `approved_by` | `ApproveRequest.reviewer` or `"auto"` | |
 | `ticket_id` | `action_result.ticket.ticket_id` | |
 | `latency_ms` | `time.monotonic()` diff | End-to-end agent latency |
-| `cost_usd` | — | Always `0.0` currently — see §12 |
+| `cost_usd` | Token usage + model rates | Estimated from `input_tokens` + `output_tokens` |
 
 ---
 
@@ -570,8 +570,9 @@ from `/approve` as terminal — not retriable.
 | `dedup:{message_id}` | 86 400 s | Idempotent response cache |
 | `pending:{pending_id}` | `APPROVAL_TTL_SECONDS` | Durable approval decision |
 | `ratelimit:{user_id}` | 60 s (sliding window) | Rate limit counter |
+| `ratelimit_burst:{user_id}` | 10 s | Burst rate limit counter |
 
-**Invariant:** These three prefixes are exclusive. No other Redis key may use these prefixes.
+**Invariant:** These four prefixes are exclusive. No other Redis key may use these prefixes.
 New features requiring Redis storage must define new prefixes and document them here.
 
 ### 6.3 Approval TTL & Expiry
@@ -587,17 +588,10 @@ New features requiring Redis storage must define new prefixes and document them 
 
 ### 6.4 LLM Retry Policy
 
-**Current:** No retry — transient Claude API failures surface as HTTP 500. n8n retries the full
-`/webhook` request (per its retry chain in the Triage Workflow). If `message_id` was provided and
-the first call failed before the dedup cache was written, the retry reprocesses normally. If the
-first call partially succeeded (pending entry created), a second pending entry is created for the
-same message. This is a narrow race condition with no current mitigation.
-
-**Target (next iteration):** Add `tenacity` retry inside `LLMClient.run_agent()`:
+`LLMClient.run_agent()` uses `tenacity` retry for transient Claude failures:
 - 3 attempts, initial delay 1 s, exponential backoff, max delay 30 s.
 - Retry only on `anthropic.APIStatusError` with 5xx status codes.
 - Do not retry 429 — surface as HTTP 503 to n8n to signal backpressure.
-- Ensure pending entry is not created before the LLM call succeeds.
 
 ### 6.5 n8n Retry Strategy
 
@@ -695,9 +689,9 @@ Redis sliding-window rate limiter keyed by `user_id`:
 | Env var | Default | Status |
 |---------|---------|--------|
 | `RATE_LIMIT_RPM` | `10` | Enforced — INCR+EXPIRE on `ratelimit:{user_id}` with 60 s TTL |
-| `RATE_LIMIT_BURST` | `3` | **Config exists; not enforced** — see §12 |
+| `RATE_LIMIT_BURST` | `3` | Enforced — INCR+EXPIRE on `ratelimit_burst:{user_id}` with 10 s TTL |
 
-Exceeded → HTTP 429 `{"detail": "Rate limit exceeded"}`.
+Exceeded → HTTP 429 `{"detail": "Rate limit exceeded"}` with `Retry-After: 60`.
 
 If Redis is unavailable, rate limiting degrades gracefully (logs `WARNING`, allows request).
 
@@ -772,7 +766,7 @@ Every line written to stdout is a JSON object on a single line.
 | `request_id` | `REQUEST_ID` ContextVar | Shared across all log lines for one HTTP request |
 | `event` | `extra["event"]` | Machine-readable event type (see §8.3) |
 | `context` | `extra["context"]` | Structured key-value pairs |
-| `exc_info` | — | **Not currently emitted** — see §12 gap |
+| `exc_info` | `record.exc_info` | Present on exception logs; omitted on non-exception logs |
 
 ### 8.2 Request Correlation
 
@@ -894,7 +888,7 @@ OUTPUT_URL_BEHAVIOR=strip            # strip | reject
 # ── Security ─────────────────────────────────────────────────────────────
 WEBHOOK_SECRET=                      # 256-bit random hex; unset = verification skipped (WARNING logged)
 RATE_LIMIT_RPM=10                    # max requests per minute per user_id (enforced)
-RATE_LIMIT_BURST=3                   # max requests in 10-second window (NOT YET ENFORCED — see §12)
+RATE_LIMIT_BURST=3                   # max requests in 10-second window (enforced)
 
 # ── Integrations (all optional; absent = WARNING + stub fallback) ─────────
 LINEAR_API_KEY=                      # lin_api_...
@@ -957,14 +951,14 @@ The following gaps are tracked against this spec. Each requires a PR with accept
 
 | ID | Gap | Impact | Recommended action |
 |----|-----|--------|--------------------|
-| G-1 | `exc_info` not captured in `JsonFormatter` | Tracebacks lost on `logger.exception()` calls | Add `self.formatException(record.exc_info) if record.exc_info else None` to payload |
-| G-2 | `RATE_LIMIT_BURST` config exists but is not enforced | Security model overstates rate limiting guarantees | Implement 10-second sub-window check using a second Redis key, or remove the config field and the documentation reference |
-| G-3 | `cost_usd` always `0.0` | Stated measurable outcome "≤ $0.01/request" unverifiable | Extract `usage.input_tokens` and `usage.output_tokens` from Claude API response in `LLMClient`; compute cost using model pricing; pass to `AgentService` for `AuditLogEntry` |
-| G-4 | LLM `draft_reply` output unused | LLM drafts a better contextual response that is discarded | Wire `draft_text` from `draft_reply` tool result into `AgentService` as the draft; keep `_draft_response()` as a fallback only |
+| G-1 | `exc_info` not captured in `JsonFormatter` | Tracebacks lost on `logger.exception()` calls | ✅ Resolved — formatter now emits `exc_info` when present |
+| G-2 | `RATE_LIMIT_BURST` config exists but is not enforced | Security model overstates rate limiting guarantees | ✅ Resolved — second Redis key `ratelimit_burst:{user_id}` enforced |
+| G-3 | `cost_usd` always `0.0` | Stated measurable outcome "≤ $0.01/request" unverifiable | ✅ Resolved — token usage collected and cost computed from config rates |
+| G-4 | LLM `draft_reply` output unused | LLM drafts a better contextual response that is discarded | ✅ Resolved — `triage.draft_text` used with fallback |
 | G-5 | Duplicate Settings + Redis at module load | Two unchecked Redis pools; settings not lru_cache'd for middleware | Defer middleware initialisation to lifespan or pass the already-checked Redis client |
-| G-6 | `asyncio.get_event_loop()` deprecated in Python 3.12 | `DeprecationWarning` in production; will be error in future Python | Replace with `asyncio.get_running_loop()` in `_append_audit_async()` |
+| G-6 | `asyncio.get_event_loop()` deprecated in Python 3.12 | `DeprecationWarning` in production; will be error in future Python | ✅ Resolved — replaced with `asyncio.get_running_loop()` |
 | G-7 | Approval notification is fire-and-forget with no fallback | Telegram outage → player request silently expires after TTL | Add a polling endpoint or a recovery workflow that queries pending entries in Redis and re-notifies |
-| G-8 | No CI check for TOOLS / TOOL_REGISTRY sync | Adding an LLM tool without a registry entry causes runtime `ValueError` | Add the CI assertion described in §9.4 |
+| G-8 | No CI check for TOOLS / TOOL_REGISTRY sync | Adding an LLM tool without a registry entry causes runtime `ValueError` | ✅ Resolved — test enforces TOOLS/registry sync |
 
 ---
 

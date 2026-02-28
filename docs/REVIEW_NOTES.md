@@ -32,18 +32,18 @@ Version bumped on structural review update._
 
 | ID | Severity | Finding | Status |
 |----|----------|---------|--------|
-| B-1 | Low | `pop_pending()` calls `redis.delete(key)` after `GETDEL` (dead code) | ⚠️ Open — harmless; clean up in PR-11 |
+| B-1 | Low | `pop_pending()` calls `redis.delete(key)` after `GETDEL` (dead code) | ✅ Resolved — removed no-op delete after `GETDEL` |
 | B-2 | Medium | Duplicate `Settings` + Redis at module load (`app/main.py:75-82`) | ⚠️ Open — PR-15 or standalone cleanup |
-| B-3 | Low | `rate_limit_burst` configured but not enforced | ⚠️ Open — PR-12 assigned |
-| B-4 | Low | `asyncio.get_event_loop()` deprecated in Python 3.12 | ⚠️ Open — fix in PR-11 |
-| G-1 | Medium | `exc_info` not captured in `JsonFormatter` | ⚠️ Open — PR-11 assigned |
-| G-2 | Medium | `RATE_LIMIT_BURST` not enforced | ⚠️ Open — PR-12 assigned |
-| G-3 | Low | `cost_usd` always `0.0` | ⚠️ Open — PR-13 assigned |
-| G-4 | Low | LLM `draft_reply` tool output unused | ⚠️ Open — PR-14 assigned |
+| B-3 | Low | `rate_limit_burst` configured but not enforced | ✅ Resolved — burst window enforcement added |
+| B-4 | Low | `asyncio.get_event_loop()` deprecated in Python 3.12 | ✅ Resolved — uses `asyncio.get_running_loop()` |
+| G-1 | Medium | `exc_info` not captured in `JsonFormatter` | ✅ Resolved — traceback emitted as `exc_info` |
+| G-2 | Medium | `RATE_LIMIT_BURST` not enforced | ✅ Resolved — enforced via `ratelimit_burst:{user_id}` |
+| G-3 | Low | `cost_usd` always `0.0` | ✅ Resolved — token-based cost estimation wired |
+| G-4 | Low | LLM `draft_reply` tool output unused | ✅ Resolved — `triage.draft_text` is now used |
 | G-7 | Medium | Approval notification is fire-and-forget with no fallback | ⚠️ Open — no PR assigned |
-| G-8 | Low | No CI check for TOOLS / TOOL_REGISTRY sync | ⚠️ Open — add in PR-11 or standalone |
-| M-7 | Low | Missing `Retry-After` header on HTTP 429 | ⚠️ Open — add in PR-12 |
-| M-8 | Medium | No startup warning when `WEBHOOK_SECRET` is unset | ⚠️ Open — PR-16 assigned |
+| G-8 | Low | No CI check for TOOLS / TOOL_REGISTRY sync | ✅ Resolved — registry/schema sync test added |
+| M-7 | Low | Missing `Retry-After` header on HTTP 429 | ✅ Resolved — middleware returns `Retry-After: 60` |
+| M-8 | Medium | No startup warning when `WEBHOOK_SECRET` is unset | ✅ Resolved — startup `security_degraded` warning added |
 
 ---
 
