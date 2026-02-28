@@ -29,7 +29,12 @@ Telegram / n8n / HTTP client
         │
         │  POST /webhook  { message_id, user_id, text, metadata }
         ▼
-app/main.py  →  AgentService.process_webhook()
+SignatureMiddleware    HMAC-SHA256 webhook verification (X-Webhook-Signature)
+RateLimitMiddleware   per-user Redis sliding window (RATE_LIMIT_RPM req / 60 s)
+RequestIDMiddleware   X-Request-ID correlation through all log lines
+        │
+        ▼
+AgentService.process_webhook()
         │
         ├── _guard_input()          length + injection-pattern check → HTTP 400
         │
@@ -43,26 +48,30 @@ app/main.py  →  AgentService.process_webhook()
         │                             • confidence < AUTO_APPROVE_THRESHOLD
         │                             • legal keywords (lawyer / lawsuit / press / gdpr)
         │
+        ├── OutputGuard.scan()      secret-pattern scan, URL allowlist, confidence floor
+        │
         └── needs_approval?
-              YES → store.put_pending()  →  HTTP 200  { status:"pending", pending_id }
-              NO  → execute_action()
-                      create_ticket()   (stub → Linear)
+              YES → RedisApprovalStore.put_pending()  →  HTTP 200  { status:"pending", pending_id }
+                    TelegramClient.send_approval_request()  (inline ✅/❌ buttons)
+              NO  → TOOL_REGISTRY.execute()
+                      create_ticket()   (stub → Linear API)
                       send_reply()      (stub → Telegram)
+                    SheetsClient.append_log()  (async audit write)
                     → HTTP 200  { status:"executed", action_result }
 ```
 
 ```
-n8n / approver
+n8n / approver (Telegram button click)
         │
         │  POST /approve  { pending_id, approved, reviewer }
         ▼
 AgentService.approve()
-        ├── store.pop_pending()  → None / expired → HTTP 404
+        ├── RedisApprovalStore.pop_pending()  → None / expired → HTTP 404
         ├── approved=false → log "rejected"    → HTTP 200 { status:"rejected" }
         └── approved=true  → execute_action()  → HTTP 200 { status:"approved", result }
 ```
 
-Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · n8n integration: [`docs/N8N.md`](docs/N8N.md)
 
 ---
 
@@ -72,29 +81,58 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 |---------|--------|
 | Claude `tool_use` classification + extraction | Implemented |
 | Input injection guard (15 pattern classes) | Implemented |
+| Output guard — secret scan + URL allowlist + confidence floor | Implemented |
 | Human-in-the-loop approval flow | Implemented |
-| Pending approval TTL / expiry | Implemented |
-| `user_id` preserved through approval | Implemented |
-| JSON structured logging with `request_id` | Implemented |
-| `latency_ms` on every log entry | Implemented |
-| SQLite event log (WAL mode) | Implemented |
-| Ticketing integration | Stub (returns fake `TKT-*`) |
-| Messaging integration | Stub (returns `"queued"`) |
-| Linear API | Planned |
-| Telegram bot | Planned |
-| Redis-backed approval store | Planned |
-| n8n workflow | Planned |
+| Redis-backed approval store (TTL, atomic GETDEL) | Implemented |
+| Dedup cache — idempotent replay via `message_id` | Implemented |
+| HMAC-SHA256 webhook signature verification | Implemented |
+| Per-user rate limiting (Redis sliding window) | Implemented |
+| JSON structured logging with `request_id` correlation | Implemented |
+| `latency_ms` on every executed/pending log entry | Implemented |
+| SQLite event log (WAL mode, thread-safe) | Implemented |
+| Tool registry — extensible action dispatch | Implemented |
+| Linear API — ticket creation | Implemented |
+| Telegram bot — message sending + approval buttons | Implemented |
+| Google Sheets — async audit log append | Implemented |
+| n8n workflows — triage + approval callback | Implemented |
+| Docker Compose — agent + Redis + n8n | Implemented |
+| Eval harness — 25 labelled cases, per-label accuracy | Implemented |
 
 ---
 
 ## Quick start
 
-### Prerequisites
+### Option A — Docker Compose (recommended)
 
-- Python 3.12+
-- An [Anthropic API key](https://console.anthropic.com/)
+```bash
+git clone https://github.com/your-handle/gdev-agent.git
+cd gdev-agent
 
-### Install
+cp .env.example .env
+# Set ANTHROPIC_API_KEY in .env
+
+docker compose up --build
+```
+
+Services started:
+- **agent** → `http://localhost:8000`
+- **redis** → `localhost:6379`
+- **n8n** → `http://localhost:5678`
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","app":"gdev-agent"}
+```
+
+Import n8n workflows from `n8n/workflow_triage.json` and `n8n/workflow_approval_callback.json`
+via **n8n → Settings → Workflows → Import from file**. See [`docs/N8N.md`](docs/N8N.md) for the
+full setup walkthrough.
+
+### Option B — Local Python
+
+**Prerequisites:** Python 3.12+, Redis running locally
 
 ```bash
 git clone https://github.com/your-handle/gdev-agent.git
@@ -103,27 +141,13 @@ cd gdev-agent
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-pip install fastapi uvicorn pydantic pydantic-settings anthropic
-```
+pip install -r requirements.txt
+pip install -r requirements-dev.txt   # for tests
 
-### Configure
-
-```bash
 cp .env.example .env
-# Open .env and set ANTHROPIC_API_KEY=sk-ant-...
-```
+# Set ANTHROPIC_API_KEY and REDIS_URL=redis://localhost:6379 in .env
 
-### Run
-
-```bash
 uvicorn app.main:app --reload --port 8000
-```
-
-Health check:
-
-```bash
-curl http://localhost:8000/health
-# {"status":"ok","app":"gdev-agent"}
 ```
 
 ---
@@ -145,6 +169,9 @@ auto-executed result or a pending approval request.
   "metadata": { "chat_id": "123456" }
 }
 ```
+
+`message_id` is optional but recommended. When provided, duplicate requests with the
+same `message_id` are served from the dedup cache (24 h TTL) without re-running the agent.
 
 **Response — auto-executed (HTTP 200)**
 
@@ -187,13 +214,17 @@ auto-executed result or a pending approval request.
 |--------|----------|-------|
 | 400 | `"Input exceeds max length (2000)"` | Text too long |
 | 400 | `"Input failed injection guard"` | Prompt injection detected |
+| 401 | `"Invalid or missing webhook signature"` | Bad `X-Webhook-Signature` header |
+| 429 | `"Rate limit exceeded"` | Per-user request cap hit |
+| 500 | `"Internal: output guard blocked response"` | LLM output contained secrets or blocked URLs |
 
 ---
 
 ### `POST /approve`
 
 Approve or reject a pending action. The `pending_id` expires after
-`APPROVAL_TTL_SECONDS` (default 1 hour).
+`APPROVAL_TTL_SECONDS` (default 1 hour). Each `pending_id` is single-use —
+a second call with the same ID returns HTTP 404.
 
 **Request**
 
@@ -276,7 +307,7 @@ curl -s -X POST http://localhost:8000/webhook \
 
 ## Configuration
 
-All settings are read from environment variables (or `.env`).
+All settings are read from environment variables (or `.env`). Copy `.env.example` as a starting point.
 
 ```bash
 # App
@@ -295,46 +326,61 @@ APPROVAL_CATEGORIES=billing,account_access
 APPROVAL_TTL_SECONDS=3600           # pending entries expire after this many seconds
 
 # Storage
+REDIS_URL=redis://redis:6379        # required; used for approvals, dedup cache, rate limiting
 SQLITE_LOG_PATH=                    # empty = SQLite disabled; set to a file path to enable
 
-# Planned integrations
+# Security
+WEBHOOK_SECRET=                     # HMAC key for X-Webhook-Signature; empty = verification skipped
+RATE_LIMIT_RPM=10                   # max requests per user per 60 s window
+
+# Output guard
+OUTPUT_GUARD_ENABLED=true
+URL_ALLOWLIST=kb.example.com        # comma-separated; empty = all URLs stripped from LLM output
+OUTPUT_URL_BEHAVIOR=strip           # strip | reject
+
+# Integrations (all optional; missing keys log a WARNING and fall back to stubs)
 LINEAR_API_KEY=
 LINEAR_TEAM_ID=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_APPROVAL_CHAT_ID=
-REDIS_URL=redis://redis:6379
+GOOGLE_SHEETS_CREDENTIALS_JSON=     # service-account JSON string
+GOOGLE_SHEETS_ID=
 ```
 
-`ANTHROPIC_API_KEY` is required — startup fails immediately if it is missing.
+`ANTHROPIC_API_KEY` and `REDIS_URL` (reachable at startup) are the only hard requirements.
+All integration keys are optional; missing keys fall back to stub responses without failing startup.
 
 ---
 
 ## Tests
 
-Unit tests use a `FakeLLMClient` / `SafeLLMClient` that returns deterministic
-results without making API calls, so they run offline and instantly.
-
 ```bash
-pip install pytest
 pytest tests/ -v
 ```
 
-Coverage:
+Tests run offline — no API keys required. Mocks used: `FakeLLMClient` for Claude,
+`fakeredis` for Redis, `httpx` mocks for Linear / Telegram / Sheets.
 
-| Test | What it verifies |
-|------|-----------------|
-| `test_approve_executes_with_original_user_id` | `user_id` is preserved end-to-end through the approval flow |
-| `test_pop_pending_returns_none_for_expired_entry` | Expired pending decisions are evicted on lookup |
-| `test_injection_guard_blocks_act_as` | `"Act as …"` pattern is blocked before the LLM call |
-| `test_legal_keywords_set_risk_reason` | Legal-risk keywords produce `risky=True` with a non-null `risk_reason` |
-| `test_error_code_validation_filters_non_codes` | Only patterns like `E-0045` / `ERR-1234` survive; `E-Wallet` does not |
+| Module | What it verifies |
+|--------|-----------------|
+| `test_approval_flow.py` | `user_id` preserved end-to-end through approval |
+| `test_redis_approval_store.py` | TTL expiry, atomic pop, GETDEL behaviour |
+| `test_dedup.py` | Idempotent replay via `message_id` |
+| `test_guardrails_and_extraction.py` | Injection guard, entity extraction, error-code regex |
+| `test_output_guard.py` | Secret scan, URL allowlist, confidence floor override |
+| `test_middleware.py` | HMAC signature verification, rate limiting |
+| `test_linear_integration.py` | GraphQL issue creation, 429 handling |
+| `test_telegram_integration.py` | Message sending, approval button payload |
+| `test_sheets_integration.py` | Audit log append, retry on 429 |
+| `test_tool_registry.py` | Action dispatch, unknown-tool error |
+| `test_eval_runner.py` | Eval harness accuracy calculation |
 
 ---
 
 ## Eval harness
 
-A lightweight accuracy harness runs 6 labelled cases through the live agent
-(requires `ANTHROPIC_API_KEY`):
+Runs 25 labelled cases through a lightweight accuracy check (no live API calls needed for
+category-label tests; set `ANTHROPIC_API_KEY` to run against the live model):
 
 ```bash
 python -m eval.runner
@@ -344,24 +390,22 @@ Example output:
 
 ```json
 {
-  "total": 6,
-  "correct": 5,
-  "accuracy": 0.8333,
+  "total": 25,
+  "correct": 22,
+  "accuracy": 0.88,
   "per_label_accuracy": {
     "billing": 1.0,
     "account_access": 1.0,
-    "bug_report": 1.0,
+    "bug_report": 0.9,
     "cheater_report": 1.0,
     "gameplay_question": 1.0,
-    "other": 0.0
+    "other": 0.6
   }
 }
 ```
 
-> **Note:** The `other` category includes a prompt-injection case that is
-> blocked by the input guard before classification — the runner counts the
-> guard block as a prediction of `"other"`, which matches the expected label.
-> Tracking guard blocks as a separate metric is on the roadmap.
+Cases include all six categories, multiple urgency levels, and injection variants that
+should be blocked by the input guard before reaching the classifier.
 
 ---
 
@@ -379,18 +423,17 @@ Every line written to stdout is a JSON object:
   "event": "action_executed",
   "context": {
     "category": "billing",
+    "urgency": "high",
+    "confidence": 0.92,
     "latency_ms": 312
   }
 }
 ```
 
-- `timestamp` is derived from `record.created` (the moment the log call was made),
-  not the serialization time.
+- `timestamp` is derived from `record.created` (the moment the log call was made).
 - `request_id` traces back to the `X-Request-ID` request header (generated if absent)
-  and is echoed in the response header. Every log line for a single request shares
-  the same value.
-- When SQLite logging is enabled, the same events are written to the `event_log`
-  table (WAL mode, thread-safe).
+  and is echoed in the response header. Every log line for a single request shares the same value.
+- When SQLite logging is enabled, the same events are written to the `event_log` table (WAL mode).
 
 ---
 
@@ -423,16 +466,20 @@ incorrect ban) has direct financial or legal impact.
 The threshold is configurable via `APPROVAL_CATEGORIES`; the approval expiry
 prevents orphaned pending records accumulating forever.
 
-**Why in-memory pending store (not Redis yet)?**
-Redis is the production target and is documented in the architecture.
-The in-memory store with TTL-based eviction is correct for single-process
-development and demo usage. The interface (`put_pending` / `pop_pending`)
-is stable enough that swapping the backend is a one-file change.
+**Why Redis for the approval store?**
+Redis survives process restarts, supports horizontal scaling (multiple agent instances
+share the same store), and provides atomic `GETDEL` to prevent double-spend on approval tokens.
+The same Redis instance is used for the dedup cache and rate-limit counters, each under
+a distinct key prefix (`pending:`, `dedup:`, `ratelimit:`).
+
+**Why n8n as the orchestration layer?**
+n8n provides a visual audit trail, built-in retry with backoff, and a non-developer-editable
+UI for approval message templates and retry counts. Application code stays free of retry loops
+and Telegram keyboard builders. See [`docs/N8N.md`](docs/N8N.md) for the full integration contract.
 
 **Why SQLite for the event log?**
-It is zero-dependency, file-based, and sufficient for audit-trail purposes
-in an MVP. WAL mode (`PRAGMA journal_mode=WAL`) is enabled immediately after
-connection, making concurrent writes from the FastAPI thread pool safe.
+Zero-dependency, file-based, sufficient for audit-trail purposes in an MVP.
+WAL mode (`PRAGMA journal_mode=WAL`) makes concurrent writes from the FastAPI thread pool safe.
 
 ---
 
@@ -441,39 +488,44 @@ connection, making concurrent writes from the FastAPI thread pool safe.
 ```
 gdev-agent/
 ├── app/
-│   ├── main.py          # FastAPI app, lifespan, middleware, endpoint wiring
-│   ├── config.py        # pydantic-settings; loaded once via get_settings()
-│   ├── schemas.py       # All Pydantic request/response/internal models
-│   ├── agent.py         # AgentService: guard, classify, propose, approve, execute
-│   ├── llm_client.py    # Claude tool_use loop → TriageResult
-│   ├── logging.py       # JsonFormatter, request_id ContextVar
-│   ├── store.py         # EventStore: pending dict + optional SQLite event log
+│   ├── main.py              # FastAPI app, lifespan, middleware stack, endpoint wiring
+│   ├── config.py            # pydantic-settings; loaded once via get_settings()
+│   ├── schemas.py           # All Pydantic request/response/internal models
+│   ├── agent.py             # AgentService: guard, classify, propose, approve, execute
+│   ├── llm_client.py        # Claude tool_use loop → TriageResult
+│   ├── logging.py           # JsonFormatter, REQUEST_ID ContextVar
+│   ├── store.py             # EventStore: SQLite WAL event log
+│   ├── approval_store.py    # RedisApprovalStore: TTL-based pending decisions
+│   ├── dedup.py             # DedupCache: 24 h idempotency by message_id
+│   ├── guardrails/
+│   │   └── output_guard.py  # Secret scan, URL allowlist, confidence floor
+│   ├── middleware/
+│   │   ├── signature.py     # HMAC-SHA256 webhook verification
+│   │   └── rate_limit.py    # Per-user Redis sliding window
+│   ├── integrations/
+│   │   ├── linear.py        # LinearClient: GraphQL issue creation
+│   │   ├── telegram.py      # TelegramClient: messages + approval buttons
+│   │   └── sheets.py        # SheetsClient: async audit log append
 │   └── tools/
-│       ├── ticketing.py # create_ticket() stub (→ Linear)
-│       └── messenger.py # send_reply() stub (→ Telegram)
+│       ├── __init__.py      # TOOL_REGISTRY dispatch dict
+│       ├── ticketing.py     # create_ticket() — Linear or stub
+│       └── messenger.py     # send_reply() — Telegram or stub
 ├── eval/
-│   ├── runner.py        # run_eval() — accuracy + per-label breakdown
-│   └── cases.jsonl      # Labelled test cases
-├── tests/
-│   ├── test_approval_flow.py
-│   └── test_guardrails_and_extraction.py
+│   ├── runner.py            # run_eval() — accuracy + per-label breakdown
+│   └── cases.jsonl          # 25 labelled test cases
+├── tests/                   # 11 test modules (fakeredis, httpx mocks, no API calls)
+├── n8n/
+│   ├── workflow_triage.json           # Telegram → agent → approval or log
+│   ├── workflow_approval_callback.json # Button click → /approve → log
+│   └── README.md
 ├── docs/
-│   ├── ARCHITECTURE.md  # full system design and hardening notes
-│   ├── PLAN.md
-│   └── REVIEW_NOTES.md
+│   ├── ARCHITECTURE.md      # Full system design, security model, extensibility
+│   ├── N8N.md               # n8n workflow blueprint and integration contract
+│   ├── PLAN.md              # PR roadmap with acceptance criteria
+│   └── REVIEW_NOTES.md      # Engineering review checklist and historical findings
+├── Dockerfile
+├── docker-compose.yml       # agent + redis + n8n
+├── requirements.txt
+├── requirements-dev.txt
 └── .env.example
 ```
-
----
-
-## Roadmap
-
-- [ ] Expand eval dataset to 25 cases covering all categories, urgency levels, and injection variants
-- [ ] Linear API integration — real ticket creation
-- [ ] Telegram bot integration — approval via inline buttons
-- [ ] Redis-backed approval store — multi-instance safe, no restart data loss
-- [ ] n8n workflow export — full orchestration without code changes
-- [ ] Output guard — secret-pattern scan and URL allowlist on LLM draft text
-- [ ] Exception info in JSON log lines
-- [ ] Tool registry in `execute_action()` — extensible without modifying dispatch logic
-- [ ] Google Sheets audit log
