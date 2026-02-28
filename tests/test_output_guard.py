@@ -46,9 +46,13 @@ def test_confidence_floor_forces_flag_for_human() -> None:
     guard = OutputGuard(Settings(output_guard_enabled=True))
     result = guard.scan("ok", 0.3, action)
     assert result.blocked is False
-    assert action.tool == "flag_for_human"
-    assert action.risky is True
-    assert action.risk_reason == "confidence below safety floor"
+    assert result.action_override is not None
+    assert result.action_override.tool == "flag_for_human"
+    assert result.action_override.risky is True
+    assert result.action_override.risk_reason == "confidence below safety floor"
+    assert action.tool == "create_ticket_and_reply"
+    assert action.risky is False
+    assert action.risk_reason is None
 
 
 def test_guard_disabled_skips_checks() -> None:

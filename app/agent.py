@@ -40,7 +40,7 @@ INJECTION_PATTERNS = (
     "system:",
     "[inst]",
     "[/inst]",
-    "act as",
+    "act as if you",
     "you are now",
     "forget all",
     "disregard",
@@ -90,6 +90,8 @@ class AgentService:
         guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
         if guard_result.blocked:
             raise HTTPException(status_code=500, detail="Internal: output guard blocked response")
+        if guard_result.action_override is not None:
+            action = guard_result.action_override
         if guard_result.redacted_draft != draft_response:
             LOGGER.info(
                 "output redacted",

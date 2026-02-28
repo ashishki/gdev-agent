@@ -24,6 +24,7 @@ class GuardResult:
     blocked: bool
     redacted_draft: str
     reason: str | None
+    action_override: ProposedAction | None = None
 
 
 class OutputGuard:
@@ -33,7 +34,7 @@ class OutputGuard:
         self.settings = settings
 
     def scan(self, draft: str, confidence: float, action: ProposedAction) -> GuardResult:
-        """Scan draft output and mutate action on hard confidence floor."""
+        """Scan draft output and return optional action override."""
         if not self.settings.output_guard_enabled:
             return GuardResult(blocked=False, redacted_draft=draft, reason=None)
 
@@ -50,10 +51,14 @@ class OutputGuard:
                 return GuardResult(blocked=True, redacted_draft="", reason="disallowed url")
             redacted = redacted.replace(url, "").strip()
 
+        action_override: ProposedAction | None = None
         if confidence < 0.5:
-            action.tool = "flag_for_human"
-            action.risky = True
-            action.risk_reason = "confidence below safety floor"
+            action_override = action.model_copy(
+                update={
+                    "tool": "flag_for_human",
+                    "risky": True,
+                    "risk_reason": "confidence below safety floor",
+                }
+            )
 
-        return GuardResult(blocked=False, redacted_draft=redacted, reason=None)
-
+        return GuardResult(blocked=False, redacted_draft=redacted, reason=None, action_override=action_override)

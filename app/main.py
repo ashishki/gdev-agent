@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -50,6 +51,14 @@ async def lifespan(app: FastAPI):
             extra={
                 "event": "security_degraded",
                 "context": {"reason": "WEBHOOK_SECRET not set - inbound signature verification skipped"},
+            },
+        )
+    if not settings.approve_secret:
+        LOGGER.warning(
+            "approve endpoint authentication disabled",
+            extra={
+                "event": "security_degraded",
+                "context": {"reason": "APPROVE_SECRET not set - approve endpoint auth skipped"},
             },
         )
 
@@ -126,6 +135,9 @@ def webhook(payload: WebhookRequest) -> WebhookResponse:
 
 
 @app.post("/approve", response_model=ApproveResponse)
-def approve(payload: ApproveRequest) -> ApproveResponse:
+def approve(payload: ApproveRequest, request: Request) -> ApproveResponse:
     """Approve or reject a pending action."""
+    provided = request.headers.get("X-Approve-Secret", "")
+    if app.state.settings.approve_secret and not hmac.compare_digest(app.state.settings.approve_secret, provided):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return app.state.agent.approve(payload)
