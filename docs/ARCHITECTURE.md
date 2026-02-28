@@ -50,18 +50,18 @@ patterns, approval latency < 1 h, cost ≤ $0.01/request.
 | Error-code regex (anchored pattern) | `app/llm_client.py` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | `configure_logging()` in lifespan | `app/main.py` | ✅ Implemented |
-| Tool registry (`TOOL_REGISTRY` dict) | `app/tools/__init__.py` | ❌ Not implemented — dispatch hardcoded in `execute_action()` |
-| Output guard (secret scan + URL allowlist) | — | ❌ Not implemented |
+| Tool registry (`TOOL_REGISTRY` dict) | `app/tools/__init__.py` | ✅ Implemented |
+| Output guard (secret scan + URL allowlist) | `app/guardrails/output_guard.py` | ✅ Implemented |
 | Exception info in JSON log lines | `app/logging.py` | ❌ Not implemented |
-| Redis approval store (durable, multi-instance) | — | ❌ Not implemented |
-| Idempotency dedup (by `message_id`) | — | ❌ Not implemented |
-| Webhook HMAC signature verification | — | ❌ Not implemented |
-| Rate limiting | — | ❌ Not implemented |
-| Linear API integration | — | ❌ Stub only |
-| Telegram bot integration | — | ❌ Stub only |
+| Redis approval store (durable, multi-instance) | `app/approval_store.py` | ✅ Implemented |
+| Idempotency dedup (by `message_id`) | `app/dedup.py` | ✅ Implemented |
+| Webhook HMAC signature verification | `app/middleware/signature.py` | ✅ Implemented |
+| Rate limiting | `app/middleware/rate_limit.py` | ✅ Implemented |
+| Linear API integration | `app/integrations/linear.py` | ✅ Implemented |
+| Telegram bot integration | `app/integrations/telegram.py` | ✅ Implemented |
 | n8n workflow artifacts | `/n8n/` | ✅ Committed — `workflow_triage.json`, `workflow_approval_callback.json`, `README.md` |
-| Google Sheets audit log | — | ❌ Not implemented |
-| Eval dataset (25 cases) | `eval/cases.jsonl` | ❌ 6 cases only |
+| Google Sheets audit log | `app/integrations/sheets.py` | ✅ Implemented |
+| Eval dataset (25 cases) | `eval/cases.jsonl` | ✅ Implemented |
 
 ### 2.2 Repository Layout
 

@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+anthropic
+httpx
+redis
+google-api-python-client
+google-auth

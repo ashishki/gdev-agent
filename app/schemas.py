@@ -101,3 +101,21 @@ class HealthResponse(BaseModel):
 
     status: Literal["ok"] = "ok"
     app: str
+
+
+class AuditLogEntry(BaseModel):
+    """Audit entry persisted to Google Sheets."""
+
+    timestamp: str
+    request_id: str | None = None
+    message_id: str | None = None
+    user_id: str | None = None
+    category: str
+    urgency: str
+    confidence: float
+    action: str
+    status: str
+    approved_by: str | None = None
+    ticket_id: str | None = None
+    latency_ms: int
+    cost_usd: float = 0.0

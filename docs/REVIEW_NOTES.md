@@ -24,9 +24,9 @@ original implementation; items marked ✅ are resolved in the current codebase.
 | M-6 | Medium | Error-code regex matched unrelated patterns (`E-Wallet`) | ✅ Resolved — anchored to `ERR-\d{3,}` / `E-\d{4,}` |
 | N-1 | Nice-to-have | `ensure_ascii=True` in logs and store | ✅ Resolved — `ensure_ascii=False` in `logging.py` and `store.py` |
 | N-2 | Nice-to-have | Exception info dropped from JSON log lines | ⚠️ Open — `JsonFormatter` does not include `exc_info` |
-| N-3 | Nice-to-have | `execute_action()` dispatch hardcoded, ignores `action.tool` | ⚠️ Open — addressed by PR-3 |
+| N-3 | Nice-to-have | `execute_action()` dispatch hardcoded, ignores `action.tool` | ✅ Resolved — dispatch now uses `TOOL_REGISTRY` |
 | N-4 | Nice-to-have | `latency_ms` not measured or logged | ✅ Resolved — `time.monotonic()` in `process_webhook()` |
-| N-5 | Nice-to-have | Eval dataset 6 cases vs. 25 target | ⚠️ Open — addressed by PR-8 |
+| N-5 | Nice-to-have | Eval dataset 6 cases vs. 25 target | ✅ Resolved — dataset expanded to 25 cases with guard labels |
 
 ---
 

@@ -1,0 +1,15 @@
+{
+  "total": 23,
+  "correct": 21,
+  "guard_blocks": 2,
+  "accuracy": 0.913,
+  "guard_block_rate": 1.0,
+  "per_label_accuracy": {
+    "billing": 1.0,
+    "account_access": 0.75,
+    "bug_report": 1.0,
+    "cheater_report": 1.0,
+    "gameplay_question": 1.0,
+    "other": 1.0
+  }
+}

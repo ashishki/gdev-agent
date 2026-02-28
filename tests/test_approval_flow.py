@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import fakeredis
+
 from app.agent import AgentService
+from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.llm_client import TriageResult
 from app.schemas import (
@@ -36,8 +39,13 @@ class FakeLLMClient:
 def test_approve_executes_with_original_user_id() -> None:
     """Approved pending action must send reply to original webhook user_id."""
     settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
-    store = EventStore(sqlite_path=None)
-    agent = AgentService(settings=settings, store=store, llm_client=FakeLLMClient())
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    agent = AgentService(
+        settings=settings,
+        store=EventStore(sqlite_path=None),
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
 
     response = agent.process_webhook(
         WebhookRequest(
@@ -47,14 +55,17 @@ def test_approve_executes_with_original_user_id() -> None:
     )
     assert response.pending is not None
 
-    approve_response = agent.approve(ApproveRequest(pending_id=response.pending.pending_id, approved=True))
+    approve_response = agent.approve(
+        ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1")
+    )
     assert approve_response.result is not None
     assert approve_response.result["reply"]["user_id"] == "user-123"
 
 
-def test_pop_pending_returns_none_for_expired_entry() -> None:
+def test_redis_pending_expired_returns_none() -> None:
     """Expired pending decisions must be evicted and treated as not found."""
-    store = EventStore(sqlite_path=None)
+    redis_client = fakeredis.FakeRedis()
+    store = RedisApprovalStore(redis_client, ttl_seconds=3600)
     pending = PendingDecision(
         pending_id="expired-1",
         reason="manual",
