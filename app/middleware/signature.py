@@ -26,7 +26,6 @@ class SignatureMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         body = await request.body()
-
         async def _receive():
             return {"type": "http.request", "body": body, "more_body": False}
 

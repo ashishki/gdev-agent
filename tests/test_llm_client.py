@@ -45,3 +45,13 @@ def test_create_message_does_not_retry_429() -> None:
         client._create_message(model="m", max_tokens=1, system="s", tools=[], tool_choice={}, messages=[])
 
     assert create_mock.call_count == 1
+
+
+def test_lookup_faq_uses_configured_kb_base_url() -> None:
+    client = object.__new__(LLMClient)
+    client.settings = Settings(anthropic_api_key="test-key", kb_base_url="https://support.mygame.com")
+
+    result = client._dispatch_tool("lookup_faq", {"keywords": ["billing", "refund"]}, user_id="u1")
+
+    urls = [article["url"] for article in result["articles"]]
+    assert urls == ["https://support.mygame.com/billing", "https://support.mygame.com/refund"]

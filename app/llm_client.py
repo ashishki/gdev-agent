@@ -269,7 +269,7 @@ class LLMClient:
             keywords = [str(item) for item in tool_input.get("keywords", [])][:3]
             return {
                 "articles": [
-                    {"title": f"FAQ: {keyword}", "url": f"https://kb.example.com/{keyword}"}
+                    {"title": f"FAQ: {keyword}", "url": f"{self.settings.kb_base_url}/{keyword}"}
                     for keyword in keywords
                 ]
             }

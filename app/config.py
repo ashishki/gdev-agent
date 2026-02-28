@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_KB_BASE_URL = "https://kb." + "example.com"
+
 
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
@@ -19,6 +21,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
+    kb_base_url: str = DEFAULT_KB_BASE_URL
     anthropic_input_cost_per_1k: float = 0.003
     anthropic_output_cost_per_1k: float = 0.015
     max_input_length: int = 2000

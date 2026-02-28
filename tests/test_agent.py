@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import fakeredis
+import logging
+from unittest.mock import Mock
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
@@ -60,3 +62,28 @@ def test_webhook_uses_llm_draft_and_tracks_cost() -> None:
     event_payload = [payload for event, payload in store.events if event == "action_executed"][-1]
     assert event_payload["input_tokens"] == 100
     assert event_payload["output_tokens"] == 50
+
+
+def test_approval_notification_failure_logs_exc_info(caplog) -> None:
+    settings = Settings(
+        approval_categories=["other"],
+        telegram_approval_chat_id="chat-1",
+        auto_approve_threshold=0.5,
+    )
+    store = CapturingStore()
+    telegram_client = Mock()
+    telegram_client.send_approval_request.side_effect = RuntimeError("telegram down")
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=FakeLLMClient(),
+        telegram_client=telegram_client,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        response = agent.process_webhook(WebhookRequest(text="hello", user_id="u1"))
+
+    assert response.status == "pending"
+    record = next(r for r in caplog.records if r.msg == "failed sending approval notification")
+    assert record.exc_info is not None

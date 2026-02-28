@@ -332,6 +332,7 @@ class AgentService:
             LOGGER.warning(
                 "failed sending approval notification",
                 extra={"event": "approval_notify_failed", "context": {"pending_id": pending.pending_id}},
+                exc_info=True,
             )
 
     def _append_audit_async(self, entry: AuditLogEntry) -> None:
