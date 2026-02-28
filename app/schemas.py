@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -61,6 +62,8 @@ class PendingDecision(BaseModel):
 
     pending_id: str
     reason: str
+    user_id: str | None = None
+    expires_at: datetime
     action: ProposedAction
     draft_response: str
 
@@ -88,7 +91,7 @@ class ApproveRequest(BaseModel):
 class ApproveResponse(BaseModel):
     """Result payload for POST /approve."""
 
-    status: Literal["approved", "rejected", "not_found"]
+    status: Literal["approved", "rejected"]
     pending_id: str
     result: dict[str, Any] | None = None
 

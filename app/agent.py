@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import logging
-import re
+import time
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from app.config import Settings
+from app.llm_client import LLMClient
 from app.schemas import (
     ApproveRequest,
     ApproveResponse,
@@ -28,35 +32,55 @@ INJECTION_PATTERNS = (
     "system:",
     "[inst]",
     "[/inst]",
+    "act as",
+    "you are now",
+    "forget all",
+    "disregard",
+    "developer mode",
+    "jailbreak",
+    "bypass",
+    "pretend you",
+    "<|system|>",
+    "[system]",
+    "###instruction",
 )
 
 
 class AgentService:
     """Coordinates classification, extraction, and action execution."""
 
-    def __init__(self, settings: Settings, store: EventStore) -> None:
+    def __init__(self, settings: Settings, store: EventStore, llm_client: LLMClient | None = None) -> None:
         self.settings = settings
         self.store = store
+        self.llm_client = llm_client or LLMClient(settings)
 
     def process_webhook(self, payload: WebhookRequest) -> WebhookResponse:
         """Run the full agent flow and return either executed or pending result."""
+        start = time.monotonic()
         self._guard_input(payload.text)
 
-        classification = self.classify_request(payload.text)
-        extracted = self.extract_fields(payload)
+        triage = self.llm_client.run_agent(payload.text, payload.user_id)
+        classification = triage.classification
+        extracted = triage.extracted
         action, draft_response = self.propose_action(payload, classification, extracted)
 
         if self.needs_approval(payload.text, classification, action):
             pending = PendingDecision(
                 pending_id=uuid4().hex,
                 reason=action.risk_reason or "manual approval required",
+                user_id=payload.user_id,
+                expires_at=datetime.now(UTC) + timedelta(seconds=self.settings.approval_ttl_seconds),
                 action=action,
                 draft_response=draft_response,
             )
             self.store.put_pending(pending)
+            latency_ms = round((time.monotonic() - start) * 1000)
             LOGGER.info(
                 "action pending approval",
-                extra={"event": "pending_action", "context": {"pending_id": pending.pending_id}},
+                extra={
+                    "event": "pending_action",
+                    "context": {"pending_id": pending.pending_id, "latency_ms": latency_ms},
+                },
             )
             return WebhookResponse(
                 status="pending",
@@ -68,7 +92,14 @@ class AgentService:
             )
 
         action_result = self.execute_action(action, payload.user_id, draft_response)
-        LOGGER.info("action executed", extra={"event": "action_executed", "context": action_result})
+        latency_ms = round((time.monotonic() - start) * 1000)
+        LOGGER.info(
+            "action executed",
+            extra={
+                "event": "action_executed",
+                "context": {**action_result, "latency_ms": latency_ms},
+            },
+        )
         return WebhookResponse(
             status="executed",
             classification=classification,
@@ -82,7 +113,7 @@ class AgentService:
         """Approve or reject a pending action."""
         pending = self.store.pop_pending(request.pending_id)
         if not pending:
-            return ApproveResponse(status="not_found", pending_id=request.pending_id)
+            raise HTTPException(status_code=404, detail="pending_id not found")
 
         if not request.approved:
             self.store.log_event(
@@ -91,73 +122,12 @@ class AgentService:
             )
             return ApproveResponse(status="rejected", pending_id=request.pending_id)
 
-        result = self.execute_action(pending.action, None, pending.draft_response)
+        result = self.execute_action(pending.action, pending.user_id, pending.draft_response)
         self.store.log_event(
             "pending_approved",
             {"pending_id": request.pending_id, "reviewer": request.reviewer, "result": result},
         )
         return ApproveResponse(status="approved", pending_id=request.pending_id, result=result)
-
-    def classify_request(self, text: str) -> ClassificationResult:
-        """Classify request category, urgency, and confidence with simple rules."""
-        lowered = text.lower()
-
-        if any(token in lowered for token in ("refund", "charged", "purchase", "transaction", "billing")):
-            category = "billing"
-            urgency = "high" if "charged" in lowered or "refund" in lowered else "medium"
-            confidence = 0.9
-        elif any(token in lowered for token in ("hack", "banned", "login", "password", "account")):
-            category = "account_access"
-            urgency = "critical" if "hack" in lowered else "high"
-            confidence = 0.86
-        elif any(token in lowered for token in ("crash", "bug", "error", "freeze")):
-            category = "bug_report"
-            urgency = "high" if "crash" in lowered else "medium"
-            confidence = 0.84
-        elif any(token in lowered for token in ("aimbot", "cheat", "hacker", "report player")):
-            category = "cheater_report"
-            urgency = "medium"
-            confidence = 0.82
-        elif "how" in lowered or "where" in lowered:
-            category = "gameplay_question"
-            urgency = "low"
-            confidence = 0.8
-        else:
-            category = "other"
-            urgency = "low"
-            confidence = 0.6
-
-        return ClassificationResult(category=category, urgency=urgency, confidence=confidence)
-
-    def extract_fields(self, payload: WebhookRequest) -> ExtractedFields:
-        """Extract basic entities from webhook text."""
-        text = payload.text
-        txn_match = re.search(r"\bTXN[-_ ]?\d+\b", text, flags=re.IGNORECASE)
-        error_match = re.search(r"\bE[-_ ]?\d+\b", text, flags=re.IGNORECASE)
-
-        lowered = text.lower()
-        if "iphone" in lowered or "ios" in lowered:
-            platform = "iOS"
-        elif "android" in lowered:
-            platform = "Android"
-        elif "ps5" in lowered or "playstation" in lowered:
-            platform = "PS5"
-        elif "xbox" in lowered:
-            platform = "Xbox"
-        elif "windows" in lowered or "pc" in lowered:
-            platform = "PC"
-        else:
-            platform = "unknown"
-
-        keywords = [word for word in re.findall(r"[a-zA-Z]{4,}", text.lower())[:8]]
-
-        return ExtractedFields(
-            user_id=payload.user_id,
-            platform=platform,
-            transaction_id=txn_match.group(0) if txn_match else None,
-            error_code=error_match.group(0) if error_match else None,
-            keywords=keywords,
-        )
 
     def propose_action(
         self,
@@ -180,6 +150,10 @@ class AgentService:
         if classification.confidence < self.settings.auto_approve_threshold:
             risky = True
             reason = reason or "low confidence classification"
+        lowered = payload.text.lower()
+        if any(token in lowered for token in ("lawyer", "lawsuit", "press", "gdpr")):
+            risky = True
+            reason = reason or "legal-risk keywords require approval"
 
         action = ProposedAction(
             tool="create_ticket_and_reply",
@@ -197,9 +171,8 @@ class AgentService:
 
     def needs_approval(self, text: str, classification: ClassificationResult, action: ProposedAction) -> bool:
         """Determine if action must go through manual approval."""
-        lowered = text.lower()
-        legal_risk = any(token in lowered for token in ("lawyer", "lawsuit", "press", "gdpr"))
-        return action.risky or legal_risk or classification.urgency in {"high", "critical"}
+        _ = (text, classification)
+        return action.risky
 
     def execute_action(self, action: ProposedAction, user_id: str | None, draft_response: str) -> dict[str, object]:
         """Execute tool stubs for ticket creation and draft delivery."""

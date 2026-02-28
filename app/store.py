@@ -20,6 +20,8 @@ class EventStore:
         self._conn: sqlite3.Connection | None = None
         if sqlite_path:
             self._conn = sqlite3.connect(sqlite_path, check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS event_log (
@@ -42,6 +44,9 @@ class EventStore:
         """Fetch and remove a pending approval by id."""
         with self._lock:
             pending = self._pending.pop(pending_id, None)
+        if pending and pending.expires_at <= datetime.now(UTC):
+            self.log_event("pending_expired", {"pending_id": pending_id})
+            return None
         if pending:
             self.log_event("pending_resolved", {"pending_id": pending_id})
         return pending
@@ -57,6 +62,6 @@ class EventStore:
             return
         self._conn.execute(
             "INSERT INTO event_log(ts, event_type, payload) VALUES (?, ?, ?)",
-            (datetime.now(UTC).isoformat(), event_type, json.dumps(payload, ensure_ascii=True)),
+            (datetime.now(UTC).isoformat(), event_type, json.dumps(payload, ensure_ascii=False)),
         )
         self._conn.commit()

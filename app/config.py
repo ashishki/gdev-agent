@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     app_name: str = "gdev-agent"
     app_env: str = "dev"
     log_level: str = "INFO"
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-4-6"
     max_input_length: int = 2000
     auto_approve_threshold: float = 0.85
     approval_categories: list[str] = Field(default_factory=lambda: ["billing"])
+    approval_ttl_seconds: int = 3600
     sqlite_log_path: str | None = None
 
     @field_validator("approval_categories", mode="before")
@@ -38,4 +41,7 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return cached application settings."""
-    return Settings()
+    settings = Settings()
+    if not settings.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is required")
+    return settings
