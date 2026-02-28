@@ -10,7 +10,7 @@
 ## 0. Repository Context
 
 You are working in the `gdev-agent` repository — an AI-powered triage service for game-studio player
-support. All ten original PRs (1–10) have been delivered. The system is production-capable.
+support. All sixteen PRs (1–16) have been delivered. The system is production-capable.
 
 **The codebase is not a greenfield project. Do not rewrite working modules.**
 Read existing code before modifying it. Understand the existing patterns before adding new ones.
@@ -20,7 +20,7 @@ Read existing code before modifying it. Understand the existing patterns before 
 | File | Purpose |
 |------|---------|
 | `docs/ARCHITECTURE.md` | Architecture Spec v2.1 — API contracts, data models, security model, ADRs, known gaps |
-| `docs/PLAN.md` | Implementation Plan v2.0 — delivered history + next iteration (PR-11 through PR-16) |
+| `docs/PLAN.md` | Implementation Plan v3.0 — delivered history + next iteration (PR-17 through PR-23) |
 | `docs/REVIEW_NOTES.md` | Engineering review checklist v2.0 — apply before every PR |
 | `docs/N8N.md` | n8n Workflow Guide v1.1 — integration contract and failure modes |
 
@@ -48,142 +48,152 @@ get it reviewed. The cost of a premature feature is higher than the cost of defe
 Work the next-iteration PRs in this exact order. Each PR is a self-contained git commit.
 
 ```
-PR-11 → PR-12 → PR-13 → PR-14 → PR-15 → PR-16
+PR-21 → PR-17 → PR-18 → PR-19 → PR-20 → PR-22 → PR-23
 ```
 
 | PR | Title | Priority | Gap closed |
 |----|-------|----------|------------|
-| PR-11 | Exception Info in JSON Logs | P1 | G-1, B-1, B-4 |
-| PR-12 | Burst Rate Limit Enforcement | P1 | G-2, M-7 |
-| PR-13 | LLM Cost Tracking | P1 | G-3 |
-| PR-14 | Wire LLM Draft Reply | P2 | G-4 |
-| PR-15 | LLM Retry with Tenacity | P1 | §6.4 target |
-| PR-16 | Startup Warning for Missing WEBHOOK_SECRET | P1 | M-8 |
+| PR-21 | KB Base URL Configuration | P0 | N-5 (pre-production blocker) |
+| PR-17 | exc_info in Approval Notification Error | P1 | N-1 |
+| PR-18 | /approve Endpoint Authentication | P1 | N-2 |
+| PR-19 | OutputGuard.scan() Return Instead of Mutate | P2 | N-3 |
+| PR-20 | Narrow "act as" Injection Pattern | P2 | N-4 |
+| PR-22 | Eliminate Dual Settings + Redis at Module Load | P2 | B-2 |
+| PR-23 | Approval Notification Observability | P2 | G-7 |
 
-Do not skip steps. PR-11 and PR-12 close security and observability gaps — prioritise them.
+Do not skip PR-21 — it is a pre-production blocker (dead links sent to users).
+PR-17 and PR-18 must land before scaling traffic.
 
 ---
 
 ## 3. PR-by-PR Acceptance Criteria
 
-Full acceptance criteria are in `docs/PLAN.md`. This section is a working reference.
+Full specs (with design rationale and edge cases) are in `docs/PLAN.md`. This section is the
+working reference — the minimum a Codex agent needs to implement each PR correctly.
 
-### PR-11 — Exception Info + Cleanup
+### PR-21 — KB Base URL [P0]
 
-**Files to modify:** `app/logging.py`, `app/approval_store.py`, `app/agent.py`
+**Files:** `app/config.py`, `app/llm_client.py`, `.env.example`
 
-**Changes:**
-
-1. `app/logging.py` — add to `JsonFormatter.format()`:
-   ```python
-   if record.exc_info:
-       payload["exc_info"] = self.formatException(record.exc_info)
-   ```
-   Do not emit `"exc_info": null` — omit the key entirely when no exception.
-
-2. `app/approval_store.py:36` — remove the dead `self.redis.delete(key)` call after `GETDEL`.
-   GETDEL already atomically deletes the key. The subsequent delete is a no-op.
-
-3. `app/agent.py:322` — replace `asyncio.get_event_loop()` with `asyncio.get_running_loop()`.
-   The `RuntimeError` when no loop is running is already caught by the `except RuntimeError` block.
-
-4. Add CI assertion for TOOLS/TOOL_REGISTRY sync (see `ARCHITECTURE.md §9.4`).
-
-**Acceptance criteria:** See `docs/PLAN.md §PR-11`.
-
-**Tests:** Extend `tests/test_logging.py` — `exc_info` present on exception; absent on info.
-
----
-
-### PR-12 — Burst Rate Limit
-
-**Files to modify:** `app/middleware/rate_limit.py`, `docs/ARCHITECTURE.md`
-
-**Changes:**
-
-Add a second Redis key `ratelimit_burst:{user_id}` with 10-second TTL and `RATE_LIMIT_BURST` limit.
-Both minute-window and burst-window checks must pass before allowing the request.
-
-After this PR, also add `Retry-After: 60` header to the HTTP 429 response (finding M-7).
-
-Update `ARCHITECTURE.md §6.2` to add `ratelimit_burst:` to the key namespace table.
-Update `ARCHITECTURE.md §7.4` to mark `RATE_LIMIT_BURST` as `Enforced`.
-
-**Acceptance criteria:** See `docs/PLAN.md §PR-12`.
-
-**Tests:** Extend `tests/test_middleware.py` with burst window cases using `fakeredis`.
-
----
-
-### PR-13 — Cost Tracking
-
-**Files to modify:** `app/llm_client.py`, `app/schemas.py`, `app/agent.py`
-
-**Changes:**
-
-1. `TriageResult` (dataclass in `llm_client.py`) — add `input_tokens: int = 0`, `output_tokens: int = 0`.
-2. `LLMClient.run_agent()` — accumulate `response.usage.input_tokens` and `response.usage.output_tokens` across all turns.
-3. `app/agent.py` — compute `cost_usd` from token counts using configurable rates from `Settings`.
-4. `app/config.py` — add `anthropic_input_cost_per_1k: float = 0.003` and `anthropic_output_cost_per_1k: float = 0.015`.
-
-**Acceptance criteria:** See `docs/PLAN.md §PR-13`.
-
-**Tests:** Mock `LLMClient` to return fixed token counts; assert non-zero `cost_usd` in `AuditLogEntry`.
-
----
-
-### PR-14 — Wire LLM Draft
-
-**Files to modify:** `app/llm_client.py`, `app/agent.py`
-
-**Changes:**
-
-1. Expose `draft_text` from `draft_reply` tool result in `TriageResult` (`draft_text: str | None = None`).
-2. `AgentService.process_webhook()` — use `triage.draft_text` as draft when non-null; fall back to `_draft_response()`.
-3. The LLM draft still passes through `OutputGuard.scan()` before use — no change to guard integration.
-
-**Acceptance criteria:** See `docs/PLAN.md §PR-14`.
-
-**Tests:** Update `FakeLLMClient` in test fixtures to return a `draft_text`. Verify output guard still receives LLM draft.
-
----
-
-### PR-15 — LLM Retry
-
-**Files to modify:** `app/llm_client.py`, `requirements.txt`
-
-**Changes:**
-
-Wrap `self._client.messages.create()` in `tenacity.retry`:
-- 3 attempts maximum.
-- Exponential backoff: initial 1 s, multiplier 2, max 30 s.
-- Retry only on `anthropic.APIStatusError` with 5xx status codes.
-- Do not retry 429 — re-raise immediately.
-- Log `WARNING` on each retry attempt.
-
-**Acceptance criteria:** See `docs/PLAN.md §PR-15`.
-
-**Tests:** Mock `anthropic.Anthropic.messages.create` to raise `APIStatusError` once then succeed.
-
----
-
-### PR-16 — Startup Warning
-
-**Files to modify:** `app/main.py`
-
-**Change:** In `lifespan`, after `configure_logging()`, add:
+Add `kb_base_url: str = "https://kb.example.com"` to `Settings`.
+In `LLMClient._dispatch_tool("lookup_faq", ...)`, replace the hardcoded string:
 ```python
-if not settings.webhook_secret:
-    LOGGER.warning(
-        "webhook signature verification disabled",
-        extra={
-            "event": "security_degraded",
-            "context": {"reason": "WEBHOOK_SECRET not set — inbound signature verification skipped"}
-        }
-    )
+"url": f"{self.settings.kb_base_url}/{keyword}"
+```
+`LLMClient.__init__` already stores `self.settings` — no constructor change needed.
+CI gate: `git grep -n "kb.example.com" app/` must return no matches after this PR.
+
+**Full spec:** `docs/PLAN.md §PR-21`.
+
+---
+
+### PR-17 — exc_info in Approval Notification Error [P1]
+
+**File:** `app/agent.py`
+
+One-line change in `_notify_approval_channel()`. Add `exc_info=True` to the `LOGGER.warning()`
+call inside the `except Exception` block. Do not change anything else.
+
+```python
+LOGGER.warning(
+    "failed sending approval notification",
+    extra={"event": "approval_notify_failed", "context": {"pending_id": pending.pending_id}},
+    exc_info=True,   # ← add this
+)
 ```
 
-**Acceptance criteria:** See `docs/PLAN.md §PR-16`.
+**Tests:** `tests/test_agent.py` — mock `TelegramClient.send_approval_request` to raise;
+assert `exc_info` key present in the emitted log record.
+
+**Full spec:** `docs/PLAN.md §PR-17`.
+
+---
+
+### PR-18 — /approve Endpoint Authentication [P1]
+
+**Files:** `app/config.py`, `app/main.py`, `.env.example`
+
+Add `approve_secret: str | None = None` to `Settings`.
+
+In the `approve()` handler (or a small middleware applied only to `/approve`), check:
+```python
+provided = request.headers.get("X-Approve-Secret", "")
+if settings.approve_secret and not hmac.compare_digest(settings.approve_secret, provided):
+    raise HTTPException(status_code=401, detail="Unauthorized")
+```
+
+Add a startup warning in `lifespan` when `approve_secret` is `None` (same pattern as
+`webhook_secret` — `event: "security_degraded"`).
+
+**Security invariant:** Use `hmac.compare_digest()` — never `==`. See SI-1.
+
+**Full spec:** `docs/PLAN.md §PR-18`.
+
+---
+
+### PR-19 — OutputGuard.scan() Return Instead of Mutate [P2]
+
+**Files:** `app/guardrails/output_guard.py`, `app/agent.py`
+
+Add `action_override: ProposedAction | None = None` to the `GuardResult` dataclass.
+
+In `scan()`, when `confidence < 0.5`, build a copy of `action` with overridden fields and
+return it as `action_override`. Remove the in-place mutation `action.tool = "flag_for_human"`.
+
+In `agent.py`, apply the override after calling `scan()`:
+```python
+guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
+if guard_result.action_override is not None:
+    action = guard_result.action_override
+```
+
+This is a pure refactor — observable behaviour must not change.
+
+**Full spec:** `docs/PLAN.md §PR-19`.
+
+---
+
+### PR-20 — Narrow "act as" Injection Pattern [P2]
+
+**File:** `app/agent.py`
+
+In `INJECTION_PATTERNS`, replace `"act as"` with `"act as if you"`.
+
+One-character-class change. Add 3 test cases to `test_guardrails_and_extraction.py`:
+- blocked: `"act as if you are an admin"`
+- not blocked: `"I'd like you to act as a support agent"`
+- not blocked: `"Please act as a refund processor"`
+
+**Full spec:** `docs/PLAN.md §PR-20`.
+
+---
+
+### PR-22 — Eliminate Dual Settings + Redis at Module Load [P2]
+
+**Files:** `app/main.py`, `app/middleware/rate_limit.py`, `app/middleware/signature.py`
+
+Change middleware constructors to accept lazy factory callables instead of eager instances.
+Pass `lambda: app.state.settings` and `lambda: app.state.redis` in `main.py`.
+Resolve the real instances lazily on first request (lifespan has already populated `app.state`
+before any request is served).
+
+No environment reads should occur at module import time after this PR.
+
+**Full spec:** `docs/PLAN.md §PR-22`.
+
+---
+
+### PR-23 — Approval Notification Observability [P2]
+
+**Files:** `docs/N8N.md`, `docs/ARCHITECTURE.md` (documentation only — no application code)
+
+After PR-17 adds `exc_info=True`, update:
+- `docs/N8N.md §8.3` — add manual recovery guidance: re-send `POST /webhook` to create a
+  new `pending_id`; original pending expires at `APPROVAL_TTL_SECONDS`.
+- `docs/ARCHITECTURE.md §12` gap G-7 — update status to
+  `⚠️ Partially addressed — monitoring guidance added`.
+
+**Full spec:** `docs/PLAN.md §PR-23`.
 
 ---
 
@@ -222,8 +232,8 @@ All tests run without real API calls, network access, or running processes.
 `FakeLLMClient` must return:
 - `classification`: configurable per test; default `ClassificationResult(category="gameplay_question", urgency="low", confidence=0.95)`
 - `extracted`: default empty `ExtractedFields`
-- `draft_text`: `None` until PR-14; non-null string after PR-14
-- `input_tokens=100, output_tokens=50` after PR-13
+- `draft_text`: non-null string (e.g. `"Thanks for contacting support."`)
+- `input_tokens=100, output_tokens=50`
 
 ### Test file naming
 
@@ -234,7 +244,7 @@ All tests run without real API calls, network access, or running processes.
 | `tests/test_dedup.py` | Idempotent replay; absent `message_id` skips cache |
 | `tests/test_guardrails_and_extraction.py` | Input guard patterns; entity extraction; error-code regex |
 | `tests/test_output_guard.py` | Secret patterns; URL allowlist; confidence floor; guard disabled |
-| `tests/test_middleware.py` | HMAC valid/invalid/absent; rate limit hit/miss; burst window after PR-12 |
+| `tests/test_middleware.py` | HMAC valid/invalid/absent; rate limit hit/miss; burst window; /approve auth after PR-18 |
 | `tests/test_linear_integration.py` | GraphQL mutation; 429 → 503; 4xx → 500; stub fallback |
 | `tests/test_telegram_integration.py` | sendMessage; approval buttons; 429 handling |
 | `tests/test_sheets_integration.py` | Append row structure; 429 retry; missing credentials |
@@ -300,7 +310,7 @@ mode, but it surfaces as HTTP 500. Prevent it at the source.
 
 ### SI-9: Redis key namespace is inviolable
 
-The four key prefixes (`dedup:`, `pending:`, `ratelimit:`, `ratelimit_burst:` after PR-12) are
+The four key prefixes (`dedup:`, `pending:`, `ratelimit:`, `ratelimit_burst:`) are
 exclusive. No new feature may use these prefixes for other purposes. New Redis usage requires a new
 prefix documented in `ARCHITECTURE.md §6.2` before implementation.
 
@@ -441,9 +451,20 @@ From `docs/REVIEW_NOTES.md §5`:
 8. **`answerCallbackQuery` 30 s deadline** — n8n must call this before `POST /approve`.
 9. **Dedup caches pending** — stale `pending_id` → 404 on `/approve`; n8n handles as terminal.
 10. **Approval notification is fire-and-forget** — Telegram outage = silent miss; monitor `approval_notify_failed` events.
-11. **`OutputGuard.scan()` mutates input** — do not call it more than once per request; treat `action` as modified after the call.
-12. **Dead code in `pop_pending()`** — `self.redis.delete(key)` after `GETDEL` is a no-op; remove in PR-11.
-13. **`flag_for_human` is not in TOOL_REGISTRY** — this is intentional; it routes to the pending path only. Do not add it to the registry.
+11. **`OutputGuard.scan()` mutates input (pre-PR-19)** — until PR-19 lands, do not call `scan()`
+    more than once per request; treat `action` as modified after the call. After PR-19,
+    check `guard_result.action_override` instead.
+12. **`flag_for_human` is not in TOOL_REGISTRY** — this is intentional; it routes to the
+    pending path only. Do not add it to the registry.
+13. **`"act as"` pattern is too broad (pre-PR-20)** — fires on legitimate phrases like
+    `"act as a billing agent"`. PR-20 narrows it to `"act as if you"`. Do not revert.
+14. **`exc_info` requires explicit opt-in** — `LOGGER.warning(...)` inside an `except` block
+    does NOT automatically capture the traceback. Always pass `exc_info=True` when logging
+    inside `try/except`. Omitting it silently swallows exception details.
+15. **`/approve` is unauthenticated until PR-18** — any `pending_id` holder can approve.
+    Set `APPROVE_SECRET` in production immediately after PR-18 lands.
+16. **`kb.example.com` is a dead placeholder until PR-21** — FAQ links sent to users will 404.
+    Do not hardcode any KB URL strings; always use `self.settings.kb_base_url`.
 
 ---
 
@@ -469,7 +490,7 @@ handler = TOOL_REGISTRY.get(action.tool)
 if handler is None:
     raise ValueError(f"Unknown tool: {action.tool!r}")
 
-# Async background work (after PR-11)
+# Async background work
 loop = asyncio.get_running_loop()        # NEVER asyncio.get_event_loop()
 ```
 
@@ -499,7 +520,7 @@ git grep -rn "sk-ant\|lin_api_\|Bearer " app/
 # Must return no results
 ```
 
-### Registry sync check (after PR-11)
+### Registry sync check
 
 ```bash
 python -c "

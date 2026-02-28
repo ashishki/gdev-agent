@@ -86,7 +86,10 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · n8n integration:
 | Redis-backed approval store (TTL, atomic GETDEL) | Implemented |
 | Dedup cache — idempotent replay via `message_id` | Implemented |
 | HMAC-SHA256 webhook signature verification | Implemented |
-| Per-user rate limiting (Redis sliding window) | Implemented |
+| Per-user rate limiting — minute window (Redis, `RATE_LIMIT_RPM`) | Implemented |
+| Per-user burst rate limit — 10 s window (Redis, `RATE_LIMIT_BURST`) | Implemented |
+| LLM cost tracking (token accumulation, configurable per-1k rates) | Implemented |
+| LLM transient-5xx retry (Tenacity, 3 attempts, exponential backoff) | Implemented |
 | JSON structured logging with `request_id` correlation | Implemented |
 | `latency_ms` on every executed/pending log entry | Implemented |
 | SQLite event log (WAL mode, thread-safe) | Implemented |
@@ -332,6 +335,11 @@ SQLITE_LOG_PATH=                    # empty = SQLite disabled; set to a file pat
 # Security
 WEBHOOK_SECRET=                     # HMAC key for X-Webhook-Signature; empty = verification skipped
 RATE_LIMIT_RPM=10                   # max requests per user per 60 s window
+RATE_LIMIT_BURST=3                  # max requests per user per 10 s burst window
+
+# LLM cost tracking (used for cost_usd field in audit log)
+ANTHROPIC_INPUT_COST_PER_1K=0.003  # USD per 1 000 input tokens
+ANTHROPIC_OUTPUT_COST_PER_1K=0.015 # USD per 1 000 output tokens
 
 # Output guard
 OUTPUT_GUARD_ENABLED=true
@@ -368,12 +376,16 @@ Tests run offline — no API keys required. Mocks used: `FakeLLMClient` for Clau
 | `test_dedup.py` | Idempotent replay via `message_id` |
 | `test_guardrails_and_extraction.py` | Injection guard, entity extraction, error-code regex |
 | `test_output_guard.py` | Secret scan, URL allowlist, confidence floor override |
-| `test_middleware.py` | HMAC signature verification, rate limiting |
+| `test_middleware.py` | HMAC signature verification, rate limiting, burst window |
 | `test_linear_integration.py` | GraphQL issue creation, 429 handling |
 | `test_telegram_integration.py` | Message sending, approval button payload |
 | `test_sheets_integration.py` | Audit log append, retry on 429 |
-| `test_tool_registry.py` | Action dispatch, unknown-tool error |
+| `test_tool_registry.py` | Action dispatch, unknown-tool error, TOOLS/REGISTRY sync |
 | `test_eval_runner.py` | Eval harness accuracy calculation |
+| `test_logging.py` | JSON formatter, exc_info, timestamp source, request_id |
+| `test_agent.py` | Cost estimation, draft wiring, audit log fields |
+| `test_llm_client.py` | Tool-use loop, retry on 5xx, token accumulation |
+| `test_main.py` | Startup warnings, dedup bypass, health endpoint |
 
 ---
 
@@ -453,6 +465,25 @@ developer mode · jailbreak · bypass · pretend you
 
 ---
 
+## Known gaps & what's next
+
+Verified open items from the 2026-02-28 engineering review, in priority order:
+
+| ID | Severity | Gap | PR |
+|----|----------|-----|----|
+| **N-5** | High — pre-production blocker | `lookup_faq` returns `kb.example.com` dead links to users | PR-21 |
+| **N-2** | Medium | `POST /approve` is unauthenticated — any `pending_id` holder can approve | PR-18 |
+| **G-7** | Medium | Approval notification is fire-and-forget; Telegram outage silently orphans pending items | PR-23 |
+| **N-1** | Low | `_notify_approval_channel` logs warning without `exc_info=True` — traceback lost | PR-17 |
+| **N-3** | Low | `OutputGuard.scan()` mutates the caller's `action` argument — hidden side-effect | PR-19 |
+| **N-4** | Low | `"act as"` injection pattern triggers on legitimate phrasing (false positive) | PR-20 |
+| **B-2** | Low | Duplicate `Settings` + Redis connection created at module load, outside lifespan | PR-22 |
+
+Full implementation specs are in [`docs/PLAN.md`](docs/PLAN.md).
+Implementation guidance for Codex is in [`CODEX_PROMPT.md`](CODEX_PROMPT.md).
+
+---
+
 ## Design decisions
 
 **Why Claude `tool_use` instead of prompt-engineered JSON output?**
@@ -513,7 +544,7 @@ gdev-agent/
 ├── eval/
 │   ├── runner.py            # run_eval() — accuracy + per-label breakdown
 │   └── cases.jsonl          # 25 labelled test cases
-├── tests/                   # 11 test modules (fakeredis, httpx mocks, no API calls)
+├── tests/                   # 15 test modules (fakeredis, httpx mocks, no API calls)
 ├── n8n/
 │   ├── workflow_triage.json           # Telegram → agent → approval or log
 │   ├── workflow_approval_callback.json # Button click → /approve → log
