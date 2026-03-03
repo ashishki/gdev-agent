@@ -24,13 +24,18 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.settings = settings
 
     async def dispatch(self, request: Request, call_next):
-        if (request.method, request.url.path) in {("GET", "/health"), ("POST", "/webhook")}:
+        if (request.method, request.url.path) in {
+            ("GET", "/health"),
+            ("POST", "/webhook"),
+            ("POST", "/auth/token"),
+        }:
             return await call_next(request)
 
         authorization = request.headers.get("Authorization", "")
-        if not authorization.startswith("Bearer "):
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer":
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        token = authorization[len("Bearer ") :].strip()
+        token = token.strip()
         if not token:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 

@@ -96,6 +96,21 @@ class ApproveResponse(BaseModel):
     result: dict[str, Any] | None = None
 
 
+class AuthTokenRequest(BaseModel):
+    """Credentials payload for POST /auth/token."""
+
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class AuthTokenResponse(BaseModel):
+    """Token response payload for POST /auth/token."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+
+
 class HealthResponse(BaseModel):
     """Healthcheck response model."""
 

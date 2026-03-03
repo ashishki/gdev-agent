@@ -23,6 +23,7 @@ from app.logging import clear_request_id, configure_logging, set_request_id
 from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
+from app.routers.auth import router as auth_router
 from app.schemas import ApproveRequest, ApproveResponse, HealthResponse, WebhookRequest, WebhookResponse
 from app.secrets_store import WebhookSecretStore
 from app.store import EventStore
@@ -129,6 +130,7 @@ app.add_middleware(
     redis_client=redis.from_url(_middleware_settings.redis_url),
 )
 app.add_middleware(SignatureMiddleware, settings=_middleware_settings)
+app.include_router(auth_router)
 
 
 @app.get("/health", response_model=HealthResponse)

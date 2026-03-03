@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import fakeredis
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.params import Depends
@@ -16,6 +17,9 @@ from jose import jwt
 from app.config import Settings
 from app.dependencies import require_role
 from app.middleware.auth import JWTMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.routers import auth as auth_module
+from app.schemas import AuthTokenRequest, AuthTokenResponse
 
 
 def _token(
@@ -188,7 +192,7 @@ async def test_redis_unavailable_during_blocklist_check_returns_503() -> None:
 async def test_exempt_routes_do_not_require_jwt() -> None:
     settings = Settings()
     middleware = JWTMiddleware(app=None, settings=settings)
-    routes = [("GET", "/health"), ("POST", "/webhook")]
+    routes = [("GET", "/health"), ("POST", "/webhook"), ("POST", "/auth/token")]
 
     async def _ok(_: Request):
         return JSONResponse({"ok": True}, status_code=200)
@@ -210,3 +214,197 @@ def test_require_role_enforces_allowed_roles() -> None:
 
     request_ok = SimpleNamespace(state=SimpleNamespace(role="support_agent"))
     dep.dependency(request_ok)
+
+
+class _ResultStub:
+    def __init__(self, row: dict[str, object] | None) -> None:
+        self._row = row
+
+    def mappings(self) -> "_ResultStub":
+        return self
+
+    def first(self) -> dict[str, object] | None:
+        return self._row
+
+
+class _SessionStub:
+    def __init__(self, row: dict[str, object] | None) -> None:
+        self._row = row
+
+    async def __aenter__(self) -> "_SessionStub":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def execute(self, statement, params):
+        _ = statement, params
+        return _ResultStub(self._row)
+
+
+class _SessionFactoryStub:
+    def __init__(self, row: dict[str, object] | None) -> None:
+        self._row = row
+
+    def __call__(self) -> _SessionStub:
+        return _SessionStub(self._row)
+
+
+def _auth_request(row: dict[str, object] | None, settings: Settings | None = None) -> Request:
+    state = SimpleNamespace(
+        settings=settings or Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8),
+        db_session_factory=_SessionFactoryStub(row),
+    )
+    return _request("POST", "/auth/token", app_state=state)
+
+
+def _request_with_body(path: str, body: bytes) -> Request:
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "path": path,
+        "headers": [(b"content-type", b"application/json")],
+        "query_string": b"",
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "app": SimpleNamespace(state=SimpleNamespace()),
+    }
+
+    async def receive():
+        if receive.sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        receive.sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    receive.sent = False  # type: ignore[attr-defined]
+    return Request(scope, receive)
+
+
+@pytest.mark.asyncio
+async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
+    password = "s3cret!"
+    user_id = str(uuid4())
+    tenant_id = str(uuid4())
+    settings = Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8)
+    row = {
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "role": "support_agent",
+        "password_hash": "stored-hash",
+    }
+    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda candidate, stored: (
+        candidate == password.encode("utf-8") and stored == b"stored-hash"
+    ))
+    request = _auth_request(row, settings=settings)
+    response = await auth_module.create_auth_token(
+        AuthTokenRequest(email="agent@example.com", password=password),
+        request,
+    )
+
+    assert isinstance(response, AuthTokenResponse)
+    body = response.model_dump()
+    assert body["token_type"] == "bearer"
+    assert body["expires_in"] == 8 * 3600
+    claims = jwt.decode(body["access_token"], settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    assert claims["sub"] == user_id
+    assert claims["tenant_id"] == tenant_id
+    assert claims["role"] == "support_agent"
+
+
+@pytest.mark.asyncio
+async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(monkeypatch) -> None:
+    from unittest.mock import Mock
+
+    warning = Mock()
+    monkeypatch.setattr(auth_module.LOGGER, "warning", warning)
+    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
+    row = {
+        "user_id": str(uuid4()),
+        "tenant_id": str(uuid4()),
+        "role": "viewer",
+        "password_hash": "stored-hash",
+    }
+    response = await auth_module.create_auth_token(
+        AuthTokenRequest(email="viewer@example.com", password="wrong-password"),
+        _auth_request(row),
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 401
+    assert b'"code":"invalid_credentials"' in response.body
+    warning.assert_called_once()
+    context = warning.call_args.kwargs["extra"]["context"]
+    assert context["email_hash"] == auth_module.hashlib.sha256(
+        b"viewer@example.com"
+    ).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_auth_token_unknown_email_returns_same_401_shape(monkeypatch) -> None:
+    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
+    response = await auth_module.create_auth_token(
+        AuthTokenRequest(email="missing@example.com", password="pw"),
+        _auth_request(None),
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 401
+    assert (
+        response.body
+        == b'{"error":{"code":"invalid_credentials","message":"Invalid email or password"}}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(),
+        redis_client=fakeredis.FakeRedis(),
+    )
+
+    async def unauthorized(_request):
+        return JSONResponse(
+            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            status_code=401,
+        )
+
+    for _ in range(5):
+        response = await middleware.dispatch(
+            _request_with_body("/auth/token", b'{"email":"user@example.com","password":"pw"}'),
+            unauthorized,
+        )
+        assert response.status_code == 401
+
+    blocked = await middleware.dispatch(
+        _request_with_body("/auth/token", b'{"email":"user@example.com","password":"pw"}'),
+        unauthorized,
+    )
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "60"
+
+
+@pytest.mark.asyncio
+async def test_auth_token_uses_bcrypt_checkpw(monkeypatch) -> None:
+    seen: list[tuple[bytes, bytes]] = []
+
+    def _spy(password: bytes, hashed: bytes) -> bool:
+        seen.append((password, hashed))
+        return True
+
+    monkeypatch.setattr(auth_module.bcrypt, "checkpw", _spy)
+    row = {
+        "user_id": str(uuid4()),
+        "tenant_id": str(uuid4()),
+        "role": "viewer",
+        "password_hash": "stored-hash",
+    }
+    response = await auth_module.create_auth_token(
+        AuthTokenRequest(email="user@example.com", password="pw"),
+        _auth_request(row),
+    )
+
+    assert isinstance(response, AuthTokenResponse)
+    assert seen

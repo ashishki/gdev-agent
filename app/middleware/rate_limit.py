@@ -23,11 +23,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.redis = redis_client
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path != "/webhook":
+        if request.url.path not in {"/webhook", "/auth/token"}:
             return await call_next(request)
 
         body = await request.body()
+        body_sent = False
+
         async def _receive():
+            nonlocal body_sent
+            if body_sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            body_sent = True
             return {"type": "http.request", "body": body, "more_body": False}
 
         request._receive = _receive  # type: ignore[attr-defined]
@@ -35,27 +41,43 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             payload = json.loads(body.decode("utf-8") or "{}")
         except json.JSONDecodeError:
             payload = {}
-        user_id = payload.get("user_id")
-        if not user_id:
-            return await call_next(request)
-
-        minute_key = f"ratelimit:{user_id}"
-        burst_key = f"ratelimit_burst:{user_id}"
         try:
-            minute_count = int(self.redis.incr(minute_key))
-            if minute_count == 1:
-                self.redis.expire(minute_key, 60)
+            if request.url.path == "/webhook":
+                user_id = payload.get("user_id")
+                if not user_id:
+                    return await call_next(request)
 
-            burst_count = int(self.redis.incr(burst_key))
-            if burst_count == 1:
-                self.redis.expire(burst_key, 10)
+                minute_key = f"ratelimit:{user_id}"
+                burst_key = f"ratelimit_burst:{user_id}"
+                minute_count = int(self.redis.incr(minute_key))
+                if minute_count == 1:
+                    self.redis.expire(minute_key, 60)
 
-            if minute_count > self.settings.rate_limit_rpm or burst_count > self.settings.rate_limit_burst:
-                return JSONResponse(
-                    {"detail": "Rate limit exceeded"},
-                    status_code=429,
-                    headers={"Retry-After": "60"},
-                )
+                burst_count = int(self.redis.incr(burst_key))
+                if burst_count == 1:
+                    self.redis.expire(burst_key, 10)
+
+                if minute_count > self.settings.rate_limit_rpm or burst_count > self.settings.rate_limit_burst:
+                    return JSONResponse(
+                        {"detail": "Rate limit exceeded"},
+                        status_code=429,
+                        headers={"Retry-After": "60"},
+                    )
+            else:
+                email = payload.get("email")
+                if not isinstance(email, str) or not email.strip():
+                    return await call_next(request)
+
+                auth_key = f"auth_ratelimit:{email.strip().lower()}"
+                auth_count = int(self.redis.incr(auth_key))
+                if auth_count == 1:
+                    self.redis.expire(auth_key, 60)
+                if auth_count > 5:
+                    return JSONResponse(
+                        {"detail": "Rate limit exceeded"},
+                        status_code=429,
+                        headers={"Retry-After": "60"},
+                    )
         except Exception:
             LOGGER.warning("rate limiter unavailable", extra={"event": "rate_limit_bypass", "context": {}})
             return await call_next(request)
