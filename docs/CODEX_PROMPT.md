@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅
-**Next task:** T05 · JWT Middleware + Tenant Context Injection
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅
+**Next task:** T06 · RBAC — `require_role()` enforcement on all endpoints
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -46,6 +46,24 @@ P1-04 ✅ RESOLVED (T00A) — dead session_factory removed from EventStore
 P1-05 ✅ RESOLVED (T00A) — Redis URL removed from startup RuntimeError
 
 P1-03 ✅ RESOLVED (T00B) — alembic/versions/0002_grant_admin_bypassrls.py created
+
+─── T05 (JWT Middleware + Tenant Context Injection) ──────────────────
+Files: app/middleware/auth.py (84 lines), app/dependencies.py (15 lines),
+       tests/test_auth.py, app/config.py(+jwt_secret/jwt_algorithm/jwt_token_expiry_hours),
+       app/main.py(+JWTMiddleware wired, jwt_blocklist_redis on app.state)
+Public API (do NOT change — T06+ depend on it):
+  JWTMiddleware — exempt: GET /health, POST /webhook; fail-closed 503 on Redis failure
+  require_role(*roles) → Depends(dependency) — raises HTTP 403 if role not in roles
+  request.state.tenant_id: UUID
+  request.state.user_id: UUID
+  request.state.role: str
+  app.state.jwt_blocklist_redis — shared async Redis client (also used by TenantRegistry)
+  JWT claims required: sub (user_id UUID), tenant_id (UUID), role (str), jti (str)
+  Redis key: jwt:blocklist:{jti} — presence = revoked
+Known gap: jwt_secret has a non-empty default ("dev-jwt-secret-must-be-at-least-32b").
+  Startup warning fires only if len < 32 bytes; default is 34 bytes so no warning in dev.
+  Add JWT_SECRET to .env.example as required (no default). Fix in T06 pre-flight.
+Tests: 7 new ✅ | Full suite: 74 pass, 1 skipped (test_isolation.py absent — T09)
 
 ─── T04 (Per-Tenant HMAC Secret Lookup) ─────────────────────────────
 Files: app/secrets_store.py (77 lines), tests/test_secrets_store.py (93 lines)
@@ -97,10 +115,16 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T05
+PROCEED TO T06
 ═══════════════════════════════════════════════════════════════════════
 
-T00A ✅ + T00B ✅ complete. Baseline: 67 pass, 0 fail. All Phase 1 blockers resolved.
+T05 ✅ complete. Baseline: 74 pass, 1 skipped (test_isolation.py — T09). All Phase 1 + T05 done.
+
+Pre-flight for T06:
+  - Add JWT_SECRET to .env.example marked as required (no default)
+  - Confirm app/dependencies.py:require_role() exists (it does — T05 created it)
+  - Confirm request.state.role is populated by JWTMiddleware before route handler runs
+
 
 
 
