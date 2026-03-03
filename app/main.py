@@ -23,6 +23,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
 from app.schemas import ApproveRequest, ApproveResponse, HealthResponse, WebhookRequest, WebhookResponse
 from app.store import EventStore
+from app.tenant_registry import TenantRegistry
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis_client
     app.state.db_engine = db_engine
     app.state.db_session_factory = db_session_factory
+    app.state.tenant_registry = TenantRegistry(redis_client, db_session_factory)
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
         settings=settings,

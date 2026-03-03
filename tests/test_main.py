@@ -26,6 +26,7 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     monkeypatch.setattr(main, "EventStore", lambda **_: object())
     monkeypatch.setattr(main, "RedisApprovalStore", lambda *_, **__: object())
     monkeypatch.setattr(main, "DedupCache", lambda *_, **__: object())
+    monkeypatch.setattr(main, "TenantRegistry", lambda *_, **__: object())
     monkeypatch.setattr(main, "SheetsClient", lambda *_, **__: object())
     monkeypatch.setattr(main, "TelegramClient", lambda *_, **__: object())
     monkeypatch.setattr(main, "AgentService", lambda **_: object())
