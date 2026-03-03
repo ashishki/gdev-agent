@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_KB_BASE_URL = "https://kb." + "example.com"
@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     approval_ttl_seconds: int = 3600
     sqlite_log_path: str | None = None
     redis_url: str = "redis://redis:6379"
+    database_url: PostgresDsn | None = None
     output_guard_enabled: bool = True
     url_allowlist: list[str] = Field(default_factory=list)
     output_url_behavior: Literal["strip", "reject"] = "strip"

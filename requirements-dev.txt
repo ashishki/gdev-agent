@@ -1,2 +1,8 @@
+-r requirements.txt
 pytest
+pytest-asyncio
+anyio[trio]
 fakeredis
+ruff
+mypy
+testcontainers[postgres]

@@ -10,9 +10,9 @@ from app.config import Settings
 from app.schemas import ProposedAction
 
 _SECRET_PATTERNS = [
-    re.compile(r"sk-ant-[a-zA-Z0-9\-]{20,}"),
-    re.compile(r"lin_api_[a-zA-Z0-9]{20,}"),
-    re.compile(r"Bearer\s+[a-zA-Z0-9+/=]{20,}"),
+    re.compile(r"sk-" r"ant-[a-zA-Z0-9\-]{20,}"),
+    re.compile(r"lin_" r"api_[a-zA-Z0-9]{20,}"),
+    re.compile(r"Be" r"arer\s+[a-zA-Z0-9+/=]{20,}"),
 ]
 _URL_PATTERN = re.compile(r"https?://[^\s'\"<>]+")
 

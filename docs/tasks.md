@@ -26,7 +26,7 @@ _No task is started without reading its "Depends-On" chain first._
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** —
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Install Alembic, configure it for async SQLAlchemy, and produce the first migration file that

@@ -1,8 +1,66 @@
-# Codex Implementation Agent Prompt v2.0
+# Codex Implementation Agent Prompt v2.1
 
-_Owner: Architecture · Date: 2026-03-03_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01 complete)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
+
+═══════════════════════════════════════════════════════════════════════
+SESSION HANDOFF — START HERE
+═══════════════════════════════════════════════════════════════════════
+
+**Last completed task:** T01 · Alembic Setup + Initial Schema Migration — ✅ DONE
+**Next task to implement:** T02 · SQLAlchemy Async Engine + Session Management
+
+**T01 completion summary:**
+
+Files created:
+  alembic.ini
+  alembic/env.py
+  alembic/versions/0001_initial_schema.py
+  tests/test_migrations.py
+
+Files modified:
+  app/config.py          — added `database_url: PostgresDsn | None = None`
+  requirements.txt       — added alembic, asyncpg, sqlalchemy[asyncio], python-jose[cryptography],
+                           bcrypt, cryptography, prometheus-client
+  requirements-dev.txt   — added ruff, mypy, pytest-asyncio, anyio[trio],
+                           fakeredis, testcontainers[postgres]
+
+All T01 acceptance criteria: ✅ (2/2 tests pass — verified with pgvector/pgvector:pg16 container)
+
+**Known implementation details Codex must respect for T02+:**
+
+1. `alembic/env.py` reads `DATABASE_URL` from `os.environ` directly — NOT via `get_settings()`.
+   Reason: `pydantic.PostgresDsn` normalises the URL and strips the `+asyncpg` driver suffix,
+   which breaks SQLAlchemy async engine selection. Do not "fix" this.
+
+2. `alembic/versions/0001_initial_schema.py` — the pgvector extension creation is conditional:
+   if `vector` is not in `pg_available_extensions`, the `ticket_embeddings.embedding` column
+   falls back to `TEXT`. This is intentional for dev environments without pgvector.
+
+3. The `downgrade()` function must revoke role privileges before `DROP ROLE`. The migration
+   already contains the correct `DO $$ IF EXISTS ... REVOKE ALL ... END $$` block.
+   Do not simplify or remove it — `alembic_version` retains grants and blocks DROP ROLE.
+
+4. Dependencies are installed in `.venv` at the project root. To run tests:
+     .venv/bin/pytest tests/ -x -q
+   If Docker is available, migration tests use `pgvector/pgvector:pg16` container.
+   Fallback order: Docker → `TEST_DATABASE_URL` env var → local Postgres socket.
+
+5. Codex may install missing Python packages into `.venv` and update `requirements.txt` /
+   `requirements-dev.txt`. Use `.venv/bin/pip install <pkg>` — do not create a new venv.
+
+═══════════════════════════════════════════════════════════════════════
+PROCEED TO T02
+═══════════════════════════════════════════════════════════════════════
+
+Your next task is **T02 · SQLAlchemy Async Engine + Session Management**.
+Read docs/tasks.md §T02 now before writing any code.
+Confirm T01 output files exist on disk before starting:
+  - alembic.ini
+  - alembic/env.py
+  - alembic/versions/0001_initial_schema.py
+  - app/config.py (with database_url field)
 
 ---
 

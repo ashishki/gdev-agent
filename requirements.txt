@@ -2,9 +2,17 @@ fastapi
 uvicorn
 pydantic
 pydantic-settings
+python-dotenv
+alembic
+asyncpg
+sqlalchemy[asyncio]
 anthropic
 httpx
 redis
 google-api-python-client
 google-auth
 tenacity
+python-jose[cryptography]
+bcrypt
+cryptography
+prometheus-client
