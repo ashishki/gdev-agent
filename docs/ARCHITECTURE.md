@@ -31,7 +31,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 
 ---
 
-## 2. Current System State (2026-02-28)
+## 2. Current System State (2026-03-03)
 
 ### 2.1 Component Status
 
@@ -67,6 +67,9 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
 | `RATE_LIMIT_BURST` enforcement | `app/middleware/rate_limit.py` | ✅ Implemented |
 | LLM cost tracking (`cost_usd`) | `app/agent.py`, `AuditLogEntry` | ✅ Implemented |
+| **Alembic async migrations (16-table schema, RLS, roles)** | `alembic/`, `alembic/versions/0001_initial_schema.py` | ✅ T01 (2026-03-03) |
+| **Async SQLAlchemy engine + session factory** | `app/db.py` | ✅ T02 (2026-03-03) |
+| **TenantRegistry (Redis cache + Postgres fallback)** | `app/tenant_registry.py` | ✅ T03 (2026-03-03) |
 
 ### 2.2 Repository Layout
 
@@ -79,9 +82,11 @@ gdev-agent/
 │   ├── agent.py             # AgentService: guard → classify → propose → output_guard → route
 │   ├── llm_client.py        # LLMClient: Claude tool_use loop → TriageResult
 │   ├── logging.py           # JsonFormatter + REQUEST_ID ContextVar
+│   ├── db.py                # make_engine(), make_session_factory(), get_db_session()
 │   ├── store.py             # EventStore: optional SQLite WAL event log
 │   ├── approval_store.py    # RedisApprovalStore: put/pop/get pending decisions
 │   ├── dedup.py             # DedupCache: 24 h idempotency by message_id
+│   ├── tenant_registry.py   # TenantRegistry: tenant config cache (Redis TTL 300s + Postgres)
 │   ├── guardrails/
 │   │   └── output_guard.py  # OutputGuard: secret scan, URL allowlist, confidence floor
 │   ├── middleware/
@@ -95,10 +100,15 @@ gdev-agent/
 │       ├── __init__.py      # TOOL_REGISTRY: dict[str, ToolHandler]
 │       ├── ticketing.py     # create_ticket() — Linear or stub
 │       └── messenger.py     # send_reply() — Telegram or stub
+├── alembic/
+│   ├── env.py               # async engine config; reads DATABASE_URL from os.environ
+│   └── versions/
+│       └── 0001_initial_schema.py  # 16 tables, RLS policies, gdev_app/gdev_admin roles
+├── alembic.ini
 ├── eval/
 │   ├── runner.py            # run_eval(): accuracy + per-label + guard_block_rate
 │   └── cases.jsonl          # 25 labelled test cases
-├── tests/                   # 11 test modules (fakeredis, httpx mocks)
+├── tests/                   # 17 test modules (fakeredis, httpx mocks, testcontainers)
 ├── n8n/
 │   ├── workflow_triage.json
 │   ├── workflow_approval_callback.json
@@ -571,9 +581,13 @@ from `/approve` as terminal — not retriable.
 | `pending:{pending_id}` | `APPROVAL_TTL_SECONDS` | Durable approval decision |
 | `ratelimit:{user_id}` | 60 s (sliding window) | Rate limit counter |
 | `ratelimit_burst:{user_id}` | 10 s | Burst rate limit counter |
+| `tenant:{tenant_id}:config` | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
+| `jwt:blocklist:{jti}` | Token remaining lifetime | Revoked JWT flag (T05, pending) |
 
-**Invariant:** These four prefixes are exclusive. No other Redis key may use these prefixes.
+**Invariant:** These prefixes are exclusive. No other Redis key may use these prefixes.
 New features requiring Redis storage must define new prefixes and document them here.
+Call `TenantRegistry.invalidate(tenant_id)` explicitly after any tenant config change — TTL
+expiry alone is not a substitute for immediate invalidation.
 
 ### 6.3 Approval TTL & Expiry
 

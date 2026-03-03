@@ -170,7 +170,7 @@ All keys are namespaced by `{tenant_id}` to prevent cross-tenant collision.
 | `{tenant_id}:dedup:{message_id}` | STRING | 86400 s | `"1"` (existence flag) |
 | `{tenant_id}:ratelimit:{user_id}` | ZSET | 60 s (sliding) | Request timestamps |
 | `{tenant_id}:pending:{pending_id}` | STRING (JSON) | `APPROVAL_TTL_SECONDS` | Serialized `PendingDecision` |
-| `{tenant_id}:config` | STRING (JSON) | 300 s | Cached tenant config |
+| `tenant:{tenant_id}:config` | STRING (JSON) | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
 | `jwt:blocklist:{jti}` | STRING | Token expiry | `"1"` (revoked flag) |
 
 ---
