@@ -99,6 +99,7 @@ class ApproveResponse(BaseModel):
 class AuthTokenRequest(BaseModel):
     """Credentials payload for POST /auth/token."""
 
+    tenant_slug: str = Field(..., min_length=1)
     email: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
 

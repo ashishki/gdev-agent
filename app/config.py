@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     approve_secret: str | None = None
     rate_limit_rpm: int = 10
     rate_limit_burst: int = 3
+    auth_rate_limit_attempts: int = 5
     linear_api_key: str | None = None
     linear_team_id: str | None = None
     telegram_bot_token: str | None = None

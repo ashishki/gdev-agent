@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -68,11 +69,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 if not isinstance(email, str) or not email.strip():
                     return await call_next(request)
 
-                auth_key = f"auth_ratelimit:{email.strip().lower()}"
+                email_hash = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
+                auth_key = f"auth_ratelimit:{email_hash}"
                 auth_count = int(self.redis.incr(auth_key))
                 if auth_count == 1:
                     self.redis.expire(auth_key, 60)
-                if auth_count > 5:
+                if auth_count > self.settings.auth_rate_limit_attempts:
                     return JSONResponse(
                         {"detail": "Rate limit exceeded"},
                         status_code=429,

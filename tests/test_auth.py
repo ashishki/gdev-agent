@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -228,8 +229,16 @@ class _ResultStub:
 
 
 class _SessionStub:
-    def __init__(self, row: dict[str, object] | None) -> None:
+    def __init__(
+        self,
+        row: dict[str, object] | None,
+        execute_calls: list[tuple[str, dict[str, object]]],
+        known_tenant_slug: str = "tenant-a",
+    ) -> None:
         self._row = row
+        self._execute_calls = execute_calls
+        self._known_tenant_slug = known_tenant_slug
+        self._tenant_context_valid = False
 
     async def __aenter__(self) -> "_SessionStub":
         return self
@@ -237,23 +246,39 @@ class _SessionStub:
     async def __aexit__(self, exc_type, exc, tb) -> None:
         return None
 
+    def begin(self):
+        return self
+
     async def execute(self, statement, params):
-        _ = statement, params
-        return _ResultStub(self._row)
+        self._execute_calls.append((str(statement), params))
+        sql = str(statement).lower()
+        if "set_config(" in sql:
+            self._tenant_context_valid = params.get("tenant_slug") == self._known_tenant_slug
+            return _ResultStub({"set_config": "ok"})
+        if "from tenant_users" in sql and self._tenant_context_valid:
+            return _ResultStub(self._row)
+        return _ResultStub(None)
 
 
 class _SessionFactoryStub:
-    def __init__(self, row: dict[str, object] | None) -> None:
+    def __init__(self, row: dict[str, object] | None, known_tenant_slug: str = "tenant-a") -> None:
         self._row = row
+        self._known_tenant_slug = known_tenant_slug
+        self.execute_calls: list[tuple[str, dict[str, object]]] = []
 
     def __call__(self) -> _SessionStub:
-        return _SessionStub(self._row)
+        return _SessionStub(self._row, self.execute_calls, self._known_tenant_slug)
 
 
-def _auth_request(row: dict[str, object] | None, settings: Settings | None = None) -> Request:
+def _auth_request(
+    row: dict[str, object] | None,
+    settings: Settings | None = None,
+    known_tenant_slug: str = "tenant-a",
+) -> Request:
+    session_factory = _SessionFactoryStub(row, known_tenant_slug=known_tenant_slug)
     state = SimpleNamespace(
         settings=settings or Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8),
-        db_session_factory=_SessionFactoryStub(row),
+        db_session_factory=session_factory,
     )
     return _request("POST", "/auth/token", app_state=state)
 
@@ -297,9 +322,9 @@ async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
     monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda candidate, stored: (
         candidate == password.encode("utf-8") and stored == b"stored-hash"
     ))
-    request = _auth_request(row, settings=settings)
+    request = _auth_request(row, settings=settings, known_tenant_slug="tenant-a")
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(email="agent@example.com", password=password),
+        AuthTokenRequest(tenant_slug="tenant-a", email="agent@example.com", password=password),
         request,
     )
 
@@ -311,6 +336,10 @@ async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
     assert claims["sub"] == user_id
     assert claims["tenant_id"] == tenant_id
     assert claims["role"] == "support_agent"
+    execute_calls = request.app.state.db_session_factory.execute_calls
+    assert len(execute_calls) == 2
+    assert "set_config" in execute_calls[0][0].lower()
+    assert execute_calls[0][1] == {"tenant_slug": "tenant-a"}
 
 
 @pytest.mark.asyncio
@@ -327,8 +356,12 @@ async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(monke
         "password_hash": "stored-hash",
     }
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(email="viewer@example.com", password="wrong-password"),
-        _auth_request(row),
+        AuthTokenRequest(
+            tenant_slug="tenant-a",
+            email="viewer@example.com",
+            password="wrong-password",
+        ),
+        _auth_request(row, known_tenant_slug="tenant-a"),
     )
 
     assert isinstance(response, JSONResponse)
@@ -345,8 +378,8 @@ async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(monke
 async def test_auth_token_unknown_email_returns_same_401_shape(monkeypatch) -> None:
     monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(email="missing@example.com", password="pw"),
-        _auth_request(None),
+        AuthTokenRequest(tenant_slug="tenant-a", email="missing@example.com", password="pw"),
+        _auth_request(None, known_tenant_slug="tenant-a"),
     )
 
     assert isinstance(response, JSONResponse)
@@ -361,7 +394,7 @@ async def test_auth_token_unknown_email_returns_same_401_shape(monkeypatch) -> N
 async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
     middleware = RateLimitMiddleware(
         app=None,
-        settings=Settings(),
+        settings=Settings(auth_rate_limit_attempts=5),
         redis_client=fakeredis.FakeRedis(),
     )
 
@@ -373,13 +406,19 @@ async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
 
     for _ in range(5):
         response = await middleware.dispatch(
-            _request_with_body("/auth/token", b'{"email":"user@example.com","password":"pw"}'),
+            _request_with_body(
+                "/auth/token",
+                b'{"tenant_slug":"tenant-a","email":"user@example.com","password":"pw"}',
+            ),
             unauthorized,
         )
         assert response.status_code == 401
 
     blocked = await middleware.dispatch(
-        _request_with_body("/auth/token", b'{"email":"user@example.com","password":"pw"}'),
+        _request_with_body(
+            "/auth/token",
+            b'{"tenant_slug":"tenant-a","email":"user@example.com","password":"pw"}',
+        ),
         unauthorized,
     )
     assert blocked.status_code == 429
@@ -402,9 +441,89 @@ async def test_auth_token_uses_bcrypt_checkpw(monkeypatch) -> None:
         "password_hash": "stored-hash",
     }
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(email="user@example.com", password="pw"),
-        _auth_request(row),
+        AuthTokenRequest(tenant_slug="tenant-a", email="user@example.com", password="pw"),
+        _auth_request(row, known_tenant_slug="tenant-a"),
     )
 
     assert isinstance(response, AuthTokenResponse)
     assert seen
+
+
+@pytest.mark.asyncio
+async def test_auth_token_unknown_tenant_slug_returns_401(monkeypatch) -> None:
+    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
+    row = {
+        "user_id": str(uuid4()),
+        "tenant_id": str(uuid4()),
+        "role": "viewer",
+        "password_hash": "stored-hash",
+    }
+    response = await auth_module.create_auth_token(
+        AuthTokenRequest(tenant_slug="tenant-x", email="user@example.com", password="pw"),
+        _auth_request(row, known_tenant_slug="tenant-a"),
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_rate_limit_uses_hashed_email_key() -> None:
+    redis_client = fakeredis.FakeRedis()
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(auth_rate_limit_attempts=5),
+        redis_client=redis_client,
+    )
+
+    async def unauthorized(_request):
+        return JSONResponse(
+            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            status_code=401,
+        )
+
+    email = "hashme@example.com"
+    hashed = hashlib.sha256(email.lower().encode("utf-8")).hexdigest()[:16]
+    response = await middleware.dispatch(
+        _request_with_body(
+            "/auth/token",
+            b'{"tenant_slug":"tenant-a","email":"hashme@example.com","password":"pw"}',
+        ),
+        unauthorized,
+    )
+    assert response.status_code == 401
+    assert str(redis_client.get(f"auth_ratelimit:{hashed}")) in {"1", "b'1'"}
+    assert redis_client.get("auth_ratelimit:hashme@example.com") is None
+
+
+@pytest.mark.asyncio
+async def test_auth_rate_limit_attempts_uses_settings_value() -> None:
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(auth_rate_limit_attempts=1),
+        redis_client=fakeredis.FakeRedis(),
+    )
+
+    async def unauthorized(_request):
+        return JSONResponse(
+            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            status_code=401,
+        )
+
+    first = await middleware.dispatch(
+        _request_with_body(
+            "/auth/token",
+            b'{"tenant_slug":"tenant-a","email":"user@example.com","password":"pw"}',
+        ),
+        unauthorized,
+    )
+    second = await middleware.dispatch(
+        _request_with_body(
+            "/auth/token",
+            b'{"tenant_slug":"tenant-a","email":"user@example.com","password":"pw"}',
+        ),
+        unauthorized,
+    )
+
+    assert first.status_code == 401
+    assert second.status_code == 429

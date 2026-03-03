@@ -78,6 +78,31 @@ async def _role_bypassrls(database_url: str, role_name: str) -> bool | None:
         await engine.dispose()
 
 
+async def _column_exists(database_url: str, table_name: str, column_name: str) -> bool:
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = :table_name
+                      AND column_name = :column_name
+                    LIMIT 1
+                    """
+                ),
+                {"table_name": table_name, "column_name": column_name},
+            )
+            return result.first() is not None
+    finally:
+        await engine.dispose()
+
+
 def _docker_available() -> bool:
     """Return True if Docker daemon is reachable."""
     try:
@@ -107,6 +132,10 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
     gdev_admin_bypassrls = asyncio.run(_role_bypassrls(async_url, "gdev_admin"))
     assert gdev_admin_bypassrls is True
+    tenant_users_has_password_hash = asyncio.run(
+        _column_exists(async_url, "tenant_users", "password_hash")
+    )
+    assert tenant_users_has_password_hash is True
 
     command.downgrade(cfg, "base")
     downgraded = asyncio.run(_public_tables(async_url))

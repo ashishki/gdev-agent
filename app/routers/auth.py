@@ -24,18 +24,36 @@ _DUMMY_PASSWORD_HASH = b"$2b$12$u6v1GZz.C7Djv7x50j0fAe9s4qjIicqW0ShC0f9f0rYidlnx
 async def create_auth_token(payload: AuthTokenRequest, request: Request):
     """Authenticate a user and issue a JWT."""
     async with request.app.state.db_session_factory() as session:
-        result = await session.execute(
-            text(
-                """
-                SELECT user_id, tenant_id, role, password_hash
-                FROM tenant_users
-                WHERE lower(email) = lower(:email) AND is_active = TRUE
-                LIMIT 1
-                """
-            ),
-            {"email": payload.email},
-        )
-        row = result.mappings().first()
+        async with session.begin():
+            await session.execute(
+                text(
+                    """
+                    SELECT set_config(
+                        'app.current_tenant_id',
+                        (
+                            SELECT tenant_id::text
+                            FROM tenants
+                            WHERE slug = :tenant_slug AND is_active = TRUE
+                            LIMIT 1
+                        ),
+                        TRUE
+                    )
+                    """
+                ),
+                {"tenant_slug": payload.tenant_slug},
+            )
+            result = await session.execute(
+                text(
+                    """
+                    SELECT user_id, tenant_id, role, password_hash
+                    FROM tenant_users
+                    WHERE lower(email) = lower(:email) AND is_active = TRUE
+                    LIMIT 1
+                    """
+                ),
+                {"email": payload.email},
+            )
+            row = result.mappings().first()
 
     candidate_password = payload.password.encode("utf-8")
     email_hash = hashlib.sha256(payload.email.lower().encode("utf-8")).hexdigest()

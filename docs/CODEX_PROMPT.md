@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅ (with blockers)
-**Next task:** T06B · Fix auth endpoint blockers before T07
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ⬜
+**Next task:** T07 · Role Enforcement on All Existing Endpoints
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -47,6 +47,26 @@ P1-05 ✅ RESOLVED (T00A) — Redis URL removed from startup RuntimeError
 
 P1-03 ✅ RESOLVED (T00B) — alembic/versions/0002_grant_admin_bypassrls.py created
 
+─── T07 (Role Enforcement on All Existing Endpoints) ────────────────
+Files: app/main.py(+require_role("support_agent") on POST /approve),
+       tests/test_rbac.py (new)
+Enforcement matrix applied to EXISTING routes:
+  POST /webhook       → HMAC only (no JWT role check — intentional, do not change)
+  POST /approve       → require_role("support_agent") added + existing HMAC secret kept
+  GET  /health        → no auth (public)
+  POST /auth/token    → no auth (public)
+  Future routes (GET /tickets, GET /audit etc.) → require_role() added at creation time
+Tests: tests/test_rbac.py — viewer → /approve → 403; support_agent → 200; tenant_admin → 200
+Baseline after T07: TBD
+
+─── T06B (Fix auth endpoint blockers) ────────────────────────────────
+Files: alembic/versions/0003_add_password_hash_to_tenant_users.py,
+       app/routers/auth.py(+tenant_slug + set_config RLS),
+       app/schemas.py(+tenant_slug in AuthTokenRequest),
+       app/middleware/rate_limit.py(+sha256 key, +settings.auth_rate_limit_attempts),
+       app/config.py(+auth_rate_limit_attempts=5)
+All T06 blockers resolved. Baseline: 82 pass, 1 skipped.
+
 ─── T06 (RBAC — POST /auth/token + require_role) ─────────────────────
 Files: app/routers/auth.py (79 lines), app/schemas.py(+AuthTokenRequest/Response),
        app/middleware/rate_limit.py(+/auth/token branch),
@@ -55,7 +75,7 @@ Files: app/routers/auth.py (79 lines), app/schemas.py(+AuthTokenRequest/Response
 Public API (do NOT change — T07+ depend on it):
   POST /auth/token — body: {email, password} → {access_token, token_type, expires_in}
   require_role(*roles) — already in app/dependencies.py (T05)
-  Rate limit key: auth_ratelimit:{email_lower} — 5 attempts / 60 s
+  Rate limit key: auth_ratelimit:{sha256(lower(email))[:16]} — 5 attempts / 60 s (PII-safe)
 Known good:
   - _DUMMY_PASSWORD_HASH prevents timing-based user enumeration ✅
   - email_hash (sha256) in logs, never raw email ✅
@@ -146,33 +166,30 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T06B (fix auth blockers), THEN T07
+PROCEED TO T07
 ═══════════════════════════════════════════════════════════════════════
 
-T06 ✅ code complete but has 2 production blockers. Fix T06B before T07.
+T06B ✅ complete. Baseline: 82 pass, 1 skipped. All auth blockers resolved.
+Phase 2 review planned after T08.
 
-T06B checklist:
-  ☐ T06-01: create alembic/versions/0003_add_password_hash_to_tenant_users.py
-            upgrade:   op.add_column('tenant_users', sa.Column('password_hash', sa.Text(), nullable=True))
-            downgrade: op.drop_column('tenant_users', 'password_hash')
-  ☐ T06-02: fix RLS bypass in auth.py — add tenant_slug to AuthTokenRequest;
-            use it to set tenant context before SELECT tenant_users
-            OR document use of separate admin session (confirm with architecture)
-  ☐ T06-03: hash email in rate-limit key: hashlib.sha256(email.lower().encode()).hexdigest()[:16]
-  ☐ T06-04: add auth_rate_limit_attempts: int = 5 to Settings; use in rate_limit.py
-  ☐ run: .venv/bin/pytest tests/ -x -q → still 79 pass, 1 skipped
-
-
-
-
-Your next task is **T05 · JWT Middleware + Tenant Context Injection**.
-Read docs/tasks.md §T05 now before writing any code.
+Your next task is **T07 · Role Enforcement on All Existing Endpoints**.
+Read docs/tasks.md §T07 now before writing any code.
 
 Confirm these files exist before starting:
-  app/tenant_registry.py      — TenantRegistry (T05 depends on T03; P1-01 must be fixed)
-  app/middleware/signature.py — existing middleware stack pattern to follow
-  app/main.py                 — middleware registration pattern (add JWTMiddleware here)
-  app/config.py               — add jwt_secret, jwt_algorithm, jwt_token_expiry_hours
+  app/main.py                  — existing route handlers (/webhook, /approve, /health)
+  app/routers/auth.py          — POST /auth/token (exempt from role enforcement)
+  app/dependencies.py          — require_role() dependency factory (T05)
+  app/middleware/auth.py       — JWTMiddleware, sets request.state.role (T05)
+
+Pre-flight notes:
+  - POST /webhook is HMAC-only; T07 enforcement matrix explicitly exempts it from JWT role check.
+    Do NOT add require_role() to /webhook — HMAC auth is the sole guard.
+  - POST /approve currently uses X-Approve-Secret header. Per enforcement matrix, add
+    require_role("support_agent") as a SECOND gate (keep the HMAC secret check too).
+  - Endpoints GET /tickets, GET /audit, etc. do not exist yet. T07 only touches existing routes.
+    Future routes will add require_role() at creation time (T08+).
+  - tests/test_rbac.py must cover: viewer → /approve → 403; support_agent → /approve → succeeds;
+    tenant_admin → /approve → succeeds.
 
 ---
 
