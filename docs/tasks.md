@@ -386,7 +386,7 @@ Add a separate, stricter limit: 5 attempts per user per 60 seconds.
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T05
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Apply `require_role()` dependency to all route handlers. Apply `tenant_id` scoping to all

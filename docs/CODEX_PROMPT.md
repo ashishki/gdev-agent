@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ⬜
-**Next task:** T07 · Role Enforcement on All Existing Endpoints
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅
+**Next task:** T08 · Postgres-Backed EventStore (Tickets + Audit Log)
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -48,16 +48,17 @@ P1-05 ✅ RESOLVED (T00A) — Redis URL removed from startup RuntimeError
 P1-03 ✅ RESOLVED (T00B) — alembic/versions/0002_grant_admin_bypassrls.py created
 
 ─── T07 (Role Enforcement on All Existing Endpoints) ────────────────
-Files: app/main.py(+require_role("support_agent") on POST /approve),
-       tests/test_rbac.py (new)
+Files: app/main.py(+require_role("support_agent", "tenant_admin") on POST /approve),
+       tests/test_rbac.py (74 lines, new)
 Enforcement matrix applied to EXISTING routes:
   POST /webhook       → HMAC only (no JWT role check — intentional, do not change)
-  POST /approve       → require_role("support_agent") added + existing HMAC secret kept
+  POST /approve       → require_role("support_agent", "tenant_admin"); X-Approve-Secret kept
   GET  /health        → no auth (public)
   POST /auth/token    → no auth (public)
   Future routes (GET /tickets, GET /audit etc.) → require_role() added at creation time
-Tests: tests/test_rbac.py — viewer → /approve → 403; support_agent → 200; tenant_admin → 200
-Baseline after T07: TBD
+Key pattern: `_: None = require_role("support_agent", "tenant_admin")` as default param.
+Tests: 3 new ✅ — viewer → 403; support_agent → passes; tenant_admin → passes
+Baseline: 85 pass, 1 skipped
 
 ─── T06B (Fix auth endpoint blockers) ────────────────────────────────
 Files: alembic/versions/0003_add_password_hash_to_tenant_users.py,
@@ -166,30 +167,33 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T07
+PROCEED TO T08
 ═══════════════════════════════════════════════════════════════════════
 
-T06B ✅ complete. Baseline: 82 pass, 1 skipped. All auth blockers resolved.
+T07 ✅ complete. Baseline: 85 pass, 1 skipped.
 Phase 2 review planned after T08.
 
-Your next task is **T07 · Role Enforcement on All Existing Endpoints**.
-Read docs/tasks.md §T07 now before writing any code.
+Your next task is **T08 · Postgres-Backed EventStore (Tickets + Audit Log)**.
+Read docs/tasks.md §T08 now before writing any code.
 
 Confirm these files exist before starting:
-  app/main.py                  — existing route handlers (/webhook, /approve, /health)
-  app/routers/auth.py          — POST /auth/token (exempt from role enforcement)
-  app/dependencies.py          — require_role() dependency factory (T05)
-  app/middleware/auth.py       — JWTMiddleware, sets request.state.role (T05)
+  app/store.py                 — existing EventStore to rewrite (keep public interface)
+  app/agent.py                 — passes EventStore calls; must also receive tenant_id
+  app/schemas.py               — add tenant_id to AuditLogEntry, WebhookRequest
+  app/db.py                    — make_session_factory(); get_db_session() pattern (T02)
+  alembic/versions/            — tables already exist (T01): tickets, ticket_classifications,
+                                 ticket_extracted_fields, proposed_actions, audit_log
 
 Pre-flight notes:
-  - POST /webhook is HMAC-only; T07 enforcement matrix explicitly exempts it from JWT role check.
-    Do NOT add require_role() to /webhook — HMAC auth is the sole guard.
-  - POST /approve currently uses X-Approve-Secret header. Per enforcement matrix, add
-    require_role("support_agent") as a SECOND gate (keep the HMAC secret check too).
-  - Endpoints GET /tickets, GET /audit, etc. do not exist yet. T07 only touches existing routes.
-    Future routes will add require_role() at creation time (T08+).
-  - tests/test_rbac.py must cover: viewer → /approve → 403; support_agent → /approve → succeeds;
-    tenant_admin → /approve → succeeds.
+  - Write sequence must be a SINGLE transaction: tickets → ticket_classifications →
+    ticket_extracted_fields → proposed_actions → audit_log. Any failure rolls back all.
+  - user_id on tickets row must be SHA-256(user_id) — never the raw value (PII rule).
+  - tenant_id on every row must match JWT/webhook tenant; enforce at application level too
+    (RLS is second layer, not sole guard).
+  - Keep existing EventStore public interface stable — agent.py calls process_webhook()
+    which invokes store.*; callers must not break.
+  - Existing eval tests mock EventStore; they must continue passing after the rewrite.
+  - tests/test_store.py uses testcontainers Postgres (same pattern as test_migrations.py).
 
 ---
 
