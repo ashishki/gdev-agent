@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.4
+# Codex Implementation Agent Prompt v2.5
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01–T04 complete)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — Phase 1 review complete; T00A/T00B added)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -36,6 +36,47 @@ Public API (do NOT change — T04+ depend on it):
   async TenantRegistry.invalidate(tenant_id: UUID) -> None
   TenantRegistry._cache_key(tid) -> "tenant:{tid}:config"  (TTL 300 s)
 Tests: 5 new ✅
+
+─── Phase 1 Review Findings (Codex must address in T00A/T00B before T05) ──────
+Full review: docs/PHASE1_REVIEW.md
+
+P1-01 · app/tenant_registry.py:45,91,95 — sync Redis calls inside async methods
+  WHAT: self._redis.get/setex/delete are synchronous and block the event loop.
+  FIX (app/main.py lifespan):
+    import redis.asyncio as aioredis
+    async_redis = aioredis.from_url(settings.redis_url)
+    app.state.tenant_registry = TenantRegistry(async_redis, db_session_factory)
+  TASK: T00A
+
+P1-02 · app/db.py:21-26 — pool_size/max_overflow crash when URL is sqlite+aiosqlite://
+  WHAT: create_async_engine() receives pool_size/max_overflow unconditionally;
+        SQLite dialect rejects these kwargs with ArgumentError.
+  FIX (app/db.py make_engine):
+    sqlite = database_url.startswith("sqlite")
+    kwargs = {} if sqlite else {"pool_size": settings.db_pool_size,
+                                "max_overflow": settings.db_max_overflow}
+    kwargs["pool_pre_ping"] = not sqlite
+    return create_async_engine(database_url, **kwargs)
+  TASK: T00A
+
+P1-03 · alembic/versions/0001_initial_schema.py:368 — gdev_admin missing BYPASSRLS
+  WHAT: gdev_admin is created without BYPASSRLS; admin cross-tenant queries return
+        zero rows silently (RLS matches NULL tenant_id = never true).
+  FIX: new migration alembic/versions/0002_grant_admin_bypassrls.py:
+    upgrade():   op.execute("ALTER ROLE gdev_admin BYPASSRLS")
+    downgrade(): op.execute("ALTER ROLE gdev_admin NOBYPASSRLS")
+  TASK: T00B
+
+P1-04 · app/store.py:19,22 — dead session_factory parameter never read
+  WHAT: EventStore.__init__ stores self._session_factory but no method uses it.
+  FIX: remove session_factory param and self._session_factory = session_factory line.
+       Remove the kwarg from app/main.py:80.
+  TASK: T00A
+
+P1-05 · app/main.py:72 — Redis URL with credentials in RuntimeError message
+  WHAT: f"Redis unavailable at startup: {settings.redis_url}" can expose credentials.
+  FIX: raise RuntimeError("Redis unavailable at startup") from exc
+  TASK: T00A
 
 ─── T04 (Per-Tenant HMAC Secret Lookup) ─────────────────────────────
 Files: app/secrets_store.py (77 lines), tests/test_secrets_store.py (93 lines)
@@ -87,14 +128,34 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T05
+PROCEED TO T00A + T00B (Phase 1 remediation) THEN T05
 ═══════════════════════════════════════════════════════════════════════
+
+**Fix before proceeding to T05.** Phase 1 review (docs/PHASE1_REVIEW.md) identified
+three blocking defects. Complete T00A and T00B first:
+
+T00A checklist (code fixes — no schema change):
+  ☐ P1-01: pass redis.asyncio.from_url() client to TenantRegistry in app/main.py
+  ☐ P1-02: skip pool_size/max_overflow in make_engine() when URL is sqlite+aiosqlite://
+  ☐ P1-04: remove dead session_factory param from EventStore.__init__
+  ☐ P1-05: remove Redis URL from RuntimeError message in app/main.py:72
+  ☐ Update test_tenant_registry.py to use AsyncMock for Redis methods
+  ☐ Add test_make_engine_sqlite_does_not_crash to test_db.py
+  ☐ Full suite: still 66 pass, 0 fail
+
+T00B checklist (migration):
+  ☐ P1-03: create alembic/versions/0002_grant_admin_bypassrls.py
+  ☐ upgrade: ALTER ROLE gdev_admin BYPASSRLS
+  ☐ downgrade: ALTER ROLE gdev_admin NOBYPASSRLS
+  ☐ Add assertion to test_migrations.py: verify rolbypassrls=true after upgrade
+
+After T00A + T00B are done, proceed to T05:
 
 Your next task is **T05 · JWT Middleware + Tenant Context Injection**.
 Read docs/tasks.md §T05 now before writing any code.
 
 Confirm these files exist before starting:
-  app/tenant_registry.py      — TenantRegistry (T05 depends on T03)
+  app/tenant_registry.py      — TenantRegistry (T05 depends on T03; P1-01 must be fixed)
   app/middleware/signature.py — existing middleware stack pattern to follow
   app/main.py                 — middleware registration pattern (add JWTMiddleware here)
   app/config.py               — add jwt_secret, jwt_algorithm, jwt_token_expiry_hours
@@ -190,6 +251,22 @@ You MUST comply with all of the following on every task.
 - Admin queries (gdev_admin role) bypass RLS. They may only appear in `app/jobs/`.
   Every admin query must include `WHERE tenant_id = :tid` as an application-level guard.
 - Every schema change requires an Alembic migration. No exceptions.
+- make_engine() must NOT pass pool_size or max_overflow when the URL scheme starts with
+  "sqlite". Detect via `database_url.startswith("sqlite")` and omit those kwargs.
+  Use NullPool (or no explicit poolclass) for SQLite; use pool_size/max_overflow only
+  for asyncpg/psycopg2 dialects. (Review finding P1-02.)
+
+── ASYNC CORRECTNESS ────────────────────────────────────────────────
+- All Redis operations inside `async def` methods must use `redis.asyncio` (aioredis-compatible
+  client, e.g., `redis.asyncio.from_url()`), NOT the synchronous `redis.StrictRedis`/`redis.Redis`.
+  Calling synchronous blocking I/O inside an `async def` without `asyncio.to_thread()` blocks the
+  event loop and stalls all concurrent requests.
+- If a synchronous Redis client is needed for middleware that runs synchronously (e.g., via
+  BaseHTTPMiddleware dispatch calling sync helpers), it must be a separate client instance from the
+  async client used in services.
+- Rule: every `self._redis.XXX()` call inside an `async def` must use an async client whose methods
+  are coroutines. Verify at code-review time: `redis.asyncio.Redis.get` returns a coroutine;
+  `redis.Redis.get` returns bytes directly. (Review finding P1-01.)
 
 ── OBSERVABILITY HOOKS ──────────────────────────────────────────────
 Every new service method must include:
