@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings
+from app.dependencies import require_role
 from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
 from app.integrations.sheets import SheetsClient
@@ -24,7 +25,13 @@ from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
 from app.routers.auth import router as auth_router
-from app.schemas import ApproveRequest, ApproveResponse, HealthResponse, WebhookRequest, WebhookResponse
+from app.schemas import (
+    ApproveRequest,
+    ApproveResponse,
+    HealthResponse,
+    WebhookRequest,
+    WebhookResponse,
+)
 from app.secrets_store import WebhookSecretStore
 from app.store import EventStore
 from app.tenant_registry import TenantRegistry
@@ -56,7 +63,9 @@ async def lifespan(app: FastAPI):
             "legacy webhook secret configured",
             extra={
                 "event": "security_degraded",
-                "context": {"reason": "WEBHOOK_SECRET is deprecated; use per-tenant encrypted secrets"},
+                "context": {
+                    "reason": "WEBHOOK_SECRET is deprecated; use per-tenant encrypted secrets"
+                },
             },
         )
     if not settings.approve_secret:
@@ -64,7 +73,9 @@ async def lifespan(app: FastAPI):
             "approve endpoint authentication disabled",
             extra={
                 "event": "security_degraded",
-                "context": {"reason": "APPROVE_SECRET not set - approve endpoint auth skipped"},
+                "context": {
+                    "reason": "APPROVE_SECRET not set - approve endpoint auth skipped"
+                },
             },
         )
     if len(settings.jwt_secret) < 32:
@@ -87,14 +98,24 @@ async def lifespan(app: FastAPI):
     tenant_registry_redis = aioredis.from_url(settings.redis_url)
     webhook_secret_store = None
     if settings.webhook_secret_encryption_key:
-        webhook_secret_store = WebhookSecretStore(db_session_factory, settings.webhook_secret_encryption_key)
+        webhook_secret_store = WebhookSecretStore(
+            db_session_factory, settings.webhook_secret_encryption_key
+        )
 
     store = EventStore(sqlite_path=settings.sqlite_log_path)
-    approval_store = RedisApprovalStore(redis_client, ttl_seconds=settings.approval_ttl_seconds)
+    approval_store = RedisApprovalStore(
+        redis_client, ttl_seconds=settings.approval_ttl_seconds
+    )
     dedup_cache = DedupCache(redis_client)
 
-    telegram_client = TelegramClient(settings.telegram_bot_token) if settings.telegram_bot_token else None
-    sheets_client = SheetsClient(settings.google_sheets_credentials_json, settings.google_sheets_id)
+    telegram_client = (
+        TelegramClient(settings.telegram_bot_token)
+        if settings.telegram_bot_token
+        else None
+    )
+    sheets_client = SheetsClient(
+        settings.google_sheets_credentials_json, settings.google_sheets_id
+    )
 
     app.state.settings = settings
     app.state.redis = redis_client
@@ -102,7 +123,9 @@ async def lifespan(app: FastAPI):
     app.state.db_session_factory = db_session_factory
     app.state.jwt_blocklist_redis = tenant_registry_redis
     app.state.webhook_secret_store = webhook_secret_store
-    app.state.tenant_registry = TenantRegistry(tenant_registry_redis, db_session_factory)
+    app.state.tenant_registry = TenantRegistry(
+        tenant_registry_redis, db_session_factory
+    )
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
         settings=settings,
@@ -167,9 +190,15 @@ def webhook(payload: WebhookRequest) -> WebhookResponse:
 
 
 @app.post("/approve", response_model=ApproveResponse)
-def approve(payload: ApproveRequest, request: Request) -> ApproveResponse:
+def approve(
+    payload: ApproveRequest,
+    request: Request,
+    _: None = require_role("support_agent", "tenant_admin"),
+) -> ApproveResponse:
     """Approve or reject a pending action."""
     provided = request.headers.get("X-Approve-Secret", "")
-    if app.state.settings.approve_secret and not hmac.compare_digest(app.state.settings.approve_secret, provided):
+    if app.state.settings.approve_secret and not hmac.compare_digest(
+        app.state.settings.approve_secret, provided
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return app.state.agent.approve(payload)
