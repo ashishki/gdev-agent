@@ -18,12 +18,12 @@ def make_engine(settings: Settings) -> AsyncEngine:
     )
     if not database_url:
         raise ValueError("DATABASE_URL or TEST_DATABASE_URL is required")
-    return create_async_engine(
-        database_url,
-        pool_size=settings.db_pool_size,
-        max_overflow=settings.db_max_overflow,
-        pool_pre_ping=True,
-    )
+    sqlite = database_url.startswith("sqlite")
+    kwargs: dict[str, int | bool] = {"pool_pre_ping": not sqlite}
+    if not sqlite:
+        kwargs["pool_size"] = settings.db_pool_size
+        kwargs["max_overflow"] = settings.db_max_overflow
+    return create_async_engine(database_url, **kwargs)
 
 
 def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

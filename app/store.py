@@ -7,8 +7,6 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 
 class EventStore:
     """Persists events to SQLite when configured."""
@@ -16,10 +14,8 @@ class EventStore:
     def __init__(
         self,
         sqlite_path: str | None = None,
-        session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self._conn: sqlite3.Connection | None = None
-        self._session_factory = session_factory
         if sqlite_path:
             self._conn = sqlite3.connect(sqlite_path, check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")

@@ -42,7 +42,7 @@ class TenantRegistry:
 
     async def get_tenant_config(self, tenant_id: UUID) -> TenantConfig:
         cache_key = self._cache_key(tenant_id)
-        cached = self._redis.get(cache_key)
+        cached = await self._redis.get(cache_key)
         if cached:
             if isinstance(cached, bytes):
                 cached = cached.decode("utf-8")
@@ -88,11 +88,11 @@ class TenantRegistry:
         serialized = asdict(tenant_config)
         serialized["tenant_id"] = str(tenant_config.tenant_id)
         serialized["daily_budget_usd"] = str(tenant_config.daily_budget_usd)
-        self._redis.setex(cache_key, self._ttl_seconds, json.dumps(serialized))
+        await self._redis.setex(cache_key, self._ttl_seconds, json.dumps(serialized))
         return tenant_config
 
     async def invalidate(self, tenant_id: UUID) -> None:
-        self._redis.delete(self._cache_key(tenant_id))
+        await self._redis.delete(self._cache_key(tenant_id))
 
     def _cache_key(self, tenant_id: UUID) -> str:
         return f"tenant:{tenant_id}:config"

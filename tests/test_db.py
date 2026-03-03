@@ -59,11 +59,27 @@ def test_make_engine_uses_test_database_url(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert engine == "engine"
     assert calls["url"] == "sqlite+aiosqlite:///:memory:"
-    assert calls["kwargs"] == {
-        "pool_size": settings.db_pool_size,
-        "max_overflow": settings.db_max_overflow,
-        "pool_pre_ping": True,
-    }
+    assert calls["kwargs"] == {"pool_pre_ping": False}
+
+
+def test_make_engine_sqlite_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(test_database_url="sqlite+aiosqlite:///:memory:")
+    calls: dict[str, object] = {}
+
+    def _fake_create_async_engine(url: str, **kwargs):
+        calls["url"] = url
+        calls["kwargs"] = kwargs
+        return "engine"
+
+    monkeypatch.setattr(db, "create_async_engine", _fake_create_async_engine)
+
+    engine = db.make_engine(settings)
+
+    assert engine == "engine"
+    assert calls["url"] == "sqlite+aiosqlite:///:memory:"
+    assert "pool_size" not in calls["kwargs"]
+    assert "max_overflow" not in calls["kwargs"]
+    assert calls["kwargs"]["pool_pre_ping"] is False
 
 
 def test_get_db_session_sets_local_tenant_id() -> None:

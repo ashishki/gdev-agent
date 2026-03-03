@@ -2,6 +2,7 @@
 
 _Reviewer: Senior Backend Engineer / Architect · Date: 2026-03-03_
 _Scope: T01 (Alembic + initial schema), T02 (async DB engine + session), T03 (TenantRegistry)_
+_Updated: 2026-03-03 — T00A complete (P1-01, P1-02, P1-04, P1-05 resolved)_
 
 ---
 
@@ -13,7 +14,7 @@ P1-01 — synchronous Redis calls inside async methods in `TenantRegistry`, whic
 event loop under any real load. P1-03 is a security gap: `gdev_admin` is created without `BYPASSRLS`,
 making all future admin-role migration steps unsafe. P1-02 is a correctness defect in `make_engine()`
 that crashes on any SQLite test URL when the engine is instantiated without mocking. Four non-critical
-issues and several doc-drift items are recorded below. **Verdict: No-Go for T05.**
+issues and several doc-drift items are recorded below. **Verdict: No-Go for T05 (original). Updated: Conditional Go — T00A complete, T00B (P1-03) pending.**
 
 ---
 
@@ -21,7 +22,7 @@ issues and several doc-drift items are recorded below. **Verdict: No-Go for T05.
 
 ---
 
-### P1-01 · Synchronous Redis client blocks the event loop in TenantRegistry
+### ~~P1-01 · Synchronous Redis client blocks the event loop in TenantRegistry~~ ✅ RESOLVED (T00A)
 
 **File:** `app/tenant_registry.py:45`, `app/tenant_registry.py:91`, `app/tenant_registry.py:95`
 
@@ -85,7 +86,7 @@ depends on TenantRegistry to resolve tenant context).
 
 ---
 
-### P1-02 · `make_engine()` passes pool_size / max_overflow unconditionally — crashes on SQLite
+### ~~P1-02 · `make_engine()` passes pool_size / max_overflow unconditionally — crashes on SQLite~~ ✅ RESOLVED (T00A)
 
 **File:** `app/db.py:21–26`
 
@@ -188,7 +189,7 @@ SELECT rolbypassrls FROM pg_roles WHERE rolname = 'gdev_admin';  -- must be TRUE
 
 ---
 
-### P1-04 · Dead parameter `session_factory` in `EventStore.__init__`
+### ~~P1-04 · Dead parameter `session_factory` in `EventStore.__init__`~~ ✅ RESOLVED (T00A)
 
 **File:** `app/store.py:19,22`; `app/main.py:80`
 
@@ -205,7 +206,7 @@ usage is also implemented. Fix in T00A (one-line diff).
 
 ---
 
-### P1-05 · Redis URL (potentially containing credentials) surfaced in RuntimeError at startup
+### ~~P1-05 · Redis URL (potentially containing credentials) surfaced in RuntimeError at startup~~ ✅ RESOLVED (T00A)
 
 **File:** `app/main.py:72`
 
@@ -286,16 +287,16 @@ tenant-namespaced Redis keys are a Phase 5 hardening item.
 
 ## Verdict
 
-**No-Go for Phase 2 (T05) start.**
+~~**No-Go for Phase 2 (T05) start.**~~ → **Conditional Go (2026-03-03, T00A complete)**
 
-Blocking items:
-- **P1-01** — synchronous Redis in async methods must be fixed before T05 depends on `TenantRegistry`
-  for tenant context injection (T05's `JWTMiddleware` will call `registry.get_tenant_config()` on every
-  request, making this a hot-path blocking call).
-- **P1-02** — make_engine SQLite pool params must be fixed before test infra expands.
-- **P1-03** — BYPASSRLS migration must ship before any background job (CostAggregator, RCAClusterer)
-  uses the `gdev_admin` connection.
+| Issue | Status |
+|-------|--------|
+| P1-01 Sync Redis in async | ✅ Fixed in T00A |
+| P1-02 SQLite pool params  | ✅ Fixed in T00A |
+| P1-04 Dead session_factory | ✅ Fixed in T00A |
+| P1-05 Redis URL in error  | ✅ Fixed in T00A |
+| **P1-03 gdev_admin BYPASSRLS** | **OPEN — T00B required** |
+| P1-06 FK constraint (agent_config_id) | Deferred to first schema task |
 
-Recommended: collect P1-01, P1-02, P1-04, P1-05 into task T00A (code fixes, no schema change).
-Collect P1-03 into task T00B (new Alembic migration `0002_grant_admin_bypassrls.py`). Both tasks
-are small and can ship as a single PR before T05 begins.
+T05 may proceed. T00B (migration `0002_grant_admin_bypassrls.py`) must ship before any background
+admin job (CostAggregator, RCAClusterer, EvalRunner) is wired up in Phase 2/3.

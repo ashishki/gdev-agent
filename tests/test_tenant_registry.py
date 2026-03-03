@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,15 +15,18 @@ class _RedisStub:
     def __init__(self) -> None:
         self.data: dict[str, str] = {}
         self.deleted: list[str] = []
+        self.get = AsyncMock(side_effect=self._get)
+        self.setex = AsyncMock(side_effect=self._setex)
+        self.delete = AsyncMock(side_effect=self._delete)
 
-    def get(self, key: str) -> str | None:
+    async def _get(self, key: str) -> str | None:
         return self.data.get(key)
 
-    def setex(self, key: str, ttl_seconds: int, value: str) -> None:
+    async def _setex(self, key: str, ttl_seconds: int, value: str) -> None:
         _ = ttl_seconds
         self.data[key] = value
 
-    def delete(self, key: str) -> None:
+    async def _delete(self, key: str) -> None:
         self.deleted.append(key)
         self.data.pop(key, None)
 
@@ -98,6 +102,8 @@ async def test_cache_hit_returns_config_without_db_call() -> None:
     assert config.slug == "tenant-a"
     assert config.daily_budget_usd == Decimal("12.3400")
     assert session_factory.calls == 0
+    redis_stub.get.assert_awaited_once()
+    redis_stub.setex.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -117,6 +123,8 @@ async def test_cache_miss_reads_db_and_populates_cache() -> None:
     assert "WHERE tenant_id = :tenant_id AND is_active = TRUE" in str(statement)
     assert params == {"tenant_id": str(tenant_id)}
     assert f"tenant:{tenant_id}:config" in redis_stub.data
+    redis_stub.get.assert_awaited_once()
+    redis_stub.setex.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -152,3 +160,4 @@ async def test_invalidate_deletes_cache_key() -> None:
 
     assert key in redis_stub.deleted
     assert key not in redis_stub.data
+    redis_stub.delete.assert_awaited_once_with(key)

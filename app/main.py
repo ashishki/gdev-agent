@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import redis
+import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -69,15 +70,16 @@ async def lifespan(app: FastAPI):
     try:
         redis_client.ping()
     except Exception as exc:
-        raise RuntimeError(f"Redis unavailable at startup: {settings.redis_url}") from exc
+        raise RuntimeError("Redis unavailable at startup") from exc
 
     db_engine = make_engine(settings)
     db_session_factory = make_session_factory(db_engine)
+    tenant_registry_redis = aioredis.from_url(settings.redis_url)
     webhook_secret_store = None
     if settings.webhook_secret_encryption_key:
         webhook_secret_store = WebhookSecretStore(db_session_factory, settings.webhook_secret_encryption_key)
 
-    store = EventStore(sqlite_path=settings.sqlite_log_path, session_factory=db_session_factory)
+    store = EventStore(sqlite_path=settings.sqlite_log_path)
     approval_store = RedisApprovalStore(redis_client, ttl_seconds=settings.approval_ttl_seconds)
     dedup_cache = DedupCache(redis_client)
 
@@ -89,7 +91,7 @@ async def lifespan(app: FastAPI):
     app.state.db_engine = db_engine
     app.state.db_session_factory = db_session_factory
     app.state.webhook_secret_store = webhook_secret_store
-    app.state.tenant_registry = TenantRegistry(redis_client, db_session_factory)
+    app.state.tenant_registry = TenantRegistry(tenant_registry_redis, db_session_factory)
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
         settings=settings,
@@ -101,6 +103,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await tenant_registry_redis.aclose()
         await db_engine.dispose()
 
 
