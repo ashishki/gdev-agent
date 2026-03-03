@@ -70,6 +70,8 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | **Alembic async migrations (16-table schema, RLS, roles)** | `alembic/`, `alembic/versions/0001_initial_schema.py` | ✅ T01 (2026-03-03) |
 | **Async SQLAlchemy engine + session factory** | `app/db.py` | ✅ T02 (2026-03-03) |
 | **TenantRegistry (Redis cache + Postgres fallback)** | `app/tenant_registry.py` | ✅ T03 (2026-03-03) |
+| **Per-tenant HMAC secret store (Fernet-encrypted, no Redis cache)** | `app/secrets_store.py` | ✅ T04 (2026-03-03) |
+| **SignatureMiddleware rewritten for per-tenant lookup via X-Tenant-Slug** | `app/middleware/signature.py` | ✅ T04 (2026-03-03) |
 
 ### 2.2 Repository Layout
 
@@ -87,6 +89,7 @@ gdev-agent/
 │   ├── approval_store.py    # RedisApprovalStore: put/pop/get pending decisions
 │   ├── dedup.py             # DedupCache: 24 h idempotency by message_id
 │   ├── tenant_registry.py   # TenantRegistry: tenant config cache (Redis TTL 300s + Postgres)
+│   ├── secrets_store.py     # WebhookSecretStore: Fernet-decrypt per-tenant HMAC secret from Postgres
 │   ├── guardrails/
 │   │   └── output_guard.py  # OutputGuard: secret scan, URL allowlist, confidence floor
 │   ├── middleware/
@@ -678,23 +681,36 @@ still works correctly, but the stripped URL may leave a trailing `.` artifact in
 
 ### 7.3 Webhook Signature Verification
 
-Inbound `/webhook` calls must include:
+Inbound `/webhook` calls must include two headers:
 
 ```
+X-Tenant-Slug: <tenant_slug>
 X-Webhook-Signature: sha256=<hex_digest>
 ```
 
-Where `<hex_digest>` = `HMAC-SHA256(WEBHOOK_SECRET, raw_request_body_bytes)`.
+Where `<hex_digest>` = `HMAC-SHA256(<per_tenant_secret>, raw_request_body_bytes)`.
 
-Middleware:
-1. Reads raw body bytes before routing.
-2. Computes expected signature.
-3. Compares with `hmac.compare_digest()` — constant-time comparison, no timing oracle.
-4. Mismatch → HTTP 401 `{"detail": "Invalid signature"}`.
+Middleware flow (`app/middleware/signature.py`):
+1. Reads raw body bytes before routing (replayed downstream via `replay_receive`).
+2. Extracts `X-Tenant-Slug` → HTTP 400 if missing.
+3. Calls `WebhookSecretStore.get_secret_by_slug(slug)`:
+   - Resolves `tenant_id` from `tenants.slug` (Postgres, no cache).
+   - Fetches `webhook_secrets.secret_ciphertext` for that tenant (most recent active row).
+   - Fernet-decrypts using `WEBHOOK_SECRET_ENCRYPTION_KEY`.
+   - Unknown slug or no active secret → HTTP 401.
+4. Computes expected signature and compares with `hmac.compare_digest()` (constant-time).
+5. Mismatch → HTTP 401 `{"detail": "Invalid signature"}`.
 
-When `WEBHOOK_SECRET` is unset, signature check is **skipped** (development mode). A `WARNING` log
-is emitted at startup when running without a webhook secret. Set `WEBHOOK_SECRET` before any
-internet-facing deployment.
+**Secrets are never cached in Redis.** Each webhook request performs a Postgres lookup.
+The secret value never appears in logs, span attributes, or error messages.
+
+**`WEBHOOK_SECRET` (legacy single-tenant env var) is deprecated.** If set at startup,
+a `WARNING` is emitted. It is no longer used for HMAC validation.
+`WEBHOOK_SECRET_ENCRYPTION_KEY` must be a Fernet key (URL-safe base64, 32 bytes).
+Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+
+When `webhook_secret_store` is absent from `app.state` (e.g. incomplete startup),
+middleware returns HTTP 503.
 
 ### 7.4 Rate Limiting
 

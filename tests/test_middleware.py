@@ -4,80 +4,219 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from types import SimpleNamespace
 
 import fakeredis
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import pytest
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 from app.config import Settings
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
+from app.secrets_store import WebhookSecretNotFoundError
+from app.tenant_registry import TenantNotFoundError
 
 
-def _build_app(secret: str | None = None, rpm: int = 10, burst: int = 3) -> FastAPI:
-    app = FastAPI()
-    settings = Settings(webhook_secret=secret, rate_limit_rpm=rpm, rate_limit_burst=burst)
-    app.add_middleware(RateLimitMiddleware, settings=settings, redis_client=fakeredis.FakeRedis())
-    app.add_middleware(SignatureMiddleware, settings=settings)
+class _SecretStoreStub:
+    def __init__(self, secrets_by_slug: dict[str, str]) -> None:
+        self._secrets_by_slug = secrets_by_slug
 
-    @app.post("/webhook")
-    async def webhook(payload: dict):
-        return {"ok": True, "user_id": payload.get("user_id")}
-
-    return app
+    async def get_secret_by_slug(self, tenant_slug: str) -> str:
+        if tenant_slug == "unknown":
+            raise TenantNotFoundError("missing")
+        secret = self._secrets_by_slug.get(tenant_slug)
+        if secret is None:
+            raise WebhookSecretNotFoundError("missing")
+        return secret
 
 
 def _sig(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-def test_missing_signature_rejected_when_secret_set() -> None:
-    client = TestClient(_build_app(secret="secret"))
-    res = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
-    assert res.status_code == 401
+def _scope(path: str, headers: dict[str, str], app_state: object | None = None) -> dict[str, object]:
+    scope_app = SimpleNamespace(state=app_state) if app_state is not None else SimpleNamespace(state=SimpleNamespace())
+    return {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "path": path,
+        "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers.items()],
+        "query_string": b"",
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "app": scope_app,
+    }
 
 
-def test_correct_signature_passes() -> None:
-    client = TestClient(_build_app(secret="secret"))
+async def _run_signature(
+    middleware: SignatureMiddleware,
+    body: bytes,
+    headers: dict[str, str],
+    app_state: object,
+) -> tuple[int, bool]:
+    sent: list[dict[str, object]] = []
+    called = {"downstream": False}
+
+    async def receive():
+        if receive.sent:
+            return {"type": "http.disconnect"}
+        receive.sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    receive.sent = False  # type: ignore[attr-defined]
+
+    async def send(message):
+        sent.append(message)
+
+    async def downstream(scope, receive, send):
+        called["downstream"] = True
+        await JSONResponse({"ok": True}, status_code=200)(scope, receive, send)
+
+    middleware.app = downstream
+    scope = _scope("/webhook", headers, app_state=app_state)
+    await middleware(scope, receive, send)
+
+    status = next(msg["status"] for msg in sent if msg["type"] == "http.response.start")
+    return int(status), called["downstream"]
+
+
+@pytest.mark.asyncio
+async def test_missing_tenant_slug_rejected() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
+    status, called = await _run_signature(
+        middleware,
+        b'{"user_id":"u1","text":"hi"}',
+        {"X-Webhook-Signature": "sha256=x"},
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
+    )
+    assert status == 400
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_correct_signature_passes() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
     body = b'{"user_id":"u1","text":"hi"}'
-    res = client.post("/webhook", data=body, headers={"X-Webhook-Signature": _sig("secret", body)})
-    assert res.status_code == 200
+    status, called = await _run_signature(
+        middleware,
+        body,
+        {
+            "X-Tenant-Slug": "tenant-a",
+            "X-Webhook-Signature": _sig("secret-a", body),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
+    )
+    assert status == 200
+    assert called is True
 
 
-def test_tampered_body_with_old_signature_rejected() -> None:
-    client = TestClient(_build_app(secret="secret"))
+@pytest.mark.asyncio
+async def test_tampered_body_with_old_signature_rejected() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
     original = b'{"user_id":"u1","text":"hi"}'
     tampered = b'{"user_id":"u1","text":"bye"}'
-    res = client.post("/webhook", data=tampered, headers={"X-Webhook-Signature": _sig("secret", original)})
-    assert res.status_code == 401
+    status, called = await _run_signature(
+        middleware,
+        tampered,
+        {
+            "X-Tenant-Slug": "tenant-a",
+            "X-Webhook-Signature": _sig("secret-a", original),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
+    )
+    assert status == 401
+    assert called is False
 
 
-def test_signature_skipped_when_secret_missing() -> None:
-    client = TestClient(_build_app(secret=None))
-    res = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
-    assert res.status_code == 200
+@pytest.mark.asyncio
+async def test_unknown_tenant_slug_rejected() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
+    body = b'{"user_id":"u1","text":"hi"}'
+    status, called = await _run_signature(
+        middleware,
+        body,
+        {
+            "X-Tenant-Slug": "unknown",
+            "X-Webhook-Signature": _sig("secret-a", body),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
+    )
+    assert status == 401
+    assert called is False
 
 
-def test_rate_limit_exceeded_for_same_user() -> None:
-    client = TestClient(_build_app(secret=None, rpm=10, burst=100))
-    for _ in range(10):
-        ok = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
-        assert ok.status_code == 200
-    blocked = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
+@pytest.mark.asyncio
+async def test_cross_tenant_secret_rejected() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
+    body = b'{"user_id":"u1","text":"hi"}'
+    status, called = await _run_signature(
+        middleware,
+        body,
+        {
+            "X-Tenant-Slug": "tenant-b",
+            "X-Webhook-Signature": _sig("secret-a", body),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a", "tenant-b": "secret-b"})),
+    )
+    assert status == 401
+    assert called is False
+
+
+def _request(body: bytes) -> Request:
+    scope = _scope("/webhook", {"Content-Type": "application/json"})
+
+    async def receive():
+        if receive.sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        receive.sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    receive.sent = False  # type: ignore[attr-defined]
+    return Request(scope, receive)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_exceeded_for_same_user() -> None:
+    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=2, rate_limit_burst=10), redis_client=fakeredis.FakeRedis())
+
+    async def ok(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
 
 
-def test_rate_limits_are_independent_per_user() -> None:
-    client = TestClient(_build_app(secret=None, rpm=1, burst=10))
-    assert client.post("/webhook", json={"user_id": "u1", "text": "hi"}).status_code == 200
-    assert client.post("/webhook", json={"user_id": "u2", "text": "hi"}).status_code == 200
+@pytest.mark.asyncio
+async def test_rate_limits_are_independent_per_user() -> None:
+    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=1, rate_limit_burst=10), redis_client=fakeredis.FakeRedis())
+
+    async def ok(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    assert (await middleware.dispatch(_request(b'{"user_id":"u2","text":"hi"}'), ok)).status_code == 200
 
 
-def test_burst_limit_exceeded_for_same_user() -> None:
-    client = TestClient(_build_app(secret=None, rpm=100, burst=3))
-    for _ in range(3):
-        assert client.post("/webhook", json={"user_id": "u1", "text": "hi"}).status_code == 200
-    blocked = client.post("/webhook", json={"user_id": "u1", "text": "hi"})
+@pytest.mark.asyncio
+async def test_burst_limit_exceeded_for_same_user() -> None:
+    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=100, rate_limit_burst=3), redis_client=fakeredis.FakeRedis())
+
+    async def ok(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    assert (await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)).status_code == 200
+    blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"

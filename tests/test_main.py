@@ -23,6 +23,7 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     monkeypatch.setattr(main.redis, "from_url", lambda *_: SimpleNamespace(ping=lambda: None))
     monkeypatch.setattr(main, "make_engine", lambda *_: engine)
     monkeypatch.setattr(main, "make_session_factory", lambda *_: object())
+    monkeypatch.setattr(main, "WebhookSecretStore", lambda *_, **__: object())
     monkeypatch.setattr(main, "EventStore", lambda **_: object())
     monkeypatch.setattr(main, "RedisApprovalStore", lambda *_, **__: object())
     monkeypatch.setattr(main, "DedupCache", lambda *_, **__: object())
@@ -33,7 +34,7 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     return warning
 
 
-def test_startup_warns_when_webhook_secret_missing(monkeypatch) -> None:
+def test_startup_no_warning_when_webhook_secret_missing(monkeypatch) -> None:
     warning = _stub_runtime(
         monkeypatch,
         Settings(anthropic_api_key="k", webhook_secret=None, approve_secret="approve-secret"),
@@ -44,11 +45,10 @@ def test_startup_warns_when_webhook_secret_missing(monkeypatch) -> None:
             pass
 
     asyncio.run(_run())
-    assert warning.call_count == 1
-    assert warning.call_args.kwargs["extra"]["event"] == "security_degraded"
+    assert warning.call_count == 0
 
 
-def test_startup_no_warning_when_webhook_secret_present(monkeypatch) -> None:
+def test_startup_warns_when_webhook_secret_present(monkeypatch) -> None:
     warning = _stub_runtime(
         monkeypatch,
         Settings(anthropic_api_key="k", webhook_secret="secret", approve_secret="approve-secret"),
@@ -59,7 +59,8 @@ def test_startup_no_warning_when_webhook_secret_present(monkeypatch) -> None:
             pass
 
     asyncio.run(_run())
-    assert warning.call_count == 0
+    assert warning.call_count == 1
+    assert warning.call_args.kwargs["extra"]["event"] == "security_degraded"
 
 
 def test_startup_warns_when_approve_secret_missing(monkeypatch) -> None:
@@ -73,7 +74,7 @@ def test_startup_warns_when_approve_secret_missing(monkeypatch) -> None:
             pass
 
     asyncio.run(_run())
-    assert warning.call_count == 1
+    assert warning.call_count == 2
     assert warning.call_args.kwargs["extra"]["event"] == "security_degraded"
 
 
@@ -123,5 +124,5 @@ def test_lifespan_creates_and_closes_db_engine(monkeypatch) -> None:
 
     asyncio.run(_run())
 
-    assert warning.call_count == 1
+    assert warning.call_count == 0
     engine.dispose.assert_awaited_once()

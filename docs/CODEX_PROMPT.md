@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.3
+# Codex Implementation Agent Prompt v2.4
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01+T02+T03 complete)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01–T04 complete)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅
-**Next task:** T04 · Per-Tenant HMAC Secret Lookup in SignatureMiddleware
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅
+**Next task:** T05 · JWT Middleware + Tenant Context Injection
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -27,7 +27,7 @@ Tests: 3 new ✅
 ─── T03 (TenantRegistry Service) ────────────────────────────────────
 Files: app/tenant_registry.py (98 lines), tests/test_tenant_registry.py (154 lines)
        app/main.py(+registry on app.state)
-Public API (Codex must NOT change this contract — T04+ depend on it):
+Public API (do NOT change — T04+ depend on it):
   TenantNotFoundError(Exception)
   @dataclass TenantConfig: tenant_id, slug, daily_budget_usd, approval_ttl_s,
     auto_approve_threshold, approval_categories, url_allowlist, is_active
@@ -35,21 +35,41 @@ Public API (Codex must NOT change this contract — T04+ depend on it):
   async TenantRegistry.get_tenant_config(tenant_id: UUID) -> TenantConfig
   async TenantRegistry.invalidate(tenant_id: UUID) -> None
   TenantRegistry._cache_key(tid) -> "tenant:{tid}:config"  (TTL 300 s)
-Tests: 5/5 ACs ✅  |  Full suite: 60 pass, 1 pre-existing fail
+Tests: 5 new ✅
 
-─── Baseline issues (pre-existing — do NOT fix unless task requires it) ─
-  1. tests/test_middleware.py::test_correct_signature_passes — FAILS (422 vs 200).
-     Cause: `data=body` sends text/plain; endpoint expects JSON. Fix is `content=body`.
-     ⚠ T04 modifies test_middleware.py — fix this test as part of T04. It is now IN SCOPE.
-  2. ruff format --check — pre-existing drift on ~20 files. ruff check (lint) = 0 errors.
-     Format only the files you create or modify in T04.
-  3. mypy app/ — pre-existing errors in app/agent.py. Out of scope until later task.
-  4. tests/test_isolation.py — does not exist yet (T09).
+─── T04 (Per-Tenant HMAC Secret Lookup) ─────────────────────────────
+Files: app/secrets_store.py (77 lines), tests/test_secrets_store.py (93 lines)
+       app/middleware/signature.py (rewritten, 81 lines)
+       app/config.py(+webhook_secret_encryption_key: str | None = None)
+       app/main.py(+webhook_secret_store on app.state)
+       tests/test_middleware.py(+188/-49 — pre-existing fail fixed, multi-tenant cases added)
+Public API (do NOT change — T05+ depend on it):
+  WebhookSecretNotFoundError(Exception)
+  WebhookSecretStore.__init__(db_session_factory, encryption_key: str)
+  async WebhookSecretStore.get_secret(tenant_id: UUID) -> str
+  async WebhookSecretStore.get_secret_by_slug(tenant_slug: str) -> str
+SignatureMiddleware flow:
+  1. X-Tenant-Slug header required → 400 if missing
+  2. WebhookSecretStore.get_secret_by_slug(slug) → 401 if not found
+  3. HMAC-SHA256 compare → 401 if mismatch
+  4. Body replayed downstream via replay_receive()
+  Secrets: never logged, never cached in Redis, never in error messages.
+  app.state.webhook_secret_store absent → 503
+Tests: 5 new ACs ✅  |  Full suite: 66 pass, 0 fail (pre-existing fail resolved)
 
-Test command (always):
+─── Baseline (clean — no pre-existing failures) ─────────────────────
+Test command (always use this, never sg docker):
   .venv/bin/pytest tests/ -q --ignore=tests/test_migrations.py
-  Expected before T04: 60 pass, 1 fail. After T04: 61+ pass, 0 pre-existing fails.
-  NEVER run tests under `sg docker -c "..."` — that env breaks pytest's tmp_path fixture.
+  Expected: 66 pass, 0 fail.
+  NOTE: Codex may report "1 error" for test_eval_runner when run under sg docker env.
+  This is a false positive — run directly and it passes. Do NOT treat it as a blocker.
+
+─── Remaining known gaps (do NOT fix until task requires it) ─────────
+  1. ruff format --check — pre-existing drift on ~20 files. ruff check (lint) = 0 errors.
+  2. mypy app/ — pre-existing errors in app/agent.py.
+  3. tests/test_isolation.py — does not exist yet (T09).
+  4. TenantRegistry uses synchronous redis client inside async methods (blocks event loop).
+     Tracked for Phase 1 review. Fix assigned to review findings, not Codex yet.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
   A. alembic/env.py reads DATABASE_URL from os.environ (NOT get_settings()).
@@ -60,20 +80,24 @@ Test command (always):
   F. make_engine() checks test_database_url first (SQLite fallback for unit tests).
   G. get_db_session() uses session.begin() + SET LOCAL; skips SET when tenant_id=None.
      Never use session-level SET — leaks across connection pool.
+  H. SignatureMiddleware reads body from ASGI receive, replays via replay_receive().
+     Do NOT refactor to read from Request object — the middleware is ASGI-level, not
+     FastAPI-level, and request body can only be consumed once.
+  I. WebhookSecretStore does NOT cache secrets in Redis. This is intentional.
+     Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T04
+PROCEED TO T05
 ═══════════════════════════════════════════════════════════════════════
 
-Your next task is **T04 · Per-Tenant HMAC Secret Lookup in SignatureMiddleware**.
-Read docs/tasks.md §T04 now before writing any code.
+Your next task is **T05 · JWT Middleware + Tenant Context Injection**.
+Read docs/tasks.md §T05 now before writing any code.
 
 Confirm these files exist before starting:
-  alembic/versions/0001_initial_schema.py  — webhook_secrets table must exist in schema
-  app/tenant_registry.py                   — TenantRegistry, TenantNotFoundError
-  app/db.py                                — get_db_session
-  app/middleware/signature.py              — existing SignatureMiddleware to modify
-  tests/test_middleware.py                 — existing tests to extend (and fix #1 above)
+  app/tenant_registry.py      — TenantRegistry (T05 depends on T03)
+  app/middleware/signature.py — existing middleware stack pattern to follow
+  app/main.py                 — middleware registration pattern (add JWTMiddleware here)
+  app/config.py               — add jwt_secret, jwt_algorithm, jwt_token_expiry_hours
 
 ---
 

@@ -212,7 +212,7 @@ class TenantConfig:
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T01, T02, T03
-**Status:** pending
+**Status:** done
 
 **Scope:**
 The current `SignatureMiddleware` uses a single global `WEBHOOK_SECRET`. Multi-tenant requires

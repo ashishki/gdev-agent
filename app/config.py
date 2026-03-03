@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     url_allowlist: list[str] = Field(default_factory=list)
     output_url_behavior: Literal["strip", "reject"] = "strip"
     webhook_secret: str | None = None
+    webhook_secret_encryption_key: str | None = None
     approve_secret: str | None = None
     rate_limit_rpm: int = 10
     rate_limit_burst: int = 3

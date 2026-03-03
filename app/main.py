@@ -22,6 +22,7 @@ from app.logging import clear_request_id, configure_logging, set_request_id
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
 from app.schemas import ApproveRequest, ApproveResponse, HealthResponse, WebhookRequest, WebhookResponse
+from app.secrets_store import WebhookSecretStore
 from app.store import EventStore
 from app.tenant_registry import TenantRegistry
 
@@ -47,12 +48,12 @@ async def lifespan(app: FastAPI):
     """Initialize runtime dependencies on startup."""
     settings = get_settings()
     configure_logging(settings.log_level)
-    if not settings.webhook_secret:
+    if settings.webhook_secret:
         LOGGER.warning(
-            "webhook signature verification disabled",
+            "legacy webhook secret configured",
             extra={
                 "event": "security_degraded",
-                "context": {"reason": "WEBHOOK_SECRET not set - inbound signature verification skipped"},
+                "context": {"reason": "WEBHOOK_SECRET is deprecated; use per-tenant encrypted secrets"},
             },
         )
     if not settings.approve_secret:
@@ -72,6 +73,9 @@ async def lifespan(app: FastAPI):
 
     db_engine = make_engine(settings)
     db_session_factory = make_session_factory(db_engine)
+    webhook_secret_store = None
+    if settings.webhook_secret_encryption_key:
+        webhook_secret_store = WebhookSecretStore(db_session_factory, settings.webhook_secret_encryption_key)
 
     store = EventStore(sqlite_path=settings.sqlite_log_path, session_factory=db_session_factory)
     approval_store = RedisApprovalStore(redis_client, ttl_seconds=settings.approval_ttl_seconds)
@@ -84,6 +88,7 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis_client
     app.state.db_engine = db_engine
     app.state.db_session_factory = db_session_factory
+    app.state.webhook_secret_store = webhook_secret_store
     app.state.tenant_registry = TenantRegistry(redis_client, db_session_factory)
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
