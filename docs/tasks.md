@@ -32,12 +32,15 @@ _No task is started without reading its "Depends-On" chain first._
 Install Alembic, configure it for async SQLAlchemy, and produce the first migration file that
 creates all tables from `docs/data-map.md §2`.
 
-**Files to create/modify:**
+**Files to CREATE (do not exist yet — create from scratch):**
 - `alembic.ini` (root)
 - `alembic/env.py` — async engine; reads `DATABASE_URL` from settings
 - `alembic/versions/0001_initial_schema.py`
+- `tests/test_migrations.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/config.py` — add `database_url: PostgresDsn` field
-- `requirements.txt` (or `pyproject.toml`) — add `alembic`, `asyncpg`, `sqlalchemy[asyncio]`
+- `requirements.txt` or `pyproject.toml` — add `alembic`, `asyncpg`, `sqlalchemy[asyncio]`
 
 **Tables to create (migration must include all):**
 `tenants`, `tenant_users`, `api_keys`, `webhook_secrets`, `tickets`,
@@ -96,11 +99,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app;
 Create an async SQLAlchemy engine and session factory. Replace the existing SQLite `EventStore`
 with a Postgres-backed async session. Inject sessions via FastAPI dependency injection.
 
-**Files to create/modify:**
+**Files to CREATE (do not exist yet — create from scratch):**
 - `app/db.py` — `create_async_engine`, `async_sessionmaker`, `get_db_session` dependency
+- `tests/test_db.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/main.py` — create engine in lifespan; store on `app.state.db_engine`
 - `app/store.py` — refactor `EventStore` to use async SQLAlchemy session
-- `app/config.py` — `db_pool_size: int = 5`, `db_max_overflow: int = 10`
+- `app/config.py` — add `db_pool_size: int = 5`, `db_max_overflow: int = 10`
 
 **Design:**
 ```python
@@ -158,8 +164,11 @@ Never use `SET` (session-level) for this.
 Implement `TenantRegistry` that loads tenant config from Postgres and caches it in Redis with a
 5-minute TTL. Used by all middleware and services to resolve tenant settings.
 
-**Files to create/modify:**
-- `app/tenant_registry.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/tenant_registry.py`
+- `tests/test_tenant_registry.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/main.py` — instantiate `TenantRegistry` in lifespan; store on `app.state`
 
 **Schema backing this service:**
@@ -257,8 +266,12 @@ HMAC check. The JWT is then validated second.
 Implement JWT validation middleware using HS256 (v1 simplification; RS256 deferred to v2).
 Extract `tenant_id` and `role` from validated JWT claims. Inject into `request.state`.
 
-**Files to create/modify:**
-- `app/middleware/auth.py` (new) — `JWTMiddleware`
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/middleware/auth.py` — `JWTMiddleware`
+- `app/dependencies.py` — `require_role()` dependency factory
+- `tests/test_auth.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/config.py` — add `jwt_secret: str`, `jwt_algorithm: str = "HS256"`, `jwt_token_expiry_hours: int = 8`
 - `app/main.py` — add `JWTMiddleware` to middleware stack (position: before rate limit, after RequestID)
 
@@ -329,10 +342,13 @@ def require_role(*roles: str):
 Minimal token issuance endpoint. Users authenticate with email + password (bcrypt-hashed in
 `tenant_users`). Returns a short-lived JWT.
 
-**Files to create/modify:**
-- `app/routers/auth.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/routers/auth.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/main.py` — include `auth_router`
-- `app/config.py` — confirm `jwt_secret`, `jwt_token_expiry_hours`
+- `app/config.py` — confirm `jwt_secret`, `jwt_token_expiry_hours` are present
+- `tests/test_auth.py` — extend with token endpoint tests (file created in T05)
 
 **Endpoint:**
 ```
@@ -488,9 +504,13 @@ All 5 test cases pass. Any cross-tenant data return is a P0 regression.
 **Scope:**
 Implement `CostLedger` service for real-time token accounting and pre-call budget enforcement.
 
-**Files to create/modify:**
-- `app/cost_ledger.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/cost_ledger.py`
+- `tests/test_cost_ledger.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/agent.py` — add `CostLedger.check_budget()` call before each LLM call; `CostLedger.record()` after
+- `app/config.py` — add `llm_input_rate_per_1k` and `llm_output_rate_per_1k` Decimal fields
 
 **Key methods:**
 ```python
@@ -546,10 +566,13 @@ Implement all read endpoints from `docs/spec.md §8`:
 `GET /tickets`, `GET /tickets/{id}`, `GET /audit`, `GET /metrics/cost`,
 `GET /agents`, `GET /eval/runs`.
 
-**Files to create/modify:**
-- `app/routers/tickets.py` (new)
-- `app/routers/analytics.py` (new)
-- `app/routers/agents.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/routers/tickets.py`
+- `app/routers/analytics.py`
+- `app/routers/agents.py`
+- `tests/test_endpoints.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/main.py` — include new routers
 
 **Pagination:** All list endpoints use `?cursor=<ISO-timestamp>&limit=<int>` (keyset pagination
@@ -592,9 +615,12 @@ on `created_at`). Default limit 50, max 100.
 Implement agent config read and update. Update creates a new versioned row and marks the old
 one `is_current=FALSE`. Triggers `TenantRegistry.invalidate()` and an eval run (async).
 
-**Files to create/modify:**
-- `app/routers/agents.py` — add PUT handler
-- `app/agent_registry.py` (new) — `AgentRegistryService`
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/agent_registry.py` — `AgentRegistryService`
+- `tests/test_agent_registry.py`
+
+**Files to MODIFY (must exist — read before editing):**
+- `app/routers/agents.py` — add PUT handler (file created in T11)
 
 **PUT /agents/{agent_id} behavior:**
 1. Validate request body against `AgentConfigUpdate` Pydantic model.
@@ -631,9 +657,13 @@ one `is_current=FALSE`. Triggers `TenantRegistry.invalidate()` and an eval run (
 After every successful triage, generate a vector embedding of the ticket text and upsert it
 into `ticket_embeddings`. This runs as a background task (fire-and-forget after response is sent).
 
-**Files to create/modify:**
-- `app/embedding_service.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/embedding_service.py`
+- `tests/test_embedding_service.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/agent.py` — add `asyncio.create_task(embedding_service.upsert(...))` after response
+- `app/config.py` — add `voyage_api_key: str = ""`, `embedding_model: str = "voyage-3-lite"`
 
 **Embedding model:**
 Use Anthropic's `voyage-3` (or `voyage-3-lite`) via the Voyage AI API. Add `VOYAGE_API_KEY`
@@ -672,9 +702,14 @@ ON CONFLICT (ticket_id) DO UPDATE SET embedding=$3, model_version=$4, created_at
 APScheduler job that runs every 15 minutes per active tenant. Clusters recent ticket embeddings
 using pgvector ANN + DBSCAN, then summarizes each cluster with a single LLM call.
 
-**Files to create/modify:**
-- `app/jobs/rca_clusterer.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/jobs/__init__.py` (empty)
+- `app/jobs/rca_clusterer.py`
+- `tests/test_rca_clusterer.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/main.py` — register APScheduler job in lifespan
+- `app/config.py` — add `rca_lookback_hours: int = 24`, `rca_budget_per_run_usd: Decimal = Decimal("0.15")`
 
 **Algorithm:**
 ```
@@ -796,8 +831,11 @@ generate a new root span. Inject `trace_id` and `span_id` into every log record.
 **Scope:**
 Register all Prometheus metrics from `docs/observability.md §2`. Expose `/metrics` endpoint.
 
-**Files to modify:**
-- `app/metrics.py` (new) — define all counters, histograms, gauges
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/metrics.py` — define all counters, histograms, gauges
+- `tests/test_metrics.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `app/agent.py` — increment counters/histograms at appropriate points
 - `app/main.py` — add `GET /metrics` endpoint (Prometheus scrape target)
 
@@ -1010,8 +1048,11 @@ If Redis GETDEL returns None (expired/already-consumed) → HTTP 404. Do NOT wri
 Implement `POST /eval/run` (triggers eval) and `GET /eval/runs` (list history).
 Per-tenant baseline: store F1 score of the first eval run; subsequent runs alert if F1 drops > 0.02.
 
-**Files to create/modify:**
-- `app/routers/eval.py` (new)
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/routers/eval.py`
+- `tests/test_eval.py`
+
+**Files to MODIFY (must exist — read before editing):**
 - `eval/runner.py` — add `db_session` parameter; write `EvalRun` to Postgres
 - `app/main.py` — include eval router
 
