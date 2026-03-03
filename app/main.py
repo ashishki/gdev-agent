@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings
+from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
@@ -68,7 +69,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         raise RuntimeError(f"Redis unavailable at startup: {settings.redis_url}") from exc
 
-    store = EventStore(sqlite_path=settings.sqlite_log_path)
+    db_engine = make_engine(settings)
+    db_session_factory = make_session_factory(db_engine)
+
+    store = EventStore(sqlite_path=settings.sqlite_log_path, session_factory=db_session_factory)
     approval_store = RedisApprovalStore(redis_client, ttl_seconds=settings.approval_ttl_seconds)
     dedup_cache = DedupCache(redis_client)
 
@@ -77,6 +81,8 @@ async def lifespan(app: FastAPI):
 
     app.state.settings = settings
     app.state.redis = redis_client
+    app.state.db_engine = db_engine
+    app.state.db_session_factory = db_session_factory
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
         settings=settings,
@@ -85,7 +91,10 @@ async def lifespan(app: FastAPI):
         telegram_client=telegram_client,
         sheets_client=sheets_client,
     )
-    yield
+    try:
+        yield
+    finally:
+        await db_engine.dispose()
 
 
 app = FastAPI(title="gdev-agent", lifespan=lifespan)

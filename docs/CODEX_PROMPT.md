@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.1
+# Codex Implementation Agent Prompt v2.2
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01 complete)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01+T02 complete)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,59 +8,62 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Last completed task:** T01 · Alembic Setup + Initial Schema Migration — ✅ DONE
-**Next task to implement:** T02 · SQLAlchemy Async Engine + Session Management
+**Last completed tasks:** T01 ✅  T02 ✅
+**Next task to implement:** T03 · TenantRegistry Service
 
-**T01 completion summary:**
+─── T01 output (Alembic + Initial Schema) ───────────────────────────
+Files created:  alembic.ini, alembic/env.py,
+                alembic/versions/0001_initial_schema.py, tests/test_migrations.py
+Files modified: app/config.py (+database_url field), requirements.txt, requirements-dev.txt
+Tests: 2/2 pass (pgvector/pgvector:pg16 Docker container)
 
-Files created:
-  alembic.ini
-  alembic/env.py
-  alembic/versions/0001_initial_schema.py
-  tests/test_migrations.py
+─── T02 output (SQLAlchemy Async Engine + Session) ──────────────────
+Files created:  app/db.py (44 lines), tests/test_db.py (105 lines)
+Files modified: app/config.py (+test_database_url, db_pool_size, db_max_overflow)
+                app/main.py  (+make_engine/make_session_factory in lifespan,
+                               db_engine/db_session_factory on app.state)
+                app/store.py (+session_factory parameter)
+                tests/test_main.py (+db lifecycle assertions)
+Tests: 3 new (test_db.py) + updated test_main.py — all pass
 
-Files modified:
-  app/config.py          — added `database_url: PostgresDsn | None = None`
-  requirements.txt       — added alembic, asyncpg, sqlalchemy[asyncio], python-jose[cryptography],
-                           bcrypt, cryptography, prometheus-client
-  requirements-dev.txt   — added ruff, mypy, pytest-asyncio, anyio[trio],
-                           fakeredis, testcontainers[postgres]
+─── Baseline issues (pre-existing, NOT introduced by T01/T02) ───────
+These exist in the repo. Do NOT attempt to fix them unless a task explicitly requires it.
+  1. tests/test_middleware.py::test_correct_signature_passes — FAILS (422 vs 200).
+     Root cause: test sends `data=body` (text/plain) instead of `content=body` (octet-stream);
+     httpx deprecation warning confirms this. The test's local app endpoint accepts `dict`
+     which FastAPI cannot parse from text/plain.
+  2. ruff format --check — 20 files would be reformatted (repo-wide pre-existing drift).
+     ruff check (lint) passes with zero errors.
+  3. mypy app/ — pre-existing errors in app/agent.py (not in scope until a task requires it).
+  4. tests/test_isolation.py — does not exist yet; created in T09.
+  When running the full test suite, expect: 55 pass, 1 pre-existing fail (#1 above).
+  Use: .venv/bin/pytest tests/ -x -q --ignore=tests/test_migrations.py
+  Do NOT run tests under `sg docker -c "..."` — that env breaks pytest's tmp_path fixture.
 
-All T01 acceptance criteria: ✅ (2/2 tests pass — verified with pgvector/pgvector:pg16 container)
-
-**Known implementation details Codex must respect for T02+:**
-
-1. `alembic/env.py` reads `DATABASE_URL` from `os.environ` directly — NOT via `get_settings()`.
-   Reason: `pydantic.PostgresDsn` normalises the URL and strips the `+asyncpg` driver suffix,
-   which breaks SQLAlchemy async engine selection. Do not "fix" this.
-
-2. `alembic/versions/0001_initial_schema.py` — the pgvector extension creation is conditional:
-   if `vector` is not in `pg_available_extensions`, the `ticket_embeddings.embedding` column
-   falls back to `TEXT`. This is intentional for dev environments without pgvector.
-
-3. The `downgrade()` function must revoke role privileges before `DROP ROLE`. The migration
-   already contains the correct `DO $$ IF EXISTS ... REVOKE ALL ... END $$` block.
-   Do not simplify or remove it — `alembic_version` retains grants and blocks DROP ROLE.
-
-4. Dependencies are installed in `.venv` at the project root. To run tests:
-     .venv/bin/pytest tests/ -x -q
-   If Docker is available, migration tests use `pgvector/pgvector:pg16` container.
-   Fallback order: Docker → `TEST_DATABASE_URL` env var → local Postgres socket.
-
-5. Codex may install missing Python packages into `.venv` and update `requirements.txt` /
-   `requirements-dev.txt`. Use `.venv/bin/pip install <pkg>` — do not create a new venv.
+─── Implementation decisions Codex MUST NOT change ──────────────────
+  A. alembic/env.py reads DATABASE_URL from os.environ directly (NOT get_settings()).
+     Reason: pydantic PostgresDsn strips the +asyncpg driver suffix. Do not "fix" this.
+  B. create_async_engine() is called directly in make_engine() — NOT async_engine_from_config().
+  C. downgrade() contains a REVOKE block before DROP ROLE. Do not simplify or remove it.
+  D. pgvector extension creation is conditional (pg_available_extensions check). Keep it.
+  E. .venv at project root — install deps with .venv/bin/pip install <pkg>.
+  F. make_engine() checks settings.test_database_url first, then settings.database_url.
+     This is the SQLite fallback mechanism for unit tests. Do not remove it.
+  G. get_db_session() wraps the session in session.begin() (explicit transaction) and
+     executes SET LOCAL before yielding. The SET LOCAL is skipped when tenant_id is None.
+     Do NOT change this to SET (session-level) — that would break connection pool isolation.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T02
+PROCEED TO T03
 ═══════════════════════════════════════════════════════════════════════
 
-Your next task is **T02 · SQLAlchemy Async Engine + Session Management**.
-Read docs/tasks.md §T02 now before writing any code.
-Confirm T01 output files exist on disk before starting:
-  - alembic.ini
-  - alembic/env.py
-  - alembic/versions/0001_initial_schema.py
-  - app/config.py (with database_url field)
+Your next task is **T03 · TenantRegistry Service**.
+Read docs/tasks.md §T03 now before writing any code.
+
+Confirm these T01+T02 output files exist before starting:
+  alembic/versions/0001_initial_schema.py  (tenants table)
+  app/db.py                                (get_db_session dependency)
+  app/config.py                            (database_url, test_database_url fields)
 
 ---
 

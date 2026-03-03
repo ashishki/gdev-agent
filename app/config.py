@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     sqlite_log_path: str | None = None
     redis_url: str = "redis://redis:6379"
     database_url: PostgresDsn | None = None
+    test_database_url: str | None = None
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
     output_guard_enabled: bool = True
     url_allowlist: list[str] = Field(default_factory=list)
     output_url_behavior: Literal["strip", "reject"] = "strip"

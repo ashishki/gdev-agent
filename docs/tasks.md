@@ -93,7 +93,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app;
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T01
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Create an async SQLAlchemy engine and session factory. Replace the existing SQLite `EventStore`

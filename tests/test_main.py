@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -16,10 +16,13 @@ from app.schemas import ApproveRequest
 
 def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     warning = Mock()
+    engine = SimpleNamespace(dispose=AsyncMock())
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "configure_logging", lambda *_: None)
     monkeypatch.setattr(main.LOGGER, "warning", warning)
     monkeypatch.setattr(main.redis, "from_url", lambda *_: SimpleNamespace(ping=lambda: None))
+    monkeypatch.setattr(main, "make_engine", lambda *_: engine)
+    monkeypatch.setattr(main, "make_session_factory", lambda *_: object())
     monkeypatch.setattr(main, "EventStore", lambda **_: object())
     monkeypatch.setattr(main, "RedisApprovalStore", lambda *_, **__: object())
     monkeypatch.setattr(main, "DedupCache", lambda *_, **__: object())
@@ -104,3 +107,20 @@ def test_approve_allows_when_secret_matches() -> None:
     )
 
     assert response == approved
+
+
+def test_lifespan_creates_and_closes_db_engine(monkeypatch) -> None:
+    settings = Settings(anthropic_api_key="k", approve_secret="approve-secret")
+    engine = SimpleNamespace(dispose=AsyncMock())
+    warning = _stub_runtime(monkeypatch, settings)
+    monkeypatch.setattr(main, "make_engine", lambda *_: engine)
+
+    async def _run() -> None:
+        app = FastAPI()
+        async with main.lifespan(app):
+            assert app.state.db_engine is engine
+
+    asyncio.run(_run())
+
+    assert warning.call_count == 1
+    engine.dispose.assert_awaited_once()
