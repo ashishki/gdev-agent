@@ -158,7 +158,7 @@ Never use `SET` (session-level) for this.
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T01, T02
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Implement `TenantRegistry` that loads tenant config from Postgres and caches it in Redis with a
@@ -218,10 +218,13 @@ class TenantConfig:
 The current `SignatureMiddleware` uses a single global `WEBHOOK_SECRET`. Multi-tenant requires
 per-tenant secrets stored encrypted in Postgres (`webhook_secrets` table).
 
-**Files to modify:**
-- `app/middleware/signature.py`
-- `app/config.py` — add `webhook_secret_encryption_key: str` (Fernet key)
-- `app/db.py` or new `app/secrets_store.py`
+**Files to CREATE (do not exist yet — create from scratch):**
+- `app/secrets_store.py` — `WebhookSecretStore.get_secret(tenant_id) -> str` (DB lookup + Fernet decrypt)
+- `alembic/versions/0002_webhook_secret_seed.py` — optional dev seed migration inserting one test tenant+secret
+
+**Files to MODIFY (must exist — read before editing):**
+- `app/middleware/signature.py` — replace global-secret HMAC with per-tenant lookup
+- `app/config.py` — add `webhook_secret_encryption_key: str | None = None` (Fernet key)
 
 **Design:**
 - `webhook_secrets` table stores `secret_ciphertext TEXT` (Fernet-encrypted).

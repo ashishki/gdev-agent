@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.2
+# Codex Implementation Agent Prompt v2.3
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01+T02 complete)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — T01+T02+T03 complete)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,62 +8,72 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Last completed tasks:** T01 ✅  T02 ✅
-**Next task to implement:** T03 · TenantRegistry Service
+**Completed:** T01 ✅  T02 ✅  T03 ✅
+**Next task:** T04 · Per-Tenant HMAC Secret Lookup in SignatureMiddleware
 
-─── T01 output (Alembic + Initial Schema) ───────────────────────────
-Files created:  alembic.ini, alembic/env.py,
-                alembic/versions/0001_initial_schema.py, tests/test_migrations.py
-Files modified: app/config.py (+database_url field), requirements.txt, requirements-dev.txt
-Tests: 2/2 pass (pgvector/pgvector:pg16 Docker container)
+─── T01 (Alembic + Initial Schema) ──────────────────────────────────
+Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
+       tests/test_migrations.py, app/config.py(+database_url),
+       requirements.txt, requirements-dev.txt
+Tests: 2/2 ✅
 
-─── T02 output (SQLAlchemy Async Engine + Session) ──────────────────
-Files created:  app/db.py (44 lines), tests/test_db.py (105 lines)
-Files modified: app/config.py (+test_database_url, db_pool_size, db_max_overflow)
-                app/main.py  (+make_engine/make_session_factory in lifespan,
-                               db_engine/db_session_factory on app.state)
-                app/store.py (+session_factory parameter)
-                tests/test_main.py (+db lifecycle assertions)
-Tests: 3 new (test_db.py) + updated test_main.py — all pass
+─── T02 (SQLAlchemy Async Engine + Session) ─────────────────────────
+Files: app/db.py, tests/test_db.py
+       app/config.py(+test_database_url/db_pool_size/db_max_overflow)
+       app/main.py(+engine in lifespan, db_engine/db_session_factory on app.state)
+       app/store.py(+session_factory param), tests/test_main.py
+Tests: 3 new ✅
 
-─── Baseline issues (pre-existing, NOT introduced by T01/T02) ───────
-These exist in the repo. Do NOT attempt to fix them unless a task explicitly requires it.
+─── T03 (TenantRegistry Service) ────────────────────────────────────
+Files: app/tenant_registry.py (98 lines), tests/test_tenant_registry.py (154 lines)
+       app/main.py(+registry on app.state)
+Public API (Codex must NOT change this contract — T04+ depend on it):
+  TenantNotFoundError(Exception)
+  @dataclass TenantConfig: tenant_id, slug, daily_budget_usd, approval_ttl_s,
+    auto_approve_threshold, approval_categories, url_allowlist, is_active
+  TenantRegistry.__init__(redis_client, session_factory)
+  async TenantRegistry.get_tenant_config(tenant_id: UUID) -> TenantConfig
+  async TenantRegistry.invalidate(tenant_id: UUID) -> None
+  TenantRegistry._cache_key(tid) -> "tenant:{tid}:config"  (TTL 300 s)
+Tests: 5/5 ACs ✅  |  Full suite: 60 pass, 1 pre-existing fail
+
+─── Baseline issues (pre-existing — do NOT fix unless task requires it) ─
   1. tests/test_middleware.py::test_correct_signature_passes — FAILS (422 vs 200).
-     Root cause: test sends `data=body` (text/plain) instead of `content=body` (octet-stream);
-     httpx deprecation warning confirms this. The test's local app endpoint accepts `dict`
-     which FastAPI cannot parse from text/plain.
-  2. ruff format --check — 20 files would be reformatted (repo-wide pre-existing drift).
-     ruff check (lint) passes with zero errors.
-  3. mypy app/ — pre-existing errors in app/agent.py (not in scope until a task requires it).
-  4. tests/test_isolation.py — does not exist yet; created in T09.
-  When running the full test suite, expect: 55 pass, 1 pre-existing fail (#1 above).
-  Use: .venv/bin/pytest tests/ -x -q --ignore=tests/test_migrations.py
-  Do NOT run tests under `sg docker -c "..."` — that env breaks pytest's tmp_path fixture.
+     Cause: `data=body` sends text/plain; endpoint expects JSON. Fix is `content=body`.
+     ⚠ T04 modifies test_middleware.py — fix this test as part of T04. It is now IN SCOPE.
+  2. ruff format --check — pre-existing drift on ~20 files. ruff check (lint) = 0 errors.
+     Format only the files you create or modify in T04.
+  3. mypy app/ — pre-existing errors in app/agent.py. Out of scope until later task.
+  4. tests/test_isolation.py — does not exist yet (T09).
+
+Test command (always):
+  .venv/bin/pytest tests/ -q --ignore=tests/test_migrations.py
+  Expected before T04: 60 pass, 1 fail. After T04: 61+ pass, 0 pre-existing fails.
+  NEVER run tests under `sg docker -c "..."` — that env breaks pytest's tmp_path fixture.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
-  A. alembic/env.py reads DATABASE_URL from os.environ directly (NOT get_settings()).
-     Reason: pydantic PostgresDsn strips the +asyncpg driver suffix. Do not "fix" this.
-  B. create_async_engine() is called directly in make_engine() — NOT async_engine_from_config().
-  C. downgrade() contains a REVOKE block before DROP ROLE. Do not simplify or remove it.
-  D. pgvector extension creation is conditional (pg_available_extensions check). Keep it.
-  E. .venv at project root — install deps with .venv/bin/pip install <pkg>.
-  F. make_engine() checks settings.test_database_url first, then settings.database_url.
-     This is the SQLite fallback mechanism for unit tests. Do not remove it.
-  G. get_db_session() wraps the session in session.begin() (explicit transaction) and
-     executes SET LOCAL before yielding. The SET LOCAL is skipped when tenant_id is None.
-     Do NOT change this to SET (session-level) — that would break connection pool isolation.
+  A. alembic/env.py reads DATABASE_URL from os.environ (NOT get_settings()).
+  B. create_async_engine() directly in make_engine() — NOT async_engine_from_config().
+  C. downgrade() REVOKE block before DROP ROLE — keep it.
+  D. pgvector extension conditional on pg_available_extensions — keep it.
+  E. .venv at project root — use .venv/bin/pip install <pkg>.
+  F. make_engine() checks test_database_url first (SQLite fallback for unit tests).
+  G. get_db_session() uses session.begin() + SET LOCAL; skips SET when tenant_id=None.
+     Never use session-level SET — leaks across connection pool.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T03
+PROCEED TO T04
 ═══════════════════════════════════════════════════════════════════════
 
-Your next task is **T03 · TenantRegistry Service**.
-Read docs/tasks.md §T03 now before writing any code.
+Your next task is **T04 · Per-Tenant HMAC Secret Lookup in SignatureMiddleware**.
+Read docs/tasks.md §T04 now before writing any code.
 
-Confirm these T01+T02 output files exist before starting:
-  alembic/versions/0001_initial_schema.py  (tenants table)
-  app/db.py                                (get_db_session dependency)
-  app/config.py                            (database_url, test_database_url fields)
+Confirm these files exist before starting:
+  alembic/versions/0001_initial_schema.py  — webhook_secrets table must exist in schema
+  app/tenant_registry.py                   — TenantRegistry, TenantNotFoundError
+  app/db.py                                — get_db_session
+  app/middleware/signature.py              — existing SignatureMiddleware to modify
+  tests/test_middleware.py                 — existing tests to extend (and fix #1 above)
 
 ---
 
