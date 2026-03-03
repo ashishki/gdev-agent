@@ -79,27 +79,31 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · n8n integration:
 
 | Feature | Status |
 |---------|--------|
-| Claude `tool_use` classification + extraction | Implemented |
-| Input injection guard (15 pattern classes) | Implemented |
-| Output guard — secret scan + URL allowlist + confidence floor | Implemented |
-| Human-in-the-loop approval flow | Implemented |
-| Redis-backed approval store (TTL, atomic GETDEL) | Implemented |
-| Dedup cache — idempotent replay via `message_id` | Implemented |
-| HMAC-SHA256 webhook signature verification | Implemented |
-| Per-user rate limiting — minute window (Redis, `RATE_LIMIT_RPM`) | Implemented |
-| Per-user burst rate limit — 10 s window (Redis, `RATE_LIMIT_BURST`) | Implemented |
-| LLM cost tracking (token accumulation, configurable per-1k rates) | Implemented |
-| LLM transient-5xx retry (Tenacity, 3 attempts, exponential backoff) | Implemented |
-| JSON structured logging with `request_id` correlation | Implemented |
-| `latency_ms` on every executed/pending log entry | Implemented |
-| SQLite event log (WAL mode, thread-safe) | Implemented |
-| Tool registry — extensible action dispatch | Implemented |
-| Linear API — ticket creation | Implemented |
-| Telegram bot — message sending + approval buttons | Implemented |
-| Google Sheets — async audit log append | Implemented |
-| n8n workflows — triage + approval callback | Implemented |
-| Docker Compose — agent + Redis + n8n | Implemented |
-| Eval harness — 25 labelled cases, per-label accuracy | Implemented |
+| Claude `tool_use` classification + extraction | ✅ |
+| Input injection guard (15 pattern classes) | ✅ |
+| Output guard — secret scan + URL allowlist + confidence floor | ✅ |
+| Human-in-the-loop approval flow | ✅ |
+| Redis-backed approval store (TTL, atomic GETDEL) | ✅ |
+| Dedup cache — idempotent replay via `message_id` | ✅ |
+| Per-tenant HMAC-SHA256 webhook signature (Fernet-encrypted secrets in Postgres) | ✅ |
+| Per-user rate limiting — minute + burst window (Redis) | ✅ |
+| LLM cost tracking (token accumulation, configurable per-1k rates) | ✅ |
+| LLM transient-5xx retry (Tenacity, 3 attempts, exponential backoff) | ✅ |
+| JSON structured logging with `request_id` correlation | ✅ |
+| **Postgres — async SQLAlchemy engine + per-request session** | ✅ (T02) |
+| **16-table schema with Alembic migrations** | ✅ (T01) |
+| **Row-Level Security on all 15 tenant-scoped tables** | ✅ (T01) |
+| **TenantRegistry — Redis-cached (TTL 300 s) tenant config** | ✅ (T03) |
+| SQLite event log (WAL mode, optional fallback) | ✅ |
+| Tool registry — extensible action dispatch | ✅ |
+| Linear API — ticket creation | ✅ |
+| Telegram bot — message sending + approval buttons | ✅ |
+| Google Sheets — async audit log append | ✅ |
+| n8n workflows — triage + approval callback | ✅ |
+| Docker Compose — agent + Redis + n8n | ✅ |
+| Eval harness — 25 labelled cases, per-label accuracy | ✅ |
+| JWT middleware + tenant context injection | 🔜 T05 |
+| Per-tenant RBAC (`require_role()`) | 🔜 T06 |
 
 ---
 
@@ -324,59 +328,71 @@ ANTHROPIC_MODEL=claude-sonnet-4-6
 
 # Agent behaviour
 MAX_INPUT_LENGTH=2000
-AUTO_APPROVE_THRESHOLD=0.85         # confidence above this → auto-approve (low/med urgency)
+AUTO_APPROVE_THRESHOLD=0.85
 APPROVAL_CATEGORIES=billing,account_access
-APPROVAL_TTL_SECONDS=3600           # pending entries expire after this many seconds
+APPROVAL_TTL_SECONDS=3600
 
-# Storage
-REDIS_URL=redis://redis:6379        # required; used for approvals, dedup cache, rate limiting
-SQLITE_LOG_PATH=                    # empty = SQLite disabled; set to a file path to enable
+# Storage — required
+REDIS_URL=redis://redis:6379
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/gdev  # required for Postgres features
+SQLITE_LOG_PATH=                    # optional SQLite audit fallback
 
 # Security
-WEBHOOK_SECRET=                     # HMAC key for X-Webhook-Signature; empty = verification skipped
-RATE_LIMIT_RPM=10                   # max requests per user per 60 s window
-RATE_LIMIT_BURST=3                  # max requests per user per 10 s burst window
+WEBHOOK_SECRET_ENCRYPTION_KEY=      # Fernet key for per-tenant webhook secrets (recommended)
+WEBHOOK_SECRET=                     # legacy global HMAC key (deprecated; use per-tenant)
+APPROVE_SECRET=                     # Bearer token for POST /approve
+RATE_LIMIT_RPM=10
+RATE_LIMIT_BURST=3
 
-# LLM cost tracking (used for cost_usd field in audit log)
-ANTHROPIC_INPUT_COST_PER_1K=0.003  # USD per 1 000 input tokens
-ANTHROPIC_OUTPUT_COST_PER_1K=0.015 # USD per 1 000 output tokens
+# LLM cost tracking
+ANTHROPIC_INPUT_COST_PER_1K=0.003
+ANTHROPIC_OUTPUT_COST_PER_1K=0.015
 
 # Output guard
 OUTPUT_GUARD_ENABLED=true
-URL_ALLOWLIST=kb.example.com        # comma-separated; empty = all URLs stripped from LLM output
+URL_ALLOWLIST=kb.example.com        # comma-separated
 OUTPUT_URL_BEHAVIOR=strip           # strip | reject
 
-# Integrations (all optional; missing keys log a WARNING and fall back to stubs)
+# Integrations (all optional)
 LINEAR_API_KEY=
 LINEAR_TEAM_ID=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_APPROVAL_CHAT_ID=
-GOOGLE_SHEETS_CREDENTIALS_JSON=     # service-account JSON string
+GOOGLE_SHEETS_CREDENTIALS_JSON=
 GOOGLE_SHEETS_ID=
 ```
 
-`ANTHROPIC_API_KEY` and `REDIS_URL` (reachable at startup) are the only hard requirements.
-All integration keys are optional; missing keys fall back to stub responses without failing startup.
+**Hard requirements:** `ANTHROPIC_API_KEY`, `REDIS_URL` (reachable at startup), `DATABASE_URL`
+(for multi-tenant Postgres features). All integration keys are optional.
 
 ---
 
 ## Tests
 
 ```bash
-pytest tests/ -v
+# Unit tests (fast, no DB or API required)
+.venv/bin/pytest tests/ -q --ignore=tests/test_migrations.py
+# Expected: 67 pass, 0 fail
+
+# Migration tests (requires Docker or local Postgres)
+.venv/bin/pytest tests/test_migrations.py -v
 ```
 
 Tests run offline — no API keys required. Mocks used: `FakeLLMClient` for Claude,
-`fakeredis` for Redis, `httpx` mocks for Linear / Telegram / Sheets.
+`AsyncMock` for async Redis, `httpx` mocks for Linear / Telegram / Sheets.
 
 | Module | What it verifies |
 |--------|-----------------|
+| `test_migrations.py` | Alembic upgrade + downgrade, all 16 tables, RLS policies |
+| `test_db.py` | `make_engine()` SQLite/PG branching, `get_db_session()` SET LOCAL |
+| `test_tenant_registry.py` | Cache hit/miss, async Redis calls, inactive tenant, invalidate |
+| `test_secrets_store.py` | Per-tenant HMAC secret fetch + Fernet decrypt |
+| `test_middleware.py` | Per-tenant HMAC verification, rate limiting, burst window |
 | `test_approval_flow.py` | `user_id` preserved end-to-end through approval |
 | `test_redis_approval_store.py` | TTL expiry, atomic pop, GETDEL behaviour |
 | `test_dedup.py` | Idempotent replay via `message_id` |
 | `test_guardrails_and_extraction.py` | Injection guard, entity extraction, error-code regex |
 | `test_output_guard.py` | Secret scan, URL allowlist, confidence floor override |
-| `test_middleware.py` | HMAC signature verification, rate limiting, burst window |
 | `test_linear_integration.py` | GraphQL issue creation, 429 handling |
 | `test_telegram_integration.py` | Message sending, approval button payload |
 | `test_sheets_integration.py` | Audit log append, retry on 429 |
@@ -467,20 +483,26 @@ developer mode · jailbreak · bypass · pretend you
 
 ## Known gaps & what's next
 
-Verified open items from the 2026-02-28 engineering review, in priority order:
+Current open items (as of 2026-03-03 Phase 1 review):
 
-| ID | Severity | Gap | PR |
-|----|----------|-----|----|
-| **N-5** | High — pre-production blocker | `lookup_faq` returns `kb.example.com` dead links to users | PR-21 |
-| **N-2** | Medium | `POST /approve` is unauthenticated — any `pending_id` holder can approve | PR-18 |
-| **G-7** | Medium | Approval notification is fire-and-forget; Telegram outage silently orphans pending items | PR-23 |
-| **N-1** | Low | `_notify_approval_channel` logs warning without `exc_info=True` — traceback lost | PR-17 |
-| **N-3** | Low | `OutputGuard.scan()` mutates the caller's `action` argument — hidden side-effect | PR-19 |
-| **N-4** | Low | `"act as"` injection pattern triggers on legitimate phrasing (false positive) | PR-20 |
-| **B-2** | Low | Duplicate `Settings` + Redis connection created at module load, outside lifespan | PR-22 |
+| ID | Severity | Gap | Task |
+|----|----------|-----|------|
+| **P1-03** | High | `gdev_admin` role created without `BYPASSRLS` — admin queries subject to RLS | T00B |
+| **P1-06** | Low | `ticket_classifications.agent_config_id` missing FK constraint in migration | deferred |
 
-Full implementation specs are in [`docs/PLAN.md`](docs/PLAN.md).
-Implementation guidance for Codex is in [`CODEX_PROMPT.md`](CODEX_PROMPT.md).
+Upcoming features:
+
+| Task | Description |
+|------|-------------|
+| T00B | Migration: `ALTER ROLE gdev_admin BYPASSRLS` |
+| T05  | JWT middleware + tenant context injection |
+| T06  | RBAC — `require_role()` on all endpoints |
+| T07  | CostLedger service + budget enforcement |
+| T08  | EmbeddingService + pgvector upsert |
+| T09  | Cross-tenant RLS isolation integration tests |
+
+Full review findings: [`docs/PHASE1_REVIEW.md`](docs/PHASE1_REVIEW.md).
+Implementation guidance for Codex: [`docs/CODEX_PROMPT.md`](docs/CODEX_PROMPT.md).
 
 ---
 
@@ -518,44 +540,56 @@ WAL mode (`PRAGMA journal_mode=WAL`) makes concurrent writes from the FastAPI th
 
 ```
 gdev-agent/
+├── alembic/
+│   ├── env.py               # Async migrations; reads DATABASE_URL from os.environ directly
+│   └── versions/
+│       └── 0001_initial_schema.py  # 16 tables, RLS on 15, two DB roles
 ├── app/
-│   ├── main.py              # FastAPI app, lifespan, middleware stack, endpoint wiring
+│   ├── main.py              # FastAPI app, lifespan, middleware stack
 │   ├── config.py            # pydantic-settings; loaded once via get_settings()
-│   ├── schemas.py           # All Pydantic request/response/internal models
+│   ├── db.py                # make_engine(), make_session_factory(), get_db_session()
+│   ├── tenant_registry.py   # TenantRegistry: Redis-cached (async) tenant config
+│   ├── secrets_store.py     # WebhookSecretStore: Fernet-decrypt per-tenant HMAC secret
+│   ├── schemas.py           # All Pydantic models
 │   ├── agent.py             # AgentService: guard, classify, propose, approve, execute
 │   ├── llm_client.py        # Claude tool_use loop → TriageResult
 │   ├── logging.py           # JsonFormatter, REQUEST_ID ContextVar
-│   ├── store.py             # EventStore: SQLite WAL event log
+│   ├── store.py             # EventStore: optional SQLite WAL event log
 │   ├── approval_store.py    # RedisApprovalStore: TTL-based pending decisions
 │   ├── dedup.py             # DedupCache: 24 h idempotency by message_id
 │   ├── guardrails/
 │   │   └── output_guard.py  # Secret scan, URL allowlist, confidence floor
 │   ├── middleware/
-│   │   ├── signature.py     # HMAC-SHA256 webhook verification
+│   │   ├── signature.py     # Per-tenant HMAC-SHA256 verification
 │   │   └── rate_limit.py    # Per-user Redis sliding window
 │   ├── integrations/
-│   │   ├── linear.py        # LinearClient: GraphQL issue creation
-│   │   ├── telegram.py      # TelegramClient: messages + approval buttons
-│   │   └── sheets.py        # SheetsClient: async audit log append
+│   │   ├── linear.py
+│   │   ├── telegram.py
+│   │   └── sheets.py
 │   └── tools/
-│       ├── __init__.py      # TOOL_REGISTRY dispatch dict
-│       ├── ticketing.py     # create_ticket() — Linear or stub
-│       └── messenger.py     # send_reply() — Telegram or stub
+│       ├── __init__.py
+│       ├── ticketing.py
+│       └── messenger.py
 ├── eval/
-│   ├── runner.py            # run_eval() — accuracy + per-label breakdown
-│   └── cases.jsonl          # 25 labelled test cases
-├── tests/                   # 15 test modules (fakeredis, httpx mocks, no API calls)
+│   ├── runner.py
+│   └── cases.jsonl
+├── tests/                   # 67 tests; migration tests require Docker or local Postgres
 ├── n8n/
-│   ├── workflow_triage.json           # Telegram → agent → approval or log
-│   ├── workflow_approval_callback.json # Button click → /approve → log
+│   ├── workflow_triage.json
+│   ├── workflow_approval_callback.json
 │   └── README.md
 ├── docs/
-│   ├── ARCHITECTURE.md      # Full system design, security model, extensibility
-│   ├── N8N.md               # n8n workflow blueprint and integration contract
-│   ├── PLAN.md              # PR roadmap with acceptance criteria
-│   └── REVIEW_NOTES.md      # Engineering review checklist and historical findings
+│   ├── ARCHITECTURE.md      # Full system design, security model, ADRs
+│   ├── architecture.md      # New enterprise architecture spec (v1.0)
+│   ├── data-map.md          # Entity schemas, Redis keys, PII classification
+│   ├── tasks.md             # Task graph (Codex work queue)
+│   ├── CODEX_PROMPT.md      # Implementation agent prompt (v2.5)
+│   ├── PHASE1_REVIEW.md     # Phase 1 code review findings
+│   ├── dev-standards.md     # Code style, test strategy, observability hooks
+│   ├── N8N.md               # n8n workflow blueprint
+│   └── devlog/              # Implementation session logs
 ├── Dockerfile
-├── docker-compose.yml       # agent + redis + n8n
+├── docker-compose.yml
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env.example
