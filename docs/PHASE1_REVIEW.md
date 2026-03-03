@@ -14,7 +14,7 @@ P1-01 — synchronous Redis calls inside async methods in `TenantRegistry`, whic
 event loop under any real load. P1-03 is a security gap: `gdev_admin` is created without `BYPASSRLS`,
 making all future admin-role migration steps unsafe. P1-02 is a correctness defect in `make_engine()`
 that crashes on any SQLite test URL when the engine is instantiated without mocking. Four non-critical
-issues and several doc-drift items are recorded below. **Verdict: No-Go for T05 (original). Updated: Conditional Go — T00A complete, T00B (P1-03) pending.**
+issues and several doc-drift items are recorded below. **Verdict: ✅ GO — T00A + T00B complete, all blockers resolved.**
 
 ---
 
@@ -141,7 +141,7 @@ def test_make_engine_sqlite_does_not_crash():
 
 ---
 
-### P1-03 · `gdev_admin` role created without BYPASSRLS — admin queries subject to RLS
+### ~~P1-03 · `gdev_admin` role created without BYPASSRLS — admin queries subject to RLS~~ ✅ RESOLVED (T00B)
 
 **File:** `alembic/versions/0001_initial_schema.py:367–370`
 
@@ -287,7 +287,7 @@ tenant-namespaced Redis keys are a Phase 5 hardening item.
 
 ## Verdict
 
-~~**No-Go for Phase 2 (T05) start.**~~ → **Conditional Go (2026-03-03, T00A complete)**
+**✅ GO — All Phase 1 blockers resolved (2026-03-03)**
 
 | Issue | Status |
 |-------|--------|
@@ -295,8 +295,7 @@ tenant-namespaced Redis keys are a Phase 5 hardening item.
 | P1-02 SQLite pool params  | ✅ Fixed in T00A |
 | P1-04 Dead session_factory | ✅ Fixed in T00A |
 | P1-05 Redis URL in error  | ✅ Fixed in T00A |
-| **P1-03 gdev_admin BYPASSRLS** | **OPEN — T00B required** |
+| P1-03 gdev_admin BYPASSRLS | ✅ Fixed in T00B (`0002_grant_admin_bypassrls.py`) |
 | P1-06 FK constraint (agent_config_id) | Deferred to first schema task |
 
-T05 may proceed. T00B (migration `0002_grant_admin_bypassrls.py`) must ship before any background
-admin job (CostAggregator, RCAClusterer, EvalRunner) is wired up in Phase 2/3.
+Phase 2 (T05+) may proceed. Baseline: **67 pass, 0 fail**.

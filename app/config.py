@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     output_url_behavior: Literal["strip", "reject"] = "strip"
     webhook_secret: str | None = None
     webhook_secret_encryption_key: str | None = None
+    jwt_secret: str = "dev-jwt-secret-must-be-at-least-32b"
+    jwt_algorithm: str = "HS256"
+    jwt_token_expiry_hours: int = 8
     approve_secret: str | None = None
     rate_limit_rpm: int = 10
     rate_limit_burst: int = 3

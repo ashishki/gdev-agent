@@ -17,10 +17,12 @@ from app.schemas import ApproveRequest
 def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     warning = Mock()
     engine = SimpleNamespace(dispose=AsyncMock())
+    async_redis = SimpleNamespace(aclose=AsyncMock())
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "configure_logging", lambda *_: None)
     monkeypatch.setattr(main.LOGGER, "warning", warning)
     monkeypatch.setattr(main.redis, "from_url", lambda *_: SimpleNamespace(ping=lambda: None))
+    monkeypatch.setattr(main.aioredis, "from_url", lambda *_: async_redis)
     monkeypatch.setattr(main, "make_engine", lambda *_: engine)
     monkeypatch.setattr(main, "make_session_factory", lambda *_: object())
     monkeypatch.setattr(main, "WebhookSecretStore", lambda *_, **__: object())

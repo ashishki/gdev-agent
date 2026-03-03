@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅
-**Next task:** T00B · Grant gdev_admin BYPASSRLS (migration), then T05 · JWT Middleware + Tenant Context Injection
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅
+**Next task:** T05 · JWT Middleware + Tenant Context Injection
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -45,13 +45,7 @@ P1-02 ✅ RESOLVED (T00A) — SQLite pool params guarded in make_engine()
 P1-04 ✅ RESOLVED (T00A) — dead session_factory removed from EventStore
 P1-05 ✅ RESOLVED (T00A) — Redis URL removed from startup RuntimeError
 
-P1-03 · alembic/versions/0001_initial_schema.py:368 — gdev_admin missing BYPASSRLS
-  WHAT: gdev_admin created without BYPASSRLS; admin cross-tenant queries return
-        zero rows silently when app.current_tenant_id is not set.
-  FIX: new migration alembic/versions/0002_grant_admin_bypassrls.py:
-    upgrade():   op.execute("ALTER ROLE gdev_admin BYPASSRLS")
-    downgrade(): op.execute("ALTER ROLE gdev_admin NOBYPASSRLS")
-  TASK: T00B (next)
+P1-03 ✅ RESOLVED (T00B) — alembic/versions/0002_grant_admin_bypassrls.py created
 
 ─── T04 (Per-Tenant HMAC Secret Lookup) ─────────────────────────────
 Files: app/secrets_store.py (77 lines), tests/test_secrets_store.py (93 lines)
@@ -103,20 +97,12 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T00B, THEN T05
+PROCEED TO T05
 ═══════════════════════════════════════════════════════════════════════
 
-T00A ✅ complete (67 pass, 0 fail). One remaining pre-T05 task:
+T00A ✅ + T00B ✅ complete. Baseline: 67 pass, 0 fail. All Phase 1 blockers resolved.
 
-T00B checklist (migration — P1-03):
-  ☐ Create alembic/versions/0002_grant_admin_bypassrls.py
-  ☐ upgrade():   op.execute("ALTER ROLE gdev_admin BYPASSRLS")
-  ☐ downgrade(): op.execute("ALTER ROLE gdev_admin NOBYPASSRLS")
-  ☐ Add assertion to test_migrations.py: after upgrade, SELECT rolbypassrls
-      FROM pg_roles WHERE rolname = 'gdev_admin' must be TRUE
-  ☐ run: .venv/bin/pytest tests/ -q --ignore=tests/test_migrations.py → still 67 pass
 
-After T00B, proceed to T05:
 
 Your next task is **T05 · JWT Middleware + Tenant Context Injection**.
 Read docs/tasks.md §T05 now before writing any code.

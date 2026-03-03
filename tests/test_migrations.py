@@ -59,6 +59,25 @@ async def _public_tables(database_url: str) -> set[str]:
         await engine.dispose()
 
 
+async def _role_bypassrls(database_url: str, role_name: str) -> bool | None:
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT rolbypassrls FROM pg_roles WHERE rolname = :role_name"),
+                {"role_name": role_name},
+            )
+            row = result.first()
+            if row is None:
+                return None
+            return bool(row[0])
+    finally:
+        await engine.dispose()
+
+
 def _docker_available() -> bool:
     """Return True if Docker daemon is reachable."""
     try:
@@ -86,6 +105,8 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
     assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
+    gdev_admin_bypassrls = asyncio.run(_role_bypassrls(async_url, "gdev_admin"))
+    assert gdev_admin_bypassrls is True
 
     command.downgrade(cfg, "base")
     downgraded = asyncio.run(_public_tables(async_url))

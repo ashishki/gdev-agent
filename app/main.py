@@ -20,6 +20,7 @@ from app.dedup import DedupCache
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
 from app.logging import clear_request_id, configure_logging, set_request_id
+from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
 from app.schemas import ApproveRequest, ApproveResponse, HealthResponse, WebhookRequest, WebhookResponse
@@ -65,6 +66,14 @@ async def lifespan(app: FastAPI):
                 "context": {"reason": "APPROVE_SECRET not set - approve endpoint auth skipped"},
             },
         )
+    if len(settings.jwt_secret) < 32:
+        LOGGER.error(
+            "jwt secret too short",
+            extra={
+                "event": "security_degraded",
+                "context": {"reason": "JWT_SECRET is shorter than 32 bytes"},
+            },
+        )
 
     redis_client = redis.from_url(settings.redis_url)
     try:
@@ -90,6 +99,7 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis_client
     app.state.db_engine = db_engine
     app.state.db_session_factory = db_session_factory
+    app.state.jwt_blocklist_redis = tenant_registry_redis
     app.state.webhook_secret_store = webhook_secret_store
     app.state.tenant_registry = TenantRegistry(tenant_registry_redis, db_session_factory)
     app.state.dedup = dedup_cache
@@ -112,6 +122,7 @@ _middleware_settings = Settings()
 
 # Starlette adds latest middleware first, so add reverse of desired runtime order.
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(JWTMiddleware, settings=_middleware_settings)
 app.add_middleware(
     RateLimitMiddleware,
     settings=_middleware_settings,
