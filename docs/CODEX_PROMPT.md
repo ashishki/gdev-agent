@@ -8,8 +8,8 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅
-**Next task:** T06 · RBAC — `require_role()` enforcement on all endpoints
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅ (with blockers)
+**Next task:** T06B · Fix auth endpoint blockers before T07
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -46,6 +46,37 @@ P1-04 ✅ RESOLVED (T00A) — dead session_factory removed from EventStore
 P1-05 ✅ RESOLVED (T00A) — Redis URL removed from startup RuntimeError
 
 P1-03 ✅ RESOLVED (T00B) — alembic/versions/0002_grant_admin_bypassrls.py created
+
+─── T06 (RBAC — POST /auth/token + require_role) ─────────────────────
+Files: app/routers/auth.py (79 lines), app/schemas.py(+AuthTokenRequest/Response),
+       app/middleware/rate_limit.py(+/auth/token branch),
+       app/middleware/auth.py(+POST /auth/token exempt),
+       app/main.py(+router), .env.example(+JWT_SECRET)
+Public API (do NOT change — T07+ depend on it):
+  POST /auth/token — body: {email, password} → {access_token, token_type, expires_in}
+  require_role(*roles) — already in app/dependencies.py (T05)
+  Rate limit key: auth_ratelimit:{email_lower} — 5 attempts / 60 s
+Known good:
+  - _DUMMY_PASSWORD_HASH prevents timing-based user enumeration ✅
+  - email_hash (sha256) in logs, never raw email ✅
+  - uniform 401 for wrong password / unknown email ✅
+⚠ OPEN BLOCKERS (must fix in T06B before T07):
+  T06-01: password_hash column missing from tenant_users — no migration created.
+          SELECT password_hash FROM tenant_users fails at DB level in production.
+          Fix: migration 0003_add_password_hash_to_tenant_users.py
+               op.add_column('tenant_users', Column('password_hash', Text(), nullable=True))
+               nullable=True for rollout safety; enforce NOT NULL in next migration.
+  T06-02: RLS blocks auth query — db_session_factory() opened without SET LOCAL.
+          tenant_users is RLS-protected; missing tenant context → always 0 rows → always 401.
+          Fix: add tenant_slug: str to AuthTokenRequest; in auth.py, before SELECT:
+               execute SET LOCAL app.current_tenant_id = (SELECT tenant_id FROM tenants
+               WHERE slug = :slug AND is_active = TRUE LIMIT 1)
+          Alternative: separate admin_db_session_factory (gdev_admin role) for auth only.
+⚠ NON-BLOCKING (fix in T06B):
+  T06-03: auth_ratelimit:{email_lower} stores PII in Redis key.
+          Fix: key = f"auth_ratelimit:{hashlib.sha256(email.lower().encode()).hexdigest()[:16]}"
+  T06-04: auth rate limit (5 attempts) hardcoded. Add settings.auth_rate_limit_attempts = 5.
+Tests: 5 new ✅ | Full suite: 79 pass, 1 skipped
 
 ─── T05 (JWT Middleware + Tenant Context Injection) ──────────────────
 Files: app/middleware/auth.py (84 lines), app/dependencies.py (15 lines),
@@ -115,15 +146,21 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T06
+PROCEED TO T06B (fix auth blockers), THEN T07
 ═══════════════════════════════════════════════════════════════════════
 
-T05 ✅ complete. Baseline: 74 pass, 1 skipped (test_isolation.py — T09). All Phase 1 + T05 done.
+T06 ✅ code complete but has 2 production blockers. Fix T06B before T07.
 
-Pre-flight for T06:
-  - Add JWT_SECRET to .env.example marked as required (no default)
-  - Confirm app/dependencies.py:require_role() exists (it does — T05 created it)
-  - Confirm request.state.role is populated by JWTMiddleware before route handler runs
+T06B checklist:
+  ☐ T06-01: create alembic/versions/0003_add_password_hash_to_tenant_users.py
+            upgrade:   op.add_column('tenant_users', sa.Column('password_hash', sa.Text(), nullable=True))
+            downgrade: op.drop_column('tenant_users', 'password_hash')
+  ☐ T06-02: fix RLS bypass in auth.py — add tenant_slug to AuthTokenRequest;
+            use it to set tenant context before SELECT tenant_users
+            OR document use of separate admin session (confirm with architecture)
+  ☐ T06-03: hash email in rate-limit key: hashlib.sha256(email.lower().encode()).hexdigest()[:16]
+  ☐ T06-04: add auth_rate_limit_attempts: int = 5 to Settings; use in rate_limit.py
+  ☐ run: .venv/bin/pytest tests/ -x -q → still 79 pass, 1 skipped
 
 
 
