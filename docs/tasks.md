@@ -494,21 +494,41 @@ re-processing the same message.
 **Status:** pending
 
 **Scope:**
-Dedicated integration test suite that proves Tenant A cannot read Tenant B's data.
+Dedicated integration test suite that proves Tenant A cannot read or act on Tenant B's data.
 This test is a hard gate — no multi-tenant feature ships without it passing.
 
+Test cases are scoped to **currently existing** endpoints and DB-layer verification.
+HTTP tests for `GET /tickets` are deferred to T11 (that route does not yet exist).
+
 **Test cases:**
-1. Create Tenant A + Tenant B with separate tickets.
-2. Query `GET /tickets` with Tenant A's JWT → returns only Tenant A's tickets.
-3. Query `GET /tickets/{ticket_id}` with Tenant A's JWT using Tenant B's `ticket_id` → HTTP 404.
-4. Directly query Postgres with `SET LOCAL app.current_tenant_id = <tenant_a_id>` and query `SELECT * FROM tickets WHERE tenant_id = <tenant_b_id>` → zero rows.
-5. Approval path: Tenant A attempts `POST /approve` with Tenant B's `pending_id` → HTTP 404 (pending not found for that tenant).
+1. **DB RLS — read isolation**: Seed tickets for Tenant A and Tenant B. Open session with
+   `SET LOCAL app.current_tenant_id = <tenant_a_id>`. Run
+   `SELECT * FROM tickets WHERE tenant_id = <tenant_b_id>` → zero rows returned.
+2. **DB RLS — write isolation**: Attempt INSERT into `tickets` with `tenant_id = <tenant_b_id>`
+   while session has `SET LOCAL app.current_tenant_id = <tenant_a_id>` → RLS violation raised.
+3. **EventStore — tenant binding**: Call `persist_pipeline_run()` for Tenant A. Assert all 5 rows
+   (`tickets`, `ticket_classifications`, `ticket_extracted_fields`, `proposed_actions`, `audit_log`)
+   have `tenant_id = tenant_a_id` and none exist for Tenant B.
+4. **Approval path — cross-tenant rejected**: Create a pending action for Tenant A (via
+   `approval_store.put_pending()`). Call `agent.approve()` passing `jwt_tenant_id=tenant_b_id` →
+   must raise HTTP 403 (P0-1 fix behaviour). The pending entry must remain unconsumed.
+5. **gdev_admin BYPASSRLS**: Connect as gdev_admin. Query tickets for both tenants without
+   `SET LOCAL` → rows from both tenants visible. Assert `rolbypassrls = TRUE` for gdev_admin
+   in `pg_roles`.
 
 **Acceptance Criteria:**
 All 5 test cases pass. Any cross-tenant data return is a P0 regression.
 
+**Note on test case 4**: `POST /approve` with Tenant B's JWT and Tenant A's `pending_id`
+returns **HTTP 403** (not 404). This is correct behaviour after P0-1 fix. The original spec
+said 404 — that was pre-P0-1. 403 is the correct contract now.
+
+**Files to CREATE:**
+- `tests/test_isolation.py` — testcontainers Postgres; both tenants seeded; `@pytest.mark.integration`.
+
 **Tests required:**
 - `tests/test_isolation.py` — uses testcontainers Postgres with both tenants seeded.
+- Connect as `gdev_app` role for cases 1–4; connect as `gdev_admin` for case 5.
 
 ---
 
