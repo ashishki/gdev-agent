@@ -54,7 +54,7 @@ class SignatureMiddleware:
             )
             return
         try:
-            webhook_secret = await secret_store.get_secret_by_slug(tenant_slug)
+            tenant_id, webhook_secret = await secret_store.get_secret_and_tenant_by_slug(tenant_slug)
         except (TenantNotFoundError, WebhookSecretNotFoundError):
             await JSONResponse({"detail": "Invalid signature"}, status_code=401)(scope, empty_receive, send)
             return
@@ -67,6 +67,7 @@ class SignatureMiddleware:
         if not hmac.compare_digest(expected, received):
             await JSONResponse({"detail": "Invalid signature"}, status_code=401)(scope, empty_receive, send)
             return
+        scope.setdefault("state", {})["tenant_id"] = tenant_id
 
         body_sent = False
 

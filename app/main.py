@@ -102,7 +102,10 @@ async def lifespan(app: FastAPI):
             db_session_factory, settings.webhook_secret_encryption_key
         )
 
-    store = EventStore(sqlite_path=settings.sqlite_log_path)
+    store = EventStore(
+        sqlite_path=settings.sqlite_log_path,
+        db_session_factory=db_session_factory,
+    )
     approval_store = RedisApprovalStore(
         redis_client, ttl_seconds=settings.approval_ttl_seconds
     )
@@ -163,7 +166,7 @@ def health() -> HealthResponse:
 
 
 @app.post("/webhook", response_model=WebhookResponse)
-def webhook(payload: WebhookRequest) -> WebhookResponse:
+def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
     """Main webhook endpoint used by n8n/Make."""
     message_id = payload.message_id or uuid4().hex
     cacheable = payload.message_id is not None
@@ -176,6 +179,13 @@ def webhook(payload: WebhookRequest) -> WebhookResponse:
                 extra={"event": "dedup_hit", "context": {"message_id": message_id}},
             )
             return WebhookResponse.model_validate_json(cached)
+
+    request_tenant_id = getattr(request.state, "tenant_id", None)
+    if request_tenant_id is not None:
+        payload_tenant_id = payload.tenant_id
+        if payload_tenant_id is not None and payload_tenant_id != str(request_tenant_id):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = payload.model_copy(update={"tenant_id": str(request_tenant_id)})
 
     try:
         response = app.state.agent.process_webhook(payload, message_id=message_id)

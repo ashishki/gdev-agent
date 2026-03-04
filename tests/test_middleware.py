@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from types import SimpleNamespace
+from uuid import UUID, uuid5
 
 import fakeredis
 import pytest
@@ -29,6 +30,10 @@ class _SecretStoreStub:
         if secret is None:
             raise WebhookSecretNotFoundError("missing")
         return secret
+
+    async def get_secret_and_tenant_by_slug(self, tenant_slug: str) -> tuple[UUID, str]:
+        secret = await self.get_secret_by_slug(tenant_slug)
+        return uuid5(UUID("00000000-0000-0000-0000-000000000000"), tenant_slug), secret
 
 
 def _sig(secret: str, body: bytes) -> str:

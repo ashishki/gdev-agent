@@ -57,6 +57,11 @@ class WebhookSecretStore:
             raise WebhookSecretNotFoundError("Unable to decrypt webhook secret") from exc
 
     async def get_secret_by_slug(self, tenant_slug: str) -> str:
+        tenant_id, secret = await self.get_secret_and_tenant_by_slug(tenant_slug)
+        _ = tenant_id
+        return secret
+
+    async def get_secret_and_tenant_by_slug(self, tenant_slug: str) -> tuple[UUID, str]:
         async with self._db_session_factory() as session:
             result = await session.execute(
                 text(
@@ -74,4 +79,5 @@ class WebhookSecretStore:
         if row is None:
             raise TenantNotFoundError(f"Tenant {tenant_slug} not found")
 
-        return await self.get_secret(row["tenant_id"])
+        tenant_id = UUID(str(row["tenant_id"]))
+        return tenant_id, await self.get_secret(tenant_id)

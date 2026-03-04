@@ -112,9 +112,40 @@ class AgentService:
                 draft_response=draft_response,
             )
             self.approval_store.put_pending(pending)
-            self.store.log_event("pending_created", pending.model_dump(mode="json"))
-            self._notify_approval_channel(pending, classification)
             latency_ms = round((time.monotonic() - start) * 1000)
+            audit_entry = AuditLogEntry(
+                timestamp=datetime.now(UTC).isoformat(),
+                request_id=REQUEST_ID.get(),
+                tenant_id=payload.tenant_id,
+                message_id=message_id,
+                user_id=hashlib.sha256(payload.user_id.encode()).hexdigest() if payload.user_id else None,
+                category=classification.category,
+                urgency=classification.urgency,
+                confidence=classification.confidence,
+                action=action.tool,
+                status="pending",
+                approved_by=None,
+                ticket_id=None,
+                latency_ms=latency_ms,
+                cost_usd=cost_usd,
+            )
+            self.store.persist_pipeline_run(
+                payload,
+                classification,
+                extracted,
+                action,
+                audit_entry,
+                input_tokens=triage.input_tokens,
+                output_tokens=triage.output_tokens,
+            )
+            self.store.log_event(
+                "pending_created",
+                {
+                    **pending.model_dump(mode="json"),
+                    "tenant_id": payload.tenant_id,
+                },
+            )
+            self._notify_approval_channel(pending, classification)
             LOGGER.info(
                 "action pending approval",
                 extra={
@@ -141,6 +172,7 @@ class AgentService:
             action,
             payload.user_id,
             draft_response,
+            tenant_id=payload.tenant_id,
             event_context={
                 "input_tokens": triage.input_tokens,
                 "output_tokens": triage.output_tokens,
@@ -162,23 +194,32 @@ class AgentService:
             },
         )
 
-        self._append_audit_async(
-            AuditLogEntry(
-                timestamp=datetime.now(UTC).isoformat(),
-                request_id=REQUEST_ID.get(),
-                message_id=message_id,
-                user_id=hashlib.sha256(payload.user_id.encode()).hexdigest() if payload.user_id else None,
-                category=classification.category,
-                urgency=classification.urgency,
-                confidence=classification.confidence,
-                action=action.tool,
-                status="executed",
-                approved_by="auto",
-                ticket_id=str(action_result.get("ticket", {}).get("ticket_id", "")),
-                latency_ms=latency_ms,
-                cost_usd=cost_usd,
-            )
+        audit_entry = AuditLogEntry(
+            timestamp=datetime.now(UTC).isoformat(),
+            request_id=REQUEST_ID.get(),
+            tenant_id=payload.tenant_id,
+            message_id=message_id,
+            user_id=hashlib.sha256(payload.user_id.encode()).hexdigest() if payload.user_id else None,
+            category=classification.category,
+            urgency=classification.urgency,
+            confidence=classification.confidence,
+            action=action.tool,
+            status="executed",
+            approved_by="auto",
+            ticket_id=str(action_result.get("ticket", {}).get("ticket_id", "")),
+            latency_ms=latency_ms,
+            cost_usd=cost_usd,
         )
+        self.store.persist_pipeline_run(
+            payload,
+            classification,
+            extracted,
+            action,
+            audit_entry,
+            input_tokens=triage.input_tokens,
+            output_tokens=triage.output_tokens,
+        )
+        self._append_audit_async(audit_entry)
 
         return WebhookResponse(
             status="executed",
@@ -195,24 +236,40 @@ class AgentService:
         if not pending:
             raise HTTPException(status_code=404, detail="pending_id not found")
 
+        tenant_id = pending.action.payload.get("tenant_id")
         if not request.approved:
             self.store.log_event(
                 "pending_rejected",
-                {"pending_id": request.pending_id, "reviewer": request.reviewer},
+                {
+                    "pending_id": request.pending_id,
+                    "reviewer": request.reviewer,
+                    "tenant_id": tenant_id,
+                },
             )
             return ApproveResponse(status="rejected", pending_id=request.pending_id)
 
         started = time.monotonic()
-        result = self.execute_action(pending.action, pending.user_id, pending.draft_response)
+        result = self.execute_action(
+            pending.action,
+            pending.user_id,
+            pending.draft_response,
+            tenant_id=str(tenant_id) if tenant_id is not None else None,
+        )
         latency_ms = round((time.monotonic() - started) * 1000)
         self.store.log_event(
             "pending_approved",
-            {"pending_id": request.pending_id, "reviewer": request.reviewer, "result": result},
+            {
+                "pending_id": request.pending_id,
+                "reviewer": request.reviewer,
+                "result": result,
+                "tenant_id": tenant_id,
+            },
         )
         self._append_audit_async(
             AuditLogEntry(
                 timestamp=datetime.now(UTC).isoformat(),
                 request_id=REQUEST_ID.get(),
+                tenant_id=str(tenant_id) if tenant_id is not None else None,
                 message_id=None,
                 user_id=hashlib.sha256(pending.user_id.encode()).hexdigest() if pending.user_id else None,
                 category=str(pending.action.payload.get("category", "other")),
@@ -263,6 +320,7 @@ class AgentService:
                 "urgency": classification.urgency,
                 "transaction_id": extracted.transaction_id,
                 "reply_to": payload.metadata.get("chat_id") or payload.user_id,
+                "tenant_id": payload.tenant_id,
             },
             risky=risky,
             risk_reason=reason,
@@ -279,6 +337,7 @@ class AgentService:
         action: ProposedAction,
         user_id: str | None,
         draft_response: str,
+        tenant_id: str | None = None,
         event_context: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Execute tool handlers from the tool registry."""
@@ -292,6 +351,7 @@ class AgentService:
         event_payload = dict(result)
         if event_context:
             event_payload.update(event_context)
+        event_payload["tenant_id"] = tenant_id
         self.store.log_event("action_executed", event_payload)
         return result
 

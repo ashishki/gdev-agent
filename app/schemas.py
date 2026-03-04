@@ -22,6 +22,7 @@ class WebhookRequest(BaseModel):
     """Incoming webhook payload from n8n/Make."""
 
     request_id: str | None = None
+    tenant_id: str | None = None
     message_id: str | None = None
     user_id: str | None = None
     text: str = Field(..., min_length=1)
@@ -124,6 +125,7 @@ class AuditLogEntry(BaseModel):
 
     timestamp: str
     request_id: str | None = None
+    tenant_id: str | None = None
     message_id: str | None = None
     user_id: str | None = None
     category: str
