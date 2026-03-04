@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# WARNING: kb_base_url must appear in url_allowlist or FAQ URLs are silently stripped.
 DEFAULT_KB_BASE_URL = "https://kb." + "example.com"
 
 
@@ -23,8 +24,6 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
     kb_base_url: str = DEFAULT_KB_BASE_URL
-    anthropic_input_cost_per_1k: float = 0.003
-    anthropic_output_cost_per_1k: float = 0.015
     llm_input_rate_per_1k: Decimal = Decimal("0.003")
     llm_output_rate_per_1k: Decimal = Decimal("0.015")
     max_input_length: int = 2000

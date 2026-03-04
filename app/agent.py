@@ -245,6 +245,11 @@ class AgentService:
         jwt_tenant_id: str | None = None,
     ) -> ApproveResponse:
         """Approve or reject a pending action."""
+        reviewer_hash = (
+            hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
+            if request.reviewer
+            else None
+        )
         pending = self.approval_store.get_pending(request.pending_id)
         if not pending:
             raise HTTPException(status_code=404, detail="pending_id not found")
@@ -261,7 +266,7 @@ class AgentService:
                 "pending_rejected",
                 {
                     "pending_id": request.pending_id,
-                    "reviewer": request.reviewer,
+                    "reviewer": reviewer_hash,
                     "tenant_id": tenant_id,
                 },
             )
@@ -279,7 +284,7 @@ class AgentService:
             "pending_approved",
             {
                 "pending_id": request.pending_id,
-                "reviewer": request.reviewer,
+                "reviewer": reviewer_hash,
                 "result": result,
                 "tenant_id": tenant_id,
             },
@@ -296,7 +301,7 @@ class AgentService:
                 confidence=0.0,
                 action=pending.action.tool,
                 status="approved",
-                approved_by=request.reviewer,
+                approved_by=reviewer_hash,
                 ticket_id=str(result.get("ticket", {}).get("ticket_id", "")),
                 latency_ms=latency_ms,
                 cost_usd=0.0,
@@ -470,6 +475,8 @@ class AgentService:
     def _enforce_budget(self, tenant_id: str | None) -> None:
         tenant_uuid = self._tenant_uuid(tenant_id)
         session_factory = getattr(self.store, "_db_session_factory", None)
+        # Unit-test fallback only. Production callers always have a valid tenant_uuid
+        # because main.py validates it before calling process_webhook().
         if tenant_uuid is None or session_factory is None:
             return
 

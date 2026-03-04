@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+import hashlib
 import fakeredis
 import logging
 from unittest.mock import Mock
@@ -11,7 +13,7 @@ from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.llm_client import TriageResult
-from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
+from app.schemas import ApproveRequest, ClassificationResult, ExtractedFields, WebhookRequest
 from app.store import EventStore
 
 
@@ -77,8 +79,8 @@ def test_webhook_uses_llm_draft_and_tracks_cost() -> None:
     settings = Settings(
         approval_categories=[],
         auto_approve_threshold=0.5,
-        anthropic_input_cost_per_1k=0.003,
-        anthropic_output_cost_per_1k=0.015,
+        llm_input_rate_per_1k=Decimal("0.003"),
+        llm_output_rate_per_1k=Decimal("0.015"),
     )
     store = CapturingStore()
     agent = AgentService(
@@ -95,7 +97,11 @@ def test_webhook_uses_llm_draft_and_tracks_cost() -> None:
 
     assert response.draft_response == "LLM draft response"
     assert audit_entries[0].cost_usd > 0
-    assert round(audit_entries[0].cost_usd, 6) == round(((100 / 1000) * 0.003) + ((50 / 1000) * 0.015), 6)
+    expected_cost = float(
+        (Decimal(100) / Decimal(1000)) * Decimal("0.003")
+        + (Decimal(50) / Decimal(1000)) * Decimal("0.015")
+    )
+    assert round(audit_entries[0].cost_usd, 6) == round(expected_cost, 6)
 
     event_payload = [payload for event, payload in store.events if event == "action_executed"][-1]
     assert event_payload["input_tokens"] == 100
@@ -149,3 +155,77 @@ def test_cost_ledger_record_failure_is_logged_and_non_fatal(caplog) -> None:
     assert failing_ledger.record_calls == 1
     record = next(r for r in caplog.records if r.msg == "failed recording llm cost")
     assert record.exc_info is not None
+
+
+def test_approve_hashes_reviewer_in_logs_and_audit() -> None:
+    settings = Settings(
+        approval_categories=["other"],
+        auto_approve_threshold=0.5,
+    )
+    store = CapturingStore()
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+    audit_entries = []
+    agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
+
+    response = agent.process_webhook(
+        WebhookRequest(text="hello", user_id="u1", tenant_id="11111111-1111-1111-1111-111111111111")
+    )
+    assert response.pending is not None
+
+    raw_reviewer = "raw_user_123"
+    expected_hash = hashlib.sha256(raw_reviewer.encode()).hexdigest()[:16]
+    approve_response = agent.approve(
+        ApproveRequest(
+            pending_id=response.pending.pending_id,
+            approved=True,
+            reviewer=raw_reviewer,
+        ),
+        jwt_tenant_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert approve_response.status == "approved"
+
+    approved_payload = [payload for event, payload in store.events if event == "pending_approved"][-1]
+    assert approved_payload["reviewer"] == expected_hash
+    assert raw_reviewer not in str(approved_payload)
+
+    assert audit_entries[0].approved_by == expected_hash
+    assert len(audit_entries[0].approved_by) == 16
+
+
+def test_approve_keeps_approved_by_none_when_reviewer_missing() -> None:
+    settings = Settings(
+        approval_categories=["other"],
+        auto_approve_threshold=0.5,
+    )
+    store = CapturingStore()
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+    audit_entries = []
+    agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
+
+    response = agent.process_webhook(
+        WebhookRequest(text="hello", user_id="u1", tenant_id="22222222-2222-2222-2222-222222222222")
+    )
+    assert response.pending is not None
+
+    approve_response = agent.approve(
+        ApproveRequest(
+            pending_id=response.pending.pending_id,
+            approved=True,
+            reviewer=None,
+        ),
+        jwt_tenant_id="22222222-2222-2222-2222-222222222222",
+    )
+    assert approve_response.status == "approved"
+    assert audit_entries[0].approved_by is None

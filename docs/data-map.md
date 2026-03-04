@@ -98,7 +98,7 @@ urgency         TEXT
 confidence      DECIMAL(4,3)
 action_tool     TEXT
 status          TEXT                          -- executed | pending | approved | rejected
-approved_by     TEXT                          -- 'auto' or reviewer email_hash
+approved_by     TEXT                          -- 'auto' or SHA-256[:16] hash of reviewer identity
 ticket_id       UUID
 latency_ms      INTEGER
 input_tokens    INTEGER

@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.7
+# Codex Implementation Agent Prompt v2.8
 
-_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 3 review complete; T11 cleared to proceed)_
+_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 3 fixes FIX-1..FIX-5 done; proceed to T11)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,9 +8,9 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅  FIX-1 ✅  FIX-2 ✅  FIX-3 ✅  FIX-4 ✅  FIX-5 ✅
 **Next task:** T11 · New Read Endpoints
-**Baseline:** 88 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Baseline:** 93 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -41,68 +41,37 @@ Tests: 5 new ✅
 ─── Phase 3 Review Findings ─────────────────────────────────────────
 Full review: docs/PHASE3_REVIEW.md
 Date: 2026-03-04 · Scope: T08–T10 (EventStore, CostLedger, isolation tests + P0/P1 remediations)
-Baseline confirmed: 88 pass, 12 skipped (unchanged)
-Stop-ship: NO — T11 cleared to proceed.
+Baseline after fixes: 93 pass, 12 skipped.
 
 ✅ P0-1 CONFIRMED FIXED — /approve cross-tenant isolation verified at agent.py:248-256
-  get_pending() → validate tenant → pop_pending() sequence correct.
-  test_isolation.py:test_approve_cross_tenant_is_forbidden_and_pending_remains ✅
-
 ✅ P0-2 CONFIRMED FIXED — EventStore SET LOCAL at store.py:129-132 before all INSERTs
-  test_isolation.py:test_event_store_binds_all_rows_to_payload_tenant ✅
-
-✅ P1-2 CONFIRMED FIXED — RateLimitMiddleware uses async Redis from app.state at request time.
-  All incr/expire calls awaited. rate_limit.py:45,61-67 ✅
-
-✅ P1-3 CONFIRMED FIXED — main.py:148 uses get_settings() (lru_cache); redis_client=None passed.
-  Note: ANTHROPIC_API_KEY required at import time (see P2-10 below).
+✅ P1-2 CONFIRMED FIXED — RateLimitMiddleware uses async Redis from app.state
+✅ P1-3 CONFIRMED FIXED — main.py uses get_settings() (lru_cache); redis_client=None passed
+✅ P1-4 RESOLVED (FIX-1) — webhook returns 400 on missing/invalid tenant_id; budget guard intact
+  app/main.py: tenant_id guard before agent call; tests/test_main.py: 3 new tests
+✅ P2-3 RESOLVED (FIX-5) — KB_BASE_URL documented in .env.example; warning in config.py
+✅ P2-5 RESOLVED (FIX-4) — N8N.md dangling REVIEW_NOTES.md reference replaced with inline note
+✅ P2-7 RESOLVED (FIX-2) — reviewer hashed (sha256[:16]) at all 3 sites; data-map.md updated
+✅ P2-8 RESOLVED (FIX-3) — anthropic_*_cost_per_1k removed; tests use llm_*_rate_per_1k
+✅ P2-12 RESOLVED — tasks.md T05/T06/T09 status corrected to done
 
 🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
   Decision required: Accept HS256 (update ADR-003, enforce 32-byte jwt_secret as RuntimeError)
   OR implement RS256 (RS_PRIVATE_KEY/RS_PUBLIC_KEY, JWKS endpoint, key rotation docs).
   Files: app/config.py:45-46, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
 
-🔴 P1-4 NEW — _enforce_budget() silently no-ops when tenant_id is None
-  Any webhook without a valid tenant_id bypasses budget guard entirely.
-  Violates CODEX_PROMPT §AGENT PIPELINE SAFETY: "Budget check must run BEFORE every LLM call."
-  Fix: validate payload.tenant_id is non-None in webhook route handler; return HTTP 400 if absent.
-  Files: app/main.py (webhook handler), app/agent.py:470-488
-
 🟡 P2-1 OPEN — Redis keys not tenant-namespaced (doc-only, Phase 5 hardening)
   data-map.md §3 shows tenant-prefixed patterns; code uses flat keys. Deferred.
 
-🟡 P2-3 OPEN — kb_base_url defaults to kb.example.com, not in URL_ALLOWLIST
-  Add KB_BASE_URL to .env.example as required (no default). Address in T11 or standalone.
-
-🟡 P2-5 OPEN — docs/N8N.md §8.8 references REVIEW_NOTES.md §5.12 (file does not exist)
-  Replace with inline mitigation note. Surgical doc-only fix.
-
 🟡 P2-6 OPEN — app/agent.py imports HTTPException from fastapi (layer violation)
-  Define PendingNotFoundError, AgentInputGuardError in app/agent.py. Catch in route handlers.
+  Define PendingNotFoundError, AgentInputGuardError; catch in route handlers. Deferred.
 
-🟡 P2-7 OPEN — reviewer field stored raw (PII) in 3 places in agent.py
-  app/agent.py:264 (pending_rejected log), :282 (pending_approved log), :299 (AuditLogEntry.approved_by → Sheets)
-  Fix: hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16] at all three sites.
-  Update data-map.md §2 audit_log.approved_by comment.
+🟡 P2-9 OPEN — _run_blocking() duplicated in store.py and agent.py
+  Extract to app/async_utils.py. P3 cleanup — deferred.
 
-🟡 P2-8 NEW — Duplicate cost config fields: anthropic_*_cost_per_1k (float, unused) vs
-  llm_*_rate_per_1k (Decimal, used by agent.py). test_agent.py:80-81 sets wrong field.
-  Fix: deprecate anthropic_* fields; update test_agent.py assertions to use llm_*_rate_per_1k.
-  Files: app/config.py:26-27, tests/test_agent.py:80-81,98
-
-🟡 P2-9 NEW — _run_blocking() duplicated in store.py:83-104 and agent.py:447-468
-  Code duplication; divergence risk. Extract to app/async_utils.py (P3 cleanup).
-
-🟡 P2-10 NEW — get_settings() at main.py:148 requires ANTHROPIC_API_KEY at import time
-  All new test files that import app.main must set ANTHROPIC_API_KEY via monkeypatch or conftest
-  BEFORE the first import. Use get_settings.cache_clear() between tests that patch settings.
-
-🟡 P2-11 NEW — SQL DDL string interpolation in integration test helpers (test_isolation.py:121,
-  test_cost_ledger.py:124). ALTER ROLE {role} is safe (hardcoded constants) but add a comment
-  explaining why DDL cannot use parameterized identifiers.
-
-🟡 P2-12 NEW (doc) — tasks.md T05/T06/T09 show Status: pending but are done.
-  Patch tasks.md to mark these done.
+🟡 P2-10 OPEN — get_settings() at main.py requires ANTHROPIC_API_KEY at import time
+  All test files importing app.main must set ANTHROPIC_API_KEY before import.
+  Use get_settings.cache_clear() between tests that patch settings.
 
 ─── Phase 2 Review Findings ─────────────────────────────────────────
 Full review: docs/PHASE2_REVIEW.md
@@ -328,122 +297,34 @@ HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
 Tests: 3 skipped locally (Docker required); 88 pass 12 skip overall.
 
 ═══════════════════════════════════════════════════════════════════════
-PHASE 3 REVIEW COMPLETE — PRE-T11 FIXES REQUIRED
+PROCEED TO T11
 ═══════════════════════════════════════════════════════════════════════
 
-T10 ✅ complete. Phase 3 review complete: 2026-03-04. See docs/PHASE3_REVIEW.md.
-Baseline: 88 pass, 12 skipped.
+T10 ✅ FIX-1..FIX-5 ✅ complete. Baseline: 93 pass, 12 skipped.
+Phase 3 review complete: 2026-03-04. See docs/PHASE3_REVIEW.md.
+Your next task is **T11 · New Read Endpoints**.
+Read docs/tasks.md §T11 now before writing any code.
 
-Full Codex work orders: docs/PHASE3_FIX_PACKET.yaml
+─── T10 (CostLedger Service + Budget Guard) ─────────────────────────
+Files: app/cost_ledger.py (new), app/agent.py(+budget check/record),
+       app/config.py(+llm_input_rate_per_1k, llm_output_rate_per_1k),
+       tests/test_cost_ledger.py (3 integration tests), tests/test_agent.py(+1)
+Key: check_budget() before LLMClient.run_agent(); record() after (best-effort, non-fatal).
+HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
+Tests: 3 skipped locally (Docker required).
 
-Execute these fixes IN ORDER before starting T11:
-
-────────────────────────────────────────────────────────────────────
-FIX-1 · P1-4  Budget guard bypass when tenant_id is None
-────────────────────────────────────────────────────────────────────
-Files to MODIFY: app/main.py, tests/test_main.py
-
-In the POST /webhook route handler (app/main.py, after dedup check, before agent call):
-  resolved_tenant_id = getattr(request.state, "tenant_id", None) or payload.tenant_id
-  if not resolved_tenant_id:
-      raise HTTPException(status_code=400, detail="tenant_id is required")
-
-In app/agent.py:_enforce_budget(), add a comment above `if tenant_uuid is None`:
-  # Unit-test fallback only. Production callers always have a valid tenant_uuid
-  # because main.py validates it before calling process_webhook().
-
-New tests in tests/test_main.py:
-  - POST /webhook without tenant_id → HTTP 400
-  - POST /webhook with non-UUID tenant_id → HTTP 400 (add validation)
-
-Acceptance:
-  - Webhook without tenant_id returns 400.
-  - Webhook with exhausted budget returns 429.
-  - 88 passing tests unchanged.
-
-────────────────────────────────────────────────────────────────────
-FIX-2 · P2-7  Hash reviewer field before storage (3 sites)
-────────────────────────────────────────────────────────────────────
-Files to MODIFY: app/agent.py, docs/data-map.md
-
-At the top of AgentService.approve(), add:
-  reviewer_hash = (
-      hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
-      if request.reviewer else None
-  )
-
-Replace request.reviewer with reviewer_hash at these 3 sites:
-  - app/agent.py:264  "reviewer": request.reviewer  →  reviewer_hash
-  - app/agent.py:282  "reviewer": request.reviewer  →  reviewer_hash
-  - app/agent.py:299  approved_by=request.reviewer  →  reviewer_hash
-
-In docs/data-map.md §2, update audit_log.approved_by comment to:
-  approved_by: TEXT -- 'auto' or SHA-256[:16] hash of reviewer identity
-
-New test in tests/test_agent.py: approve() with reviewer="raw_user_123" →
-  log event payload must NOT contain "raw_user_123"; approved_by must be 16-char hex.
-
-Acceptance:
-  - No raw reviewer string in any log event or AuditLogEntry.
-  - reviewer=None → approved_by=None (not the string "None").
-
-────────────────────────────────────────────────────────────────────
-FIX-3 · P2-8  Remove duplicate dead config fields
-────────────────────────────────────────────────────────────────────
-Files to MODIFY: app/config.py, tests/test_agent.py
-
-Remove from app/config.py:
-  anthropic_input_cost_per_1k: float = 0.003   ← remove
-  anthropic_output_cost_per_1k: float = 0.015  ← remove
-  (llm_input_rate_per_1k and llm_output_rate_per_1k are the active fields — keep them)
-
-Update tests/test_agent.py:test_webhook_uses_llm_draft_and_tracks_cost:
-  Replace Settings(anthropic_input_cost_per_1k=...) with Settings(llm_input_rate_per_1k=Decimal("0.003"), ...)
-  Add `from decimal import Decimal` import.
-  Update cost assertion at line 98 to compute expected from Decimal values.
-
-Before removing, verify no other file uses the deleted fields:
-  git grep -rn "anthropic_input_cost\|anthropic_output_cost" app/ tests/
-  Expected: only the two files above.
-
-Acceptance:
-  - app/config.py has no anthropic_*_cost_per_1k fields.
-  - Full test suite passes.
-
-────────────────────────────────────────────────────────────────────
-FIX-4 · P2-5  Remove dangling REVIEW_NOTES.md reference (doc only)
-────────────────────────────────────────────────────────────────────
-File to MODIFY: docs/N8N.md
-
-Find line: "See `REVIEW_NOTES.md §5.12` for mitigation guidance."
-Replace with:
-  "Mitigation: monitor the `approval_notify_failed` log event (emitted by
-  AgentService._notify_approval_channel on Telegram failure). Configure an alerting
-  rule that fires if this event occurs more than N times in a rolling window without
-  a corresponding `pending_approved` or `pending_rejected` for the same pending_id
-  within APPROVAL_TTL_SECONDS. The pending entry remains valid in Redis until TTL
-  expires and can be approved directly via the API."
-
-Acceptance: git grep -rn "REVIEW_NOTES.md" docs/ → zero results.
-
-────────────────────────────────────────────────────────────────────
-FIX-5 · P2-3  Add KB_BASE_URL to .env.example (doc+config only)
-────────────────────────────────────────────────────────────────────
-Files to MODIFY: .env.example, app/config.py
-
-Add to .env.example:
-  # Knowledge base base URL for FAQ lookups (required — no default in production)
-  # Must also be added to URL_ALLOWLIST or FAQ links will be stripped by output guard
-  KB_BASE_URL=https://kb.yourdomain.com
-
-Add comment to app/config.py above DEFAULT_KB_BASE_URL:
-  # WARNING: kb_base_url must appear in url_allowlist or FAQ URLs are silently stripped.
-
-Acceptance: KB_BASE_URL documented in .env.example.
-
-────────────────────────────────────────────────────────────────────
-AFTER ALL FIXES PASS: PROCEED TO T11
-────────────────────────────────────────────────────────────────────
+─── FIX-1..FIX-5 (Phase 3 Remediation) ─────────────────────────────
+FIX-1 (P1-4): app/main.py — tenant_id guard in webhook (→ 400 if missing/invalid UUID)
+               app/agent.py — comment in _enforce_budget() fallback guard
+               tests/test_main.py — 3 new tests (missing, invalid, 429 propagation)
+FIX-2 (P2-7): app/agent.py — reviewer hashed sha256[:16] at 3 sites; approved_by=hash
+               docs/data-map.md — audit_log.approved_by comment updated
+               tests/test_agent.py — 3 new tests (raw not logged, 16-char hex, None→None)
+FIX-3 (P2-8): app/config.py — anthropic_*_cost_per_1k fields removed
+               tests/test_agent.py — cost assertions use llm_*_rate_per_1k Decimal
+FIX-4 (P2-5): docs/N8N.md — REVIEW_NOTES.md reference replaced with inline mitigation note
+FIX-5 (P2-3): .env.example + app/config.py — KB_BASE_URL documented with allowlist warning
+Baseline after fixes: 93 pass, 12 skipped.
 
 Pre-flight for T11:
   Confirm these files exist before starting:
@@ -461,6 +342,8 @@ Pre-flight for T11:
     - GET /tickets/{id}: return HTTP 404 (not 403) for cross-tenant IDs.
     - GET /audit: newest-first ordering.
     - Tenant isolation via RLS + SET LOCAL (get_db_session handles this already).
+    - ANTHROPIC_API_KEY must be set before importing app.main in new test files
+      (get_settings() runs at module load; conftest.py sets it via os.environ.setdefault).
 
 ---
 

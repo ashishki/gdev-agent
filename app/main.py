@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 from contextlib import asynccontextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import redis
 import redis.asyncio as aioredis
@@ -181,11 +181,19 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
             return WebhookResponse.model_validate_json(cached)
 
     request_tenant_id = getattr(request.state, "tenant_id", None)
+    resolved_tenant_id = request_tenant_id or payload.tenant_id
+    if not resolved_tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required")
+    try:
+        resolved_tenant_uuid = UUID(str(resolved_tenant_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="tenant_id must be a valid UUID") from exc
+
     if request_tenant_id is not None:
         payload_tenant_id = payload.tenant_id
         if payload_tenant_id is not None and payload_tenant_id != str(request_tenant_id):
             raise HTTPException(status_code=401, detail="Unauthorized")
-        payload = payload.model_copy(update={"tenant_id": str(request_tenant_id)})
+    payload = payload.model_copy(update={"tenant_id": str(resolved_tenant_uuid)})
 
     try:
         response = app.state.agent.process_webhook(payload, message_id=message_id)

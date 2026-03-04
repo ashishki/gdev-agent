@@ -474,7 +474,11 @@ does not block ticket creation or the agent response. Log to n8n execution log.
 
 **Important:** If n8n's node 5a (approval notification) fails, the operator will not receive the
 approval request. The pending entry is still in Redis. Monitor `approval_notify_failed` agent log
-events and investigate. See `REVIEW_NOTES.md §5.12` for mitigation guidance.
+events and investigate. Mitigation: monitor the `approval_notify_failed` log event (emitted by
+AgentService._notify_approval_channel on Telegram failure). Configure an alerting rule that fires
+if this event occurs more than N times in a rolling window without a corresponding
+`pending_approved` or `pending_rejected` for the same pending_id within APPROVAL_TTL_SECONDS. The
+pending entry remains valid in Redis until TTL expires and can be approved directly via the API.
 
 ### 8.9 `callback_data` Malformed
 

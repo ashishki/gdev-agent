@@ -6,12 +6,13 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from fastapi import FastAPI
 from fastapi import HTTPException
 
 from app import main
 from app.config import Settings
-from app.schemas import ApproveRequest
+from app.schemas import ApproveRequest, WebhookRequest
 
 
 def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
@@ -133,3 +134,48 @@ def test_lifespan_creates_and_closes_db_engine(monkeypatch) -> None:
 
     assert warning.call_count == 0
     engine.dispose.assert_awaited_once()
+
+
+def test_webhook_rejects_missing_tenant_id() -> None:
+    main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
+    main.app.state.agent = SimpleNamespace(process_webhook=lambda *_args, **_kwargs: None)
+
+    with pytest.raises(HTTPException) as exc:
+        main.webhook(
+            WebhookRequest(text="hello"),
+            request=SimpleNamespace(state=SimpleNamespace()),
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "tenant_id is required"
+
+
+def test_webhook_rejects_non_uuid_tenant_id() -> None:
+    main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
+    main.app.state.agent = SimpleNamespace(process_webhook=lambda *_args, **_kwargs: None)
+
+    with pytest.raises(HTTPException) as exc:
+        main.webhook(
+            WebhookRequest(text="hello", tenant_id="not-a-uuid"),
+            request=SimpleNamespace(state=SimpleNamespace()),
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "tenant_id must be a valid UUID"
+
+
+def test_webhook_propagates_budget_exhausted_http_429() -> None:
+    def _raise_budget(*_args, **_kwargs):
+        raise HTTPException(status_code=429, detail={"error": {"code": "budget_exhausted"}})
+
+    main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
+    main.app.state.agent = SimpleNamespace(process_webhook=_raise_budget)
+
+    with pytest.raises(HTTPException) as exc:
+        main.webhook(
+            WebhookRequest(text="hello", tenant_id="3d0f5f00-ec44-4d3f-893f-c8f89ee5f80c"),
+            request=SimpleNamespace(state=SimpleNamespace()),
+        )
+
+    assert exc.value.status_code == 429
+    assert exc.value.detail == {"error": {"code": "budget_exhausted"}}
