@@ -1,0 +1,353 @@
+---
+# Codex Fix Packet — Phase 2 Review
+# Generated: 2026-03-04
+# Full review: docs/PHASE2_REVIEW.md
+# This packet is the authoritative work order for the Codex implementation agent.
+
+codex_fix_packet:
+
+  context:
+    repo_overview: >
+      gdev-agent is a multi-tenant AI triage service for game studio player support.
+      FastAPI + Claude tool_use + Redis (async) + PostgreSQL (async SQLAlchemy, Alembic, RLS) + n8n.
+      Root: /home/artem/dev/ai-stack/projects/gdev-agent.
+      Baseline: 85 tests pass, 1 skipped (test_isolation.py — T09).
+    assumptions:
+      - P0 fixes are applied before T08 is reported complete.
+      - EventStore rewrite (T08) happens concurrently with P0-2 fix.
+      - All Redis clients in async context use redis.asyncio (as established by T00A).
+      - gdev_app Postgres role has RLS enforced (no BYPASSRLS).
+      - testcontainers Postgres available for integration tests.
+    constraints:
+      - do not change the public API of protected modules (TenantRegistry, SignatureMiddleware, LLMClient)
+      - do not edit existing Alembic migrations (0001, 0002, 0003)
+      - all Redis usage in async def methods must use redis.asyncio
+      - all SQL must be parameterized (sqlalchemy text() with named params)
+      - new routes must use require_role()
+      - never add session-level SET (use SET LOCAL only)
+      - never store raw user_id, email, or player text in logs or span attributes
+
+  priorities:
+
+    - id: "P0-1"
+      title: "Add cross-tenant isolation check to /approve endpoint"
+      rationale: >
+        A JWT-authenticated support_agent from Tenant A can approve a pending action
+        belonging to Tenant B by supplying any valid pending_id. The approve() method
+        receives no tenant context, and PendingDecision has no top-level tenant_id field.
+        This is a critical authorization bypass in any multi-tenant deployment.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/schemas.py
+          - app/agent.py
+          - app/main.py
+        components:
+          - PendingDecision (add tenant_id field)
+          - AgentService.propose_action() (populate pending.tenant_id)
+          - AgentService.approve() (accept and validate jwt_tenant_id)
+          - POST /approve route handler (pass request.state.tenant_id)
+
+      tasks:
+        - "Add `tenant_id: str` field to PendingDecision in app/schemas.py."
+        - >
+          In AgentService.propose_action() (app/agent.py), populate the
+          PendingDecision with tenant_id=payload.tenant_id (already present in payload).
+        - >
+          Change AgentService.approve() signature to accept jwt_tenant_id: str | None
+          as a second argument.
+        - >
+          In AgentService.approve(), before pop_pending(), verify:
+            str(pending.tenant_id) == str(jwt_tenant_id)
+          If mismatch: raise HTTPException(status_code=403, detail="Forbidden").
+          Do NOT pop_pending() before the check — check first, then pop.
+          (Use get_pending() for the check, then pop_pending() on success.)
+        - >
+          In the POST /approve route handler (app/main.py), pass
+          request.state.tenant_id to app.state.agent.approve(payload, jwt_tenant_id=...).
+        - >
+          Write tests in tests/test_approval_flow.py (or tests/test_isolation.py):
+            - Tenant A pending + Tenant B JWT → HTTP 403
+            - Tenant A pending + Tenant A JWT with support_agent role → success
+            - Missing tenant_id in JWT context (webhook-style) → 403 (fail closed)
+
+      acceptance_criteria:
+        - "POST /approve with a pending_id from Tenant A and JWT from Tenant B returns HTTP 403."
+        - "POST /approve with matching tenant_id and support_agent role returns HTTP 200."
+        - "PendingDecision.tenant_id is populated in all approve-path tests."
+        - "No regression in existing approve tests."
+
+      tests:
+        - ".venv/bin/pytest tests/test_approval_flow.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          Use get_pending() to read before checking, then pop_pending() after validation.
+          This avoids consuming the pending entry before authorization is confirmed.
+        - >
+          If jwt_tenant_id is None (e.g., webhook caller without JWT), fail closed (403).
+          The /approve endpoint requires a JWT (JWTMiddleware enforces this).
+        - >
+          Do NOT change the existing X-Approve-Secret check — it remains as a legacy
+          second factor but the tenant check is the primary security control.
+
+    - id: "P0-2"
+      title: "Fix EventStore RLS bypass — add SET LOCAL before all INSERTs"
+      rationale: >
+        EventStore._persist_pipeline_run_async() opens a DB session without calling
+        SET LOCAL app.current_tenant_id = :tid. In production with gdev_app role
+        (RLS enforced, no BYPASSRLS), all INSERTs to tenant-scoped tables fail silently.
+        This causes total loss of Postgres audit/ticket records on every webhook call.
+        This fix is part of the T08 EventStore rewrite scope.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/store.py
+        components:
+          - EventStore._persist_pipeline_run_async()
+
+      tasks:
+        - >
+          At the start of _persist_pipeline_run_async(), inside the session.begin() block,
+          add the SET LOCAL call before the first INSERT:
+            async with self._db_session_factory() as session:
+              async with session.begin():
+                await session.execute(
+                    text("SET LOCAL app.current_tenant_id = :tid"),
+                    {"tid": str(payload_tenant_id)},
+                )
+                # then proceed with ticket INSERT
+        - >
+          Confirm payload_tenant_id and audit_tenant_id match is validated BEFORE the
+          session opens (this check already exists at store.py:120-123 — keep it).
+        - >
+          Write integration test in tests/test_store.py (or a new integration file):
+          Use testcontainers Postgres, run migration, connect as gdev_app role (not superuser),
+          call persist_pipeline_run() and assert ticket row is present in DB.
+          Without the SET LOCAL fix, this test must fail with RLS violation error.
+
+      acceptance_criteria:
+        - "persist_pipeline_run() succeeds with gdev_app role and RLS enabled."
+        - "Integration test asserts ticket, classification, extracted, action, and audit rows created."
+        - "Cross-tenant INSERT (wrong tenant_id in SET LOCAL) is blocked by RLS — assert error raised."
+
+      tests:
+        - ".venv/bin/pytest tests/test_store.py -x -q -m integration"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          The existing _run_blocking() thread pattern adds latency. Replacing it with
+          asyncio.create_task() or FastAPI BackgroundTasks is tracked as P2-2 and can
+          be done as part of T08's broader rewrite — not required for P0-2 specifically.
+        - >
+          testcontainers gdev_app role setup:
+            1. Create gdev_app role without BYPASSRLS.
+            2. Grant SELECT,INSERT,UPDATE,DELETE on all tables to gdev_app.
+            3. Connect as gdev_app in the test session.
+          This mirrors the production RLS enforcement scenario.
+
+    - id: "P1-2"
+      title: "Fix RateLimitMiddleware — replace sync Redis with async Redis client"
+      rationale: >
+        RateLimitMiddleware.dispatch() is async def but calls synchronous
+        self.redis.incr() and self.redis.expire(). This blocks the uvicorn event loop
+        for ~1-5 ms per webhook and auth request, reducing concurrency and causing
+        latency spikes. Identical to P1-01 (T00A) but reintroduced in T06B.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/middleware/rate_limit.py
+          - app/main.py
+        components:
+          - RateLimitMiddleware.__init__() and dispatch()
+          - RateLimitMiddleware wiring in app/main.py
+
+      tasks:
+        - >
+          In app/main.py, change the RateLimitMiddleware Redis client from
+          redis.from_url(...) (sync) to an async Redis client. This client MUST be
+          the same client used by tenant_registry_redis (already initialized in lifespan).
+          However, since middleware is registered at module load time and lifespan hasn't run,
+          the async client must be passed via app.state or deferred.
+          Recommended approach: pass `redis_client=None` at registration time; in dispatch(),
+          read `request.app.state.jwt_blocklist_redis` (the existing async Redis client on
+          app.state) if no client was injected.
+        - >
+          In app/middleware/rate_limit.py, change all self.redis calls to await:
+            - `await self.redis.incr(minute_key)` → returns coroutine
+            - `await self.redis.expire(minute_key, 60)` → returns coroutine
+            (etc. for burst_key and auth_key)
+        - >
+          Update tests/test_middleware.py: assert the Redis methods are awaited
+          (use AsyncMock and assert_awaited_once_with).
+
+      acceptance_criteria:
+        - "All Redis calls in RateLimitMiddleware.dispatch() are awaited."
+        - "RateLimitMiddleware receives an async Redis client (redis.asyncio.Redis)."
+        - "Full test suite passes."
+        - "No second synchronous Redis connection pool created at module load."
+
+      tests:
+        - ".venv/bin/pytest tests/test_middleware.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          The simplest approach: in dispatch(), access the async Redis client from
+          app.state (already set in lifespan): `self.redis = request.app.state.jwt_blocklist_redis`.
+          This avoids any module-load-time wiring and shares the existing connection pool.
+        - >
+          Must also address P1-3 (double Settings) in same PR to avoid redundant changes.
+
+    - id: "P1-3"
+      title: "Eliminate double Settings() instantiation and sync Redis at module load"
+      rationale: >
+        app/main.py:148 creates _middleware_settings = Settings() (unvalidated) and
+        app/main.py:156 creates redis.from_url() (sync, second connection pool) at module
+        load time, before lifespan. This creates two Settings instances and two Redis
+        connection pools, and bypasses ANTHROPIC_API_KEY validation.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/main.py
+        components:
+          - Module-level _middleware_settings initialization
+          - RateLimitMiddleware redis_client argument
+
+      tasks:
+        - >
+          Replace `_middleware_settings = Settings()` with `_middleware_settings = get_settings()`.
+          get_settings() uses lru_cache so this is the same validated singleton as lifespan.
+          Note: this means ANTHROPIC_API_KEY must be set at import time; in tests that don't
+          set it, this will raise ValueError. Tests that test middleware independently must
+          set ANTHROPIC_API_KEY in conftest.py env patching.
+        - >
+          Remove `redis_client=redis.from_url(_middleware_settings.redis_url)` from the
+          RateLimitMiddleware registration call. The redis_client will be sourced from
+          app.state at request time (per P1-2 fix).
+        - >
+          Confirm no module-level sync Redis client instantiation remains in main.py.
+
+      acceptance_criteria:
+        - "Only one Settings instance is created (get_settings() via lru_cache)."
+        - "No redis.from_url() call at module load time."
+        - "Full test suite passes."
+
+      tests:
+        - ".venv/bin/pytest tests/test_main.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          If get_settings() at module load causes test failures (ANTHROPIC_API_KEY not set
+          in test env), add a conftest.py fixture that sets ANTHROPIC_API_KEY=test-key-xxx
+          as an env var monkeypatch before any module import. The lru_cache must be cleared
+          between tests if settings change: `get_settings.cache_clear()`.
+
+  non_blocking:
+
+    - id: "P2-1"
+      title: "Document Redis key namespace drift in data-map.md and ARCHITECTURE.md"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Update docs/data-map.md §3 to reflect the CURRENT implementation:
+          Keys are flat-namespaced (no tenant prefix). Add a note:
+          "Current implementation uses flat keys (dedup:{msg_id}, pending:{id},
+          ratelimit:{user_id}). Tenant prefix ({tenant_id}:) is Phase 5 hardening —
+          requires coordinated rollout to avoid breaking in-flight keys."
+        - >
+          Update docs/ARCHITECTURE.md §6.2 Redis section to clarify the discrepancy
+          between spec intent and implementation.
+      acceptance_criteria:
+        - "data-map.md §3 describes current (flat) key patterns with a note about the drift."
+
+    - id: "P2-3"
+      title: "Add KB_BASE_URL to .env.example; document URL allowlist requirement"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Add to .env.example:
+            # Knowledge base base URL for FAQ lookups (required — no default in production)
+            # Must also be added to URL_ALLOWLIST or FAQ links will be stripped by output guard
+            KB_BASE_URL=https://kb.yourdomain.com
+        - >
+          Add a comment to config.py above DEFAULT_KB_BASE_URL noting it must be added
+          to URL_ALLOWLIST, OR add startup validation: if kb_base_url is not in
+          url_allowlist and url_allowlist is non-empty, emit LOGGER.warning().
+      acceptance_criteria:
+        - "KB_BASE_URL present in .env.example with inline documentation."
+
+    - id: "P2-4"
+      title: "Fix ADR-003 to reflect HS256 decision (or escalate to RS256)"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Decision required from Architecture: accept HS256 for v1 or migrate to RS256.
+          If accepting HS256:
+            - Update docs/adr/003-rbac-design.md: change RS256 → HS256; remove JWKS reference;
+              document rationale (simplicity for v1, upgrade path for v2).
+            - Add startup check: if len(settings.jwt_secret) < 32, raise RuntimeError
+              (not just LOGGER.error) to prevent weak secrets in production.
+        - >
+          If migrating to RS256:
+            - Add RS_PRIVATE_KEY and RS_PUBLIC_KEY settings to config.py.
+            - Update JWTMiddleware to decode with public key.
+            - Add POST /auth/jwks.json endpoint serving the public key.
+            - Add migration docs for key rotation.
+      acceptance_criteria:
+        - "ADR-003 matches the implemented algorithm."
+        - "If HS256 kept: startup fails (RuntimeError) on jwt_secret shorter than 32 bytes."
+
+    - id: "P2-5"
+      title: "Remove dangling REVIEW_NOTES.md reference from N8N.md"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          In docs/N8N.md §8.8, replace the reference
+          "See REVIEW_NOTES.md §5.12 for mitigation guidance."
+          with an inline note:
+          "Mitigation: monitor the `approval_notify_failed` log event and implement
+          an alerting rule that fires if this event occurs more than N times in a
+          rolling window without a corresponding `pending_approved` or `pending_rejected`
+          for the same pending_id within APPROVAL_TTL_SECONDS."
+      acceptance_criteria:
+        - "No reference to REVIEW_NOTES.md remains in docs/N8N.md."
+
+    - id: "P2-6"
+      title: "Remove fastapi HTTPException import from AgentService"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Define domain exceptions in app/agent.py (or app/exceptions.py):
+            class PendingNotFoundError(Exception): pass
+            class AgentInputGuardError(ValueError): pass
+        - >
+          Replace `from fastapi import HTTPException` with domain exceptions inside
+          AgentService methods.
+        - >
+          In route handlers (app/main.py), catch domain exceptions and raise HTTPException.
+      acceptance_criteria:
+        - "app/agent.py has no import from fastapi."
+        - "Unit tests for AgentService do not require FastAPI test client."
+
+    - id: "P2-7"
+      title: "Hash reviewer field before storing in audit log"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          In app/agent.py, when storing `reviewer` in log events (store.log_event()),
+          hash it: `hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]`
+          before inclusion in event payload.
+        - >
+          Update data-map.md §2 audit_log.approved_by comment to confirm it stores
+          SHA-256 short hash of reviewer identity (not raw value).
+      acceptance_criteria:
+        - "Raw reviewer string does not appear in any log event payload."
+        - "audit_log.approved_by stores hashed value or 'auto'."

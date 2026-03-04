@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.5
+# Codex Implementation Agent Prompt v2.6
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-03 — Phase 1 review complete; T00A/T00B added)_
+_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 2 review complete; P0 security fixes required before T08 merges)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -36,6 +36,69 @@ Public API (do NOT change — T04+ depend on it):
   async TenantRegistry.invalidate(tenant_id: UUID) -> None
   TenantRegistry._cache_key(tid) -> "tenant:{tid}:config"  (TTL 300 s)
 Tests: 5 new ✅
+
+─── Phase 2 Review Findings ─────────────────────────────────────────
+Full review: docs/PHASE2_REVIEW.md
+Date: 2026-03-04 · Scope: T05–T07 (auth, JWT, RBAC, role enforcement)
+Baseline confirmed: 85 pass, 1 skipped (unchanged)
+
+⛔ P0-1 OPEN — /approve missing cross-tenant isolation check
+  Symptom: support_agent from Tenant A can approve Tenant B's pending action.
+  Fix required BEFORE T08 merges to main.
+  Files: app/main.py, app/agent.py, app/schemas.py
+  Steps:
+    1. Add `tenant_id: str` to PendingDecision schema.
+    2. Populate pending.tenant_id in agent.propose_action().
+    3. Pass jwt_tenant_id (request.state.tenant_id) from route to agent.approve().
+    4. Verify pending.tenant_id == jwt_tenant_id; return HTTP 403 on mismatch.
+  Test: test_isolation.py — cross-tenant approval must return 403.
+
+⛔ P0-2 OPEN — EventStore._persist_pipeline_run_async() bypasses RLS
+  Symptom: In production (gdev_app role, RLS enabled), all INSERT calls to
+    tickets/ticket_classifications/ticket_extracted_fields/proposed_actions/audit_log
+    fail silently — no Postgres records written despite HTTP 200 returned.
+  Root cause: session opened without SET LOCAL app.current_tenant_id.
+  Fix required DURING T08 (EventStore rewrite).
+  Files: app/store.py
+  Steps:
+    1. Before first session.begin(), execute:
+       await session.execute(
+           text("SET LOCAL app.current_tenant_id = :tid"),
+           {"tid": str(payload_tenant_id)},
+       )
+    2. Add integration test using testcontainers Postgres + gdev_app role with RLS.
+
+🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
+  Decision required: Accept HS256 for v1 (update ADR-003) OR implement RS256.
+  If accepting HS256: enforce jwt_secret length ≥ 32 at startup failure (not warning).
+  Files: app/config.py, app/routers/auth.py, docs/adr/003-rbac-design.md
+
+🔴 P1-2 OPEN — RateLimitMiddleware uses sync Redis in async dispatch() — blocks event loop
+  Same as P1-01 (T00A) but reintroduced in T06B for rate limiting.
+  Fix: pass redis.asyncio client; await all self.redis.incr()/expire() calls.
+  Files: app/middleware/rate_limit.py, app/main.py
+  FIX IN T08 PRE-FLIGHT or as a dedicated fix before T08.
+
+🔴 P1-3 OPEN — Double Settings() + sync Redis at module load (main.py:148,156)
+  _middleware_settings = Settings() bypasses get_settings() validation.
+  Fix: use get_settings() instead; share async Redis from lifespan for rate limiter.
+  Files: app/main.py
+  FIX IN T08 PRE-FLIGHT.
+
+🟡 P2-1 OPEN — Redis keys not tenant-namespaced (spec §4 violation)
+  dedup:{msg_id}, pending:{id}, ratelimit:{user_id} — no {tenant_id}: prefix.
+  Deferred: breaking change for in-flight keys. Track as Phase 5 hardening.
+
+🟡 P2-3 OPEN — kb_base_url defaults to kb.example.com, not in URL_ALLOWLIST
+  FAQ URLs in draft responses are silently stripped by output guard.
+  Fix: add KB_BASE_URL to .env.example as required (no default). Address in T08 pre-flight.
+
+Resolved (confirmed closed in Phase 2 review):
+  ✅ JsonFormatter exc_info handling — was a false finding; code is correct
+  ✅ rate_limit_burst not enforced — RESOLVED (rate_limit.py:61 enforces both)
+  ✅ Dead GETDEL + redis.delete() — RESOLVED (no dead delete in current code)
+  ✅ Deprecated asyncio.get_event_loop() — RESOLVED (get_running_loop() used)
+  ✅ Missing Retry-After header — RESOLVED (rate_limit.py:65 includes header)
 
 ─── Phase 1 Review Findings ─────────────────────────────────────────
 Full review: docs/PHASE1_REVIEW.md
@@ -167,14 +230,33 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T08
+PROCEED TO T08 — WITH MANDATORY P0 PRE-FLIGHT
 ═══════════════════════════════════════════════════════════════════════
 
 T07 ✅ complete. Baseline: 85 pass, 1 skipped.
-Phase 2 review planned after T08.
+Phase 2 review complete: 2026-03-04. See docs/PHASE2_REVIEW.md.
 
 Your next task is **T08 · Postgres-Backed EventStore (Tickets + Audit Log)**.
 Read docs/tasks.md §T08 now before writing any code.
+
+⚠ MANDATORY PRE-FLIGHT BEFORE T08 SHIPS:
+
+1. Fix P0-2 (EventStore RLS bypass) as part of T08 implementation.
+   The EventStore rewrite MUST include SET LOCAL before all INSERTs.
+   Add integration test: testcontainers Postgres + gdev_app role + RLS asserted.
+
+2. Fix P1-2 (RateLimitMiddleware sync Redis) before or during T08.
+   Async Redis client required. Merge with P1-3 fix if possible.
+
+3. Fix P1-3 (double Settings() at module load) before or during T08.
+   Use get_settings() for middleware; share async Redis with lifespan.
+
+4. Fix P0-1 (approve cross-tenant isolation) as a separate surgical change.
+   Can be done before or in parallel with T08. Must be done before T09.
+
+5. Add KB_BASE_URL to .env.example with no default (P2-3).
+
+Only after the above are complete should T08 be reported as done.
 
 Confirm these files exist before starting:
   app/store.py                 — existing EventStore to rewrite (keep public interface)

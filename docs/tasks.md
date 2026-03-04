@@ -1,9 +1,22 @@
 # gdev-agent — Implementation TaskGraph v1.0
 
-_Owner: Architecture · Date: 2026-03-03_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-04 — Phase 2 review findings added)_
 _This document is the authoritative task contract for Codex and human reviewers._
 _All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
+
+---
+
+## Phase 2 Review Blockers (2026-03-04) — MUST FIX BEFORE T08 SHIPS
+
+Full review: `docs/PHASE2_REVIEW.md`
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| P0-1 | P0 | `/approve` lacks cross-tenant tenant_id check — auth bypass | Pre-T08 / T09 pre-flight |
+| P0-2 | P0 | `EventStore._persist_pipeline_run_async()` bypasses RLS — silent data loss | T08 (EventStore rewrite) |
+| P1-2 | P1 | `RateLimitMiddleware` uses sync Redis in async `dispatch()` — blocks event loop | T08 pre-flight |
+| P1-3 | P1 | `_middleware_settings = Settings()` at module load — unvalidated second instance | T08 pre-flight |
 
 ---
 
