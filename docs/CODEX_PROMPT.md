@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.8
+# Codex Implementation Agent Prompt v2.9
 
-_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 3 fixes FIX-1..FIX-5 done; proceed to T11)_
+_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — T11 done; proceed to T12)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,9 +8,9 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅  FIX-1 ✅  FIX-2 ✅  FIX-3 ✅  FIX-4 ✅  FIX-5 ✅
-**Next task:** T11 · New Read Endpoints
-**Baseline:** 93 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅  FIX-1 ✅  FIX-2 ✅  FIX-3 ✅  FIX-4 ✅  FIX-5 ✅  T11 ✅
+**Next task:** T12 · Agent Registry CRUD
+**Baseline:** 106 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -297,13 +297,48 @@ HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
 Tests: 3 skipped locally (Docker required); 88 pass 12 skip overall.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T11
+PROCEED TO T12
 ═══════════════════════════════════════════════════════════════════════
 
-T10 ✅ FIX-1..FIX-5 ✅ complete. Baseline: 93 pass, 12 skipped.
-Phase 3 review complete: 2026-03-04. See docs/PHASE3_REVIEW.md.
-Your next task is **T11 · New Read Endpoints**.
-Read docs/tasks.md §T11 now before writing any code.
+T11 ✅ complete. Baseline: 106 pass, 12 skipped.
+Your next task is **T12 · Agent Registry CRUD**.
+Read docs/tasks.md §T12 now before writing any code.
+
+─── T11 (New Read Endpoints) ────────────────────────────────────────
+Files created:
+  app/routers/tickets.py   — GET /tickets, GET /tickets/{ticket_id}
+  app/routers/analytics.py — GET /audit, GET /metrics/cost
+  app/routers/agents.py    — GET /agents, GET /eval/runs
+  tests/test_endpoints.py  — 13 tests (happy path, pagination, wrong role, cross-tenant)
+Files modified:
+  app/main.py              — 3 routers included
+  app/schemas.py           — T11 response/error models added
+Contract: role enforcement, cursor pagination (cursor+limit, default 50, max 100),
+  tenant filtering via RLS+SET LOCAL, GET /tickets/{id} → 404 cross-tenant,
+  GET /audit newest-first, standard response envelope {data, cursor, total}.
+Tests: 13 new. 13/13 pass. test_main.py + test_rbac.py (12) also pass.
+Public API (do NOT change — T12 depends on app/routers/agents.py):
+  GET /agents              → require_role("support_agent","tenant_admin")
+  GET /eval/runs           → require_role("support_agent","tenant_admin")
+  app/routers/agents.py    → T12 adds PUT /agents/{agent_id} to this file
+
+Pre-flight for T12:
+  Confirm these files exist before starting:
+    app/routers/agents.py       — add PUT handler here (created in T11)
+    app/tenant_registry.py      — TenantRegistry.invalidate() (T03)
+    app/db.py                   — get_db_session() for new handler
+    app/dependencies.py         — require_role() (T05)
+    alembic/versions/           — agent_configs table must exist (0001)
+
+  Key requirements:
+    - New service: app/agent_registry.py — AgentRegistryService
+    - PUT /agents/{agent_id}: only tenant_admin role
+    - Version bump: UPDATE old row is_current=FALSE, INSERT new row version+1 is_current=TRUE
+    - Cross-tenant: return 404 (not 403) if agent_config belongs to different tenant
+    - Emit agent_config_updated log event (old_version, new_version, tenant_id_hash)
+    - Call TenantRegistry.invalidate() after successful update
+    - Do NOT auto-trigger eval run (deferred to POST /eval/run)
+    - ANTHROPIC_API_KEY must be set before importing app.main in new test files
 
 ─── T10 (CostLedger Service + Budget Guard) ─────────────────────────
 Files: app/cost_ledger.py (new), app/agent.py(+budget check/record),

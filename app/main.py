@@ -24,7 +24,10 @@ from app.logging import clear_request_id, configure_logging, set_request_id
 from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
+from app.routers.agents import router as agents_router
+from app.routers.analytics import router as analytics_router
 from app.routers.auth import router as auth_router
+from app.routers.tickets import router as tickets_router
 from app.schemas import (
     ApproveRequest,
     ApproveResponse,
@@ -157,6 +160,9 @@ app.add_middleware(
 )
 app.add_middleware(SignatureMiddleware, settings=_middleware_settings)
 app.include_router(auth_router)
+app.include_router(tickets_router)
+app.include_router(analytics_router)
+app.include_router(agents_router)
 
 
 @app.get("/health", response_model=HealthResponse)

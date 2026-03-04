@@ -597,7 +597,7 @@ Store the rate constants in `app/config.py` so they can be updated without code 
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T07, T08
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Implement all read endpoints from `docs/spec.md §8`:
@@ -647,7 +647,7 @@ on `created_at`). Default limit 50, max 100.
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T11, T03
-**Status:** pending
+**Status:** in_progress
 
 **Scope:**
 Implement agent config read and update. Update creates a new versioned row and marks the old

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -138,3 +140,149 @@ class AuditLogEntry(BaseModel):
     ticket_id: str | None = None
     latency_ms: int
     cost_usd: float = 0.0
+
+
+class ErrorDetail(BaseModel):
+    """Standard API error payload."""
+
+    code: str
+    message: str
+
+
+class ErrorResponse(BaseModel):
+    """Error response envelope."""
+
+    error: ErrorDetail
+
+
+class TicketListItem(BaseModel):
+    """Ticket list row."""
+
+    ticket_id: UUID
+    message_id: str | None = None
+    platform: str | None = None
+    game_title: str | None = None
+    created_at: datetime
+
+
+class TicketDetailItem(BaseModel):
+    """Single ticket detail row."""
+
+    ticket_id: UUID
+    message_id: str | None = None
+    platform: str | None = None
+    game_title: str | None = None
+    raw_text: str
+    created_at: datetime
+    category: str | None = None
+    urgency: str | None = None
+    confidence: Decimal | None = None
+    action_tool: str | None = None
+    status: str | None = None
+
+
+class AuditListItem(BaseModel):
+    """Audit log row."""
+
+    audit_id: UUID
+    request_id: str | None = None
+    message_id: str | None = None
+    category: str | None = None
+    urgency: str | None = None
+    confidence: Decimal | None = None
+    action_tool: str | None = None
+    status: str | None = None
+    ticket_id: UUID | None = None
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: Decimal | None = None
+    created_at: datetime
+
+
+class CostMetricItem(BaseModel):
+    """Cost ledger row."""
+
+    ledger_id: UUID
+    date: date
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal
+    request_count: int
+    created_at: datetime
+
+
+class AgentConfigItem(BaseModel):
+    """Agent config row."""
+
+    agent_config_id: UUID
+    agent_name: str
+    version: int
+    model_id: str
+    max_turns: int
+    tools_enabled: list[str]
+    guardrails: dict[str, Any]
+    prompt_version: str
+    is_current: bool
+    created_at: datetime
+
+
+class EvalRunItem(BaseModel):
+    """Eval run row."""
+
+    eval_run_id: UUID
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    f1_score: Decimal | None = None
+    guard_block_rate: Decimal | None = None
+    cost_usd: Decimal | None = None
+    status: str
+    created_at: datetime
+
+
+class TicketListResponse(BaseModel):
+    """Envelope for ticket list responses."""
+
+    data: list[TicketListItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class TicketDetailResponse(BaseModel):
+    """Envelope for ticket detail responses."""
+
+    data: list[TicketDetailItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class AuditListResponse(BaseModel):
+    """Envelope for audit list responses."""
+
+    data: list[AuditListItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class CostMetricResponse(BaseModel):
+    """Envelope for cost metric list responses."""
+
+    data: list[CostMetricItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class AgentListResponse(BaseModel):
+    """Envelope for agent config list responses."""
+
+    data: list[AgentConfigItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class EvalRunListResponse(BaseModel):
+    """Envelope for eval run list responses."""
+
+    data: list[EvalRunItem]
+    cursor: str | None = None
+    total: None = None
