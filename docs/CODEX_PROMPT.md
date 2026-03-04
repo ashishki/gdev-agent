@@ -269,9 +269,12 @@ Test command (always use this, never sg docker):
 ─── Remaining known gaps (do NOT fix until task requires it) ─────────
   1. ruff format --check — pre-existing drift on ~20 files. ruff check (lint) = 0 errors.
   2. mypy app/ — pre-existing errors in app/agent.py.
-  3. tests/test_isolation.py — does not exist yet (T09).
-  4. TenantRegistry uses synchronous redis client inside async methods (blocks event loop).
-     Tracked for Phase 1 review. Fix assigned to review findings, not Codex yet.
+  3. P1-1 — ADR-003 RS256 vs HS256 decision pending (architecture sign-off required).
+  4. P2-6 — agent.py imports HTTPException from fastapi (layer violation, deferred).
+  5. P2-9 — _run_blocking duplicated in store.py and agent.py (deferred P3 cleanup).
+  6. fakeredis/ is in project root, should be under tests/. Fix: update tests/conftest.py
+     to add tests/ dir to sys.path, then move fakeredis/ to tests/fakeredis/.
+     (P3-2 — deferred; do NOT fix until explicitly assigned.)
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
   A. alembic/env.py reads DATABASE_URL from os.environ (NOT get_settings()).
@@ -325,12 +328,122 @@ HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
 Tests: 3 skipped locally (Docker required); 88 pass 12 skip overall.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T11
+PHASE 3 REVIEW COMPLETE — PRE-T11 FIXES REQUIRED
 ═══════════════════════════════════════════════════════════════════════
 
-T10 ✅ complete. Baseline: 88 pass, 12 skipped.
-Your next task is **T11 · New Read Endpoints**.
-Read docs/tasks.md §T11 now before writing any code.
+T10 ✅ complete. Phase 3 review complete: 2026-03-04. See docs/PHASE3_REVIEW.md.
+Baseline: 88 pass, 12 skipped.
+
+Full Codex work orders: docs/PHASE3_FIX_PACKET.yaml
+
+Execute these fixes IN ORDER before starting T11:
+
+────────────────────────────────────────────────────────────────────
+FIX-1 · P1-4  Budget guard bypass when tenant_id is None
+────────────────────────────────────────────────────────────────────
+Files to MODIFY: app/main.py, tests/test_main.py
+
+In the POST /webhook route handler (app/main.py, after dedup check, before agent call):
+  resolved_tenant_id = getattr(request.state, "tenant_id", None) or payload.tenant_id
+  if not resolved_tenant_id:
+      raise HTTPException(status_code=400, detail="tenant_id is required")
+
+In app/agent.py:_enforce_budget(), add a comment above `if tenant_uuid is None`:
+  # Unit-test fallback only. Production callers always have a valid tenant_uuid
+  # because main.py validates it before calling process_webhook().
+
+New tests in tests/test_main.py:
+  - POST /webhook without tenant_id → HTTP 400
+  - POST /webhook with non-UUID tenant_id → HTTP 400 (add validation)
+
+Acceptance:
+  - Webhook without tenant_id returns 400.
+  - Webhook with exhausted budget returns 429.
+  - 88 passing tests unchanged.
+
+────────────────────────────────────────────────────────────────────
+FIX-2 · P2-7  Hash reviewer field before storage (3 sites)
+────────────────────────────────────────────────────────────────────
+Files to MODIFY: app/agent.py, docs/data-map.md
+
+At the top of AgentService.approve(), add:
+  reviewer_hash = (
+      hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
+      if request.reviewer else None
+  )
+
+Replace request.reviewer with reviewer_hash at these 3 sites:
+  - app/agent.py:264  "reviewer": request.reviewer  →  reviewer_hash
+  - app/agent.py:282  "reviewer": request.reviewer  →  reviewer_hash
+  - app/agent.py:299  approved_by=request.reviewer  →  reviewer_hash
+
+In docs/data-map.md §2, update audit_log.approved_by comment to:
+  approved_by: TEXT -- 'auto' or SHA-256[:16] hash of reviewer identity
+
+New test in tests/test_agent.py: approve() with reviewer="raw_user_123" →
+  log event payload must NOT contain "raw_user_123"; approved_by must be 16-char hex.
+
+Acceptance:
+  - No raw reviewer string in any log event or AuditLogEntry.
+  - reviewer=None → approved_by=None (not the string "None").
+
+────────────────────────────────────────────────────────────────────
+FIX-3 · P2-8  Remove duplicate dead config fields
+────────────────────────────────────────────────────────────────────
+Files to MODIFY: app/config.py, tests/test_agent.py
+
+Remove from app/config.py:
+  anthropic_input_cost_per_1k: float = 0.003   ← remove
+  anthropic_output_cost_per_1k: float = 0.015  ← remove
+  (llm_input_rate_per_1k and llm_output_rate_per_1k are the active fields — keep them)
+
+Update tests/test_agent.py:test_webhook_uses_llm_draft_and_tracks_cost:
+  Replace Settings(anthropic_input_cost_per_1k=...) with Settings(llm_input_rate_per_1k=Decimal("0.003"), ...)
+  Add `from decimal import Decimal` import.
+  Update cost assertion at line 98 to compute expected from Decimal values.
+
+Before removing, verify no other file uses the deleted fields:
+  git grep -rn "anthropic_input_cost\|anthropic_output_cost" app/ tests/
+  Expected: only the two files above.
+
+Acceptance:
+  - app/config.py has no anthropic_*_cost_per_1k fields.
+  - Full test suite passes.
+
+────────────────────────────────────────────────────────────────────
+FIX-4 · P2-5  Remove dangling REVIEW_NOTES.md reference (doc only)
+────────────────────────────────────────────────────────────────────
+File to MODIFY: docs/N8N.md
+
+Find line: "See `REVIEW_NOTES.md §5.12` for mitigation guidance."
+Replace with:
+  "Mitigation: monitor the `approval_notify_failed` log event (emitted by
+  AgentService._notify_approval_channel on Telegram failure). Configure an alerting
+  rule that fires if this event occurs more than N times in a rolling window without
+  a corresponding `pending_approved` or `pending_rejected` for the same pending_id
+  within APPROVAL_TTL_SECONDS. The pending entry remains valid in Redis until TTL
+  expires and can be approved directly via the API."
+
+Acceptance: git grep -rn "REVIEW_NOTES.md" docs/ → zero results.
+
+────────────────────────────────────────────────────────────────────
+FIX-5 · P2-3  Add KB_BASE_URL to .env.example (doc+config only)
+────────────────────────────────────────────────────────────────────
+Files to MODIFY: .env.example, app/config.py
+
+Add to .env.example:
+  # Knowledge base base URL for FAQ lookups (required — no default in production)
+  # Must also be added to URL_ALLOWLIST or FAQ links will be stripped by output guard
+  KB_BASE_URL=https://kb.yourdomain.com
+
+Add comment to app/config.py above DEFAULT_KB_BASE_URL:
+  # WARNING: kb_base_url must appear in url_allowlist or FAQ URLs are silently stripped.
+
+Acceptance: KB_BASE_URL documented in .env.example.
+
+────────────────────────────────────────────────────────────────────
+AFTER ALL FIXES PASS: PROCEED TO T11
+────────────────────────────────────────────────────────────────────
 
 Pre-flight for T11:
   Confirm these files exist before starting:
