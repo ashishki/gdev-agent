@@ -40,7 +40,7 @@ def test_support_agent_role_can_call_approve() -> None:
         anthropic_api_key="k", approve_secret="approve-secret"
     )
     main.app.state.agent = SimpleNamespace(
-        approve=lambda _payload: {
+        approve=lambda _payload, jwt_tenant_id=None: {
             "status": "approved",
             "pending_id": "p1",
             "result": {"ok": True},
@@ -48,7 +48,10 @@ def test_support_agent_role_can_call_approve() -> None:
     )
     response = main.approve(
         ApproveRequest(pending_id="p1", approved=True),
-        request=SimpleNamespace(headers={"X-Approve-Secret": "approve-secret"}),
+        request=SimpleNamespace(
+            headers={"X-Approve-Secret": "approve-secret"},
+            state=SimpleNamespace(tenant_id="tenant-a"),
+        ),
     )
     assert response["status"] == "approved"
 
@@ -61,7 +64,7 @@ def test_tenant_admin_role_can_call_approve() -> None:
         anthropic_api_key="k", approve_secret="approve-secret"
     )
     main.app.state.agent = SimpleNamespace(
-        approve=lambda _payload: {
+        approve=lambda _payload, jwt_tenant_id=None: {
             "status": "approved",
             "pending_id": "p1",
             "result": {"ok": True},
@@ -69,6 +72,9 @@ def test_tenant_admin_role_can_call_approve() -> None:
     )
     response = main.approve(
         ApproveRequest(pending_id="p1", approved=True),
-        request=SimpleNamespace(headers={"X-Approve-Secret": "approve-secret"}),
+        request=SimpleNamespace(
+            headers={"X-Approve-Secret": "approve-secret"},
+            state=SimpleNamespace(tenant_id="tenant-a"),
+        ),
     )
     assert response["status"] == "approved"

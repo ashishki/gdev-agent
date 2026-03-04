@@ -13,10 +13,10 @@ Full review: `docs/PHASE2_REVIEW.md`
 
 | ID | Severity | Summary | Fix In |
 |----|----------|---------|--------|
-| P0-1 | P0 | `/approve` lacks cross-tenant tenant_id check — auth bypass | Pre-T08 / T09 pre-flight |
-| P0-2 | P0 | `EventStore._persist_pipeline_run_async()` bypasses RLS — silent data loss | T08 (EventStore rewrite) |
-| P1-2 | P1 | `RateLimitMiddleware` uses sync Redis in async `dispatch()` — blocks event loop | T08 pre-flight |
-| P1-3 | P1 | `_middleware_settings = Settings()` at module load — unvalidated second instance | T08 pre-flight |
+| P0-1 | P0 | `/approve` lacks cross-tenant tenant_id check — auth bypass | ✅ DONE (2026-03-04) |
+| P0-2 | P0 | `EventStore._persist_pipeline_run_async()` bypasses RLS — silent data loss | ✅ DONE (2026-03-04) |
+| P1-2 | P1 | `RateLimitMiddleware` uses sync Redis in async `dispatch()` — blocks event loop | ✅ DONE (2026-03-04) |
+| P1-3 | P1 | `_middleware_settings = Settings()` at module load — unvalidated second instance | ✅ DONE (2026-03-04) |
 
 ---
 
@@ -448,7 +448,9 @@ service calls. No endpoint may return data for a different tenant than the JWT's
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T02, T07
-**Status:** pending
+**Status:** done
+**Note (2026-03-04):** Implemented in app/store.py + tests/test_store.py. Known defect: P0-2
+(missing SET LOCAL before INSERTs — RLS bypass in production). Fix tracked in PHASE2_FIX_PACKET.yaml §P0-2.
 
 **Scope:**
 Replace the current SQLite/Sheets `EventStore` with a Postgres-backed async implementation.

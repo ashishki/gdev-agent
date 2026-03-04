@@ -82,7 +82,9 @@ def test_startup_warns_when_approve_secret_missing(monkeypatch) -> None:
 
 def test_approve_rejects_when_secret_missing_or_wrong() -> None:
     main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="secret")
-    main.app.state.agent = SimpleNamespace(approve=lambda payload: {"unexpected": payload.pending_id})
+    main.app.state.agent = SimpleNamespace(
+        approve=lambda payload, jwt_tenant_id=None: {"unexpected": payload.pending_id, "tenant": jwt_tenant_id}
+    )
     payload = ApproveRequest(pending_id="p1", approved=True)
 
     try:
@@ -103,11 +105,14 @@ def test_approve_rejects_when_secret_missing_or_wrong() -> None:
 def test_approve_allows_when_secret_matches() -> None:
     approved = {"status": "approved", "pending_id": "p1", "result": {"ok": True}}
     main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="secret")
-    main.app.state.agent = SimpleNamespace(approve=lambda payload: approved)
+    main.app.state.agent = SimpleNamespace(approve=lambda payload, jwt_tenant_id=None: approved)
 
     response = main.approve(
         ApproveRequest(pending_id="p1", approved=True),
-        request=SimpleNamespace(headers={"X-Approve-Secret": "secret"}),
+        request=SimpleNamespace(
+            headers={"X-Approve-Secret": "secret"},
+            state=SimpleNamespace(tenant_id="tenant-a"),
+        ),
     )
 
     assert response == approved

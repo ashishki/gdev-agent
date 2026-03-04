@@ -62,6 +62,7 @@ class PendingDecision(BaseModel):
     """Pending action requiring human approval."""
 
     pending_id: str
+    tenant_id: str
     reason: str
     user_id: str | None = None
     expires_at: datetime

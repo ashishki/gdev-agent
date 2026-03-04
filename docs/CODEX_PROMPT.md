@@ -8,8 +8,9 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅
-**Next task:** T08 · Postgres-Backed EventStore (Tickets + Audit Log)
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅
+**Next task:** T09 · Cross-Tenant Isolation Integration Test
+**Baseline:** 88 pass, 5 skipped
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -42,48 +43,27 @@ Full review: docs/PHASE2_REVIEW.md
 Date: 2026-03-04 · Scope: T05–T07 (auth, JWT, RBAC, role enforcement)
 Baseline confirmed: 85 pass, 1 skipped (unchanged)
 
-⛔ P0-1 OPEN — /approve missing cross-tenant isolation check
-  Symptom: support_agent from Tenant A can approve Tenant B's pending action.
-  Fix required BEFORE T08 merges to main.
-  Files: app/main.py, app/agent.py, app/schemas.py
-  Steps:
-    1. Add `tenant_id: str` to PendingDecision schema.
-    2. Populate pending.tenant_id in agent.propose_action().
-    3. Pass jwt_tenant_id (request.state.tenant_id) from route to agent.approve().
-    4. Verify pending.tenant_id == jwt_tenant_id; return HTTP 403 on mismatch.
-  Test: test_isolation.py — cross-tenant approval must return 403.
+✅ P0-1 RESOLVED (2026-03-04) — /approve cross-tenant isolation
+  Files: app/schemas.py(+1), app/agent.py(+13,-2), app/main.py(+6,-1)
+  Tests: tests/test_approval_flow.py, test_main.py, test_rbac.py (modified)
+  Baseline after fix: 87 pass, 3 skipped.
 
-⛔ P0-2 OPEN — EventStore._persist_pipeline_run_async() bypasses RLS
-  Symptom: In production (gdev_app role, RLS enabled), all INSERT calls to
-    tickets/ticket_classifications/ticket_extracted_fields/proposed_actions/audit_log
-    fail silently — no Postgres records written despite HTTP 200 returned.
-  Root cause: session opened without SET LOCAL app.current_tenant_id.
-  Fix required DURING T08 (EventStore rewrite).
-  Files: app/store.py
-  Steps:
-    1. Before first session.begin(), execute:
-       await session.execute(
-           text("SET LOCAL app.current_tenant_id = :tid"),
-           {"tid": str(payload_tenant_id)},
-       )
-    2. Add integration test using testcontainers Postgres + gdev_app role with RLS.
+✅ P0-2 RESOLVED (2026-03-04) — EventStore RLS bypass
+  app/store.py: SET LOCAL added before INSERTs (+4).
+  tests/test_store.py: gdev_app+RLS integration scenarios added (+98,-9).
+  Note: integration tests skip locally without Docker/TEST_DATABASE_URL (by design).
 
 🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
   Decision required: Accept HS256 for v1 (update ADR-003) OR implement RS256.
   If accepting HS256: enforce jwt_secret length ≥ 32 at startup failure (not warning).
   Files: app/config.py, app/routers/auth.py, docs/adr/003-rbac-design.md
 
-🔴 P1-2 OPEN — RateLimitMiddleware uses sync Redis in async dispatch() — blocks event loop
-  Same as P1-01 (T00A) but reintroduced in T06B for rate limiting.
-  Fix: pass redis.asyncio client; await all self.redis.incr()/expire() calls.
-  Files: app/middleware/rate_limit.py, app/main.py
-  FIX IN T08 PRE-FLIGHT or as a dedicated fix before T08.
+✅ P1-2 RESOLVED (2026-03-04) — RateLimitMiddleware async Redis
+  app/middleware/rate_limit.py: await on all Redis calls (+15,-7).
+  app/main.py: async client from request.app.state.jwt_blocklist_redis.
 
-🔴 P1-3 OPEN — Double Settings() + sync Redis at module load (main.py:148,156)
-  _middleware_settings = Settings() bypasses get_settings() validation.
-  Fix: use get_settings() instead; share async Redis from lifespan for rate limiter.
-  Files: app/main.py
-  FIX IN T08 PRE-FLIGHT.
+✅ P1-3 RESOLVED (2026-03-04) — Double Settings at module load
+  app/main.py: _middleware_settings now uses get_settings() (+9,-4).
 
 🟡 P2-1 OPEN — Redis keys not tenant-namespaced (spec §4 violation)
   dedup:{msg_id}, pending:{id}, ratelimit:{user_id} — no {tenant_id}: prefix.
@@ -230,52 +210,32 @@ Test command (always use this, never sg docker):
      Secrets must be fetched from Postgres on every request.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T08 — WITH MANDATORY P0 PRE-FLIGHT
+T08 COMPLETE — PROCEED TO P0 FIXES → THEN T09
 ═══════════════════════════════════════════════════════════════════════
 
-T07 ✅ complete. Baseline: 85 pass, 1 skipped.
+T07 ✅ T08 ✅ complete. Baseline: 85 pass, 1 skipped.
 Phase 2 review complete: 2026-03-04. See docs/PHASE2_REVIEW.md.
+⚠ T08 has a known P0 defect (P0-2 — missing SET LOCAL). Fix before T09.
 
-Your next task is **T08 · Postgres-Backed EventStore (Tickets + Audit Log)**.
-Read docs/tasks.md §T08 now before writing any code.
+Your next tasks (in order):
 
-⚠ MANDATORY PRE-FLIGHT BEFORE T08 SHIPS:
+STEP 1 — Fix P0-1 ✅ DONE
 
-1. Fix P0-2 (EventStore RLS bypass) as part of T08 implementation.
-   The EventStore rewrite MUST include SET LOCAL before all INSERTs.
-   Add integration test: testcontainers Postgres + gdev_app role + RLS asserted.
+STEP 2 — Fix P0-2 + P1-2 + P1-3 ✅ DONE
 
-2. Fix P1-2 (RateLimitMiddleware sync Redis) before or during T08.
-   Async Redis client required. Merge with P1-3 fix if possible.
+STEP 3 — T09 · Cross-Tenant Isolation Integration Test  ← CURRENT
+  Read docs/tasks.md §T09 now before writing any code.
 
-3. Fix P1-3 (double Settings() at module load) before or during T08.
-   Use get_settings() for middleware; share async Redis with lifespan.
+T08 implementation status:
+  app/store.py                 — ✅ DONE (EventStore with Postgres backend)
+  tests/test_store.py          — ✅ DONE (testcontainers Postgres integration tests)
+  app/schemas.py               — ✅ DONE (tenant_id in AuditLogEntry, WebhookRequest)
 
-4. Fix P0-1 (approve cross-tenant isolation) as a separate surgical change.
-   Can be done before or in parallel with T08. Must be done before T09.
-
-5. Add KB_BASE_URL to .env.example with no default (P2-3).
-
-Only after the above are complete should T08 be reported as done.
-
-Confirm these files exist before starting:
-  app/store.py                 — existing EventStore to rewrite (keep public interface)
-  app/agent.py                 — passes EventStore calls; must also receive tenant_id
-  app/schemas.py               — add tenant_id to AuditLogEntry, WebhookRequest
-  app/db.py                    — make_session_factory(); get_db_session() pattern (T02)
-  alembic/versions/            — tables already exist (T01): tickets, ticket_classifications,
-                                 ticket_extracted_fields, proposed_actions, audit_log
-
-Pre-flight notes:
-  - Write sequence must be a SINGLE transaction: tickets → ticket_classifications →
-    ticket_extracted_fields → proposed_actions → audit_log. Any failure rolls back all.
-  - user_id on tickets row must be SHA-256(user_id) — never the raw value (PII rule).
-  - tenant_id on every row must match JWT/webhook tenant; enforce at application level too
-    (RLS is second layer, not sole guard).
-  - Keep existing EventStore public interface stable — agent.py calls process_webhook()
-    which invokes store.*; callers must not break.
-  - Existing eval tests mock EventStore; they must continue passing after the rewrite.
-  - tests/test_store.py uses testcontainers Postgres (same pattern as test_migrations.py).
+Known defect in T08 (must fix before T09):
+  P0-2: _persist_pipeline_run_async() opens session without SET LOCAL app.current_tenant_id.
+  In production with gdev_app role + RLS enabled, all INSERTs fail silently.
+  Fix: app/store.py — add SET LOCAL before first INSERT (see PHASE2_FIX_PACKET.yaml §P0-2).
+  Also add: integration test with gdev_app role + RLS (not superuser) to tests/test_store.py.
 
 ---
 

@@ -13,6 +13,7 @@ from app.schemas import PendingDecision, ProposedAction
 def _pending(pid: str, expires_delta: int = 60) -> PendingDecision:
     return PendingDecision(
         pending_id=pid,
+        tenant_id="tenant-a",
         reason="manual",
         user_id="u1",
         expires_at=datetime.now(UTC) + timedelta(seconds=expires_delta),

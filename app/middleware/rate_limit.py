@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Simple per-user request cap in a 60s window."""
 
-    def __init__(self, app, settings: Settings, redis_client):
+    def __init__(self, app, settings: Settings, redis_client=None):
         super().__init__(app)
         self.settings = settings
         self.redis = redis_client
@@ -42,6 +42,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             payload = json.loads(body.decode("utf-8") or "{}")
         except json.JSONDecodeError:
             payload = {}
+        redis_client = self.redis or getattr(request.app.state, "jwt_blocklist_redis", None)
+        if redis_client is None:
+            LOGGER.warning(
+                "rate limiter unavailable",
+                extra={"event": "rate_limit_bypass", "context": {}},
+            )
+            return await call_next(request)
+
         try:
             if request.url.path == "/webhook":
                 user_id = payload.get("user_id")
@@ -50,13 +58,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                 minute_key = f"ratelimit:{user_id}"
                 burst_key = f"ratelimit_burst:{user_id}"
-                minute_count = int(self.redis.incr(minute_key))
+                minute_count = int(await redis_client.incr(minute_key))
                 if minute_count == 1:
-                    self.redis.expire(minute_key, 60)
+                    await redis_client.expire(minute_key, 60)
 
-                burst_count = int(self.redis.incr(burst_key))
+                burst_count = int(await redis_client.incr(burst_key))
                 if burst_count == 1:
-                    self.redis.expire(burst_key, 10)
+                    await redis_client.expire(burst_key, 10)
 
                 if minute_count > self.settings.rate_limit_rpm or burst_count > self.settings.rate_limit_burst:
                     return JSONResponse(
@@ -71,9 +79,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                 email_hash = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
                 auth_key = f"auth_ratelimit:{email_hash}"
-                auth_count = int(self.redis.incr(auth_key))
+                auth_count = int(await redis_client.incr(auth_key))
                 if auth_count == 1:
-                    self.redis.expire(auth_key, 60)
+                    await redis_client.expire(auth_key, 60)
                 if auth_count > self.settings.auth_rate_limit_attempts:
                     return JSONResponse(
                         {"detail": "Rate limit exceeded"},

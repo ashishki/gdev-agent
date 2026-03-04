@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.dependencies import require_role
 from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
@@ -145,7 +145,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="gdev-agent", lifespan=lifespan)
-_middleware_settings = Settings()
+_middleware_settings = get_settings()
 
 # Starlette adds latest middleware first, so add reverse of desired runtime order.
 app.add_middleware(RequestIDMiddleware)
@@ -153,7 +153,7 @@ app.add_middleware(JWTMiddleware, settings=_middleware_settings)
 app.add_middleware(
     RateLimitMiddleware,
     settings=_middleware_settings,
-    redis_client=redis.from_url(_middleware_settings.redis_url),
+    redis_client=None,
 )
 app.add_middleware(SignatureMiddleware, settings=_middleware_settings)
 app.include_router(auth_router)
@@ -211,4 +211,9 @@ def approve(
         app.state.settings.approve_secret, provided
     ):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return app.state.agent.approve(payload)
+    jwt_tenant_id = None
+    if hasattr(request, "state"):
+        tenant_id = getattr(request.state, "tenant_id", None)
+        if tenant_id is not None:
+            jwt_tenant_id = str(tenant_id)
+    return app.state.agent.approve(payload, jwt_tenant_id=jwt_tenant_id)

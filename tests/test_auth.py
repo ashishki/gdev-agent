@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import fakeredis
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.params import Depends
@@ -21,6 +20,20 @@ from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import auth as auth_module
 from app.schemas import AuthTokenRequest, AuthTokenResponse
+
+
+class _AsyncRedisStub:
+    def __init__(self) -> None:
+        self.values: dict[str, int] = {}
+
+    async def incr(self, key: str) -> int:
+        value = self.values.get(key, 0) + 1
+        self.values[key] = value
+        return value
+
+    async def expire(self, key: str, seconds: int) -> int:
+        _ = (key, seconds)
+        return 1
 
 
 def _token(
@@ -395,7 +408,7 @@ async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
     middleware = RateLimitMiddleware(
         app=None,
         settings=Settings(auth_rate_limit_attempts=5),
-        redis_client=fakeredis.FakeRedis(),
+        redis_client=_AsyncRedisStub(),
     )
 
     async def unauthorized(_request):
@@ -469,7 +482,7 @@ async def test_auth_token_unknown_tenant_slug_returns_401(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_auth_rate_limit_uses_hashed_email_key() -> None:
-    redis_client = fakeredis.FakeRedis()
+    redis_client = _AsyncRedisStub()
     middleware = RateLimitMiddleware(
         app=None,
         settings=Settings(auth_rate_limit_attempts=5),
@@ -492,8 +505,8 @@ async def test_auth_rate_limit_uses_hashed_email_key() -> None:
         unauthorized,
     )
     assert response.status_code == 401
-    assert str(redis_client.get(f"auth_ratelimit:{hashed}")) in {"1", "b'1'"}
-    assert redis_client.get("auth_ratelimit:hashme@example.com") is None
+    assert redis_client.values[f"auth_ratelimit:{hashed}"] == 1
+    assert "auth_ratelimit:hashme@example.com" not in redis_client.values
 
 
 @pytest.mark.asyncio
@@ -501,7 +514,7 @@ async def test_auth_rate_limit_attempts_uses_settings_value() -> None:
     middleware = RateLimitMiddleware(
         app=None,
         settings=Settings(auth_rate_limit_attempts=1),
-        redis_client=fakeredis.FakeRedis(),
+        redis_client=_AsyncRedisStub(),
     )
 
     async def unauthorized(_request):

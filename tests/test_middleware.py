@@ -7,7 +7,6 @@ import hmac
 from types import SimpleNamespace
 from uuid import UUID, uuid5
 
-import fakeredis
 import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -34,6 +33,23 @@ class _SecretStoreStub:
     async def get_secret_and_tenant_by_slug(self, tenant_slug: str) -> tuple[UUID, str]:
         secret = await self.get_secret_by_slug(tenant_slug)
         return uuid5(UUID("00000000-0000-0000-0000-000000000000"), tenant_slug), secret
+
+
+class _AsyncRedisStub:
+    def __init__(self) -> None:
+        self.values: dict[str, int] = {}
+        self.expire_calls: list[tuple[str, int]] = []
+        self.incr_calls: list[str] = []
+
+    async def incr(self, key: str) -> int:
+        self.incr_calls.append(key)
+        value = self.values.get(key, 0) + 1
+        self.values[key] = value
+        return value
+
+    async def expire(self, key: str, seconds: int) -> int:
+        self.expire_calls.append((key, seconds))
+        return 1
 
 
 def _sig(secret: str, body: bytes) -> str:
@@ -174,8 +190,8 @@ async def test_cross_tenant_secret_rejected() -> None:
     assert called is False
 
 
-def _request(body: bytes) -> Request:
-    scope = _scope("/webhook", {"Content-Type": "application/json"})
+def _request(body: bytes, path: str = "/webhook", app_state: object | None = None) -> Request:
+    scope = _scope(path, {"Content-Type": "application/json"}, app_state=app_state)
 
     async def receive():
         if receive.sent:
@@ -189,7 +205,12 @@ def _request(body: bytes) -> Request:
 
 @pytest.mark.asyncio
 async def test_rate_limit_exceeded_for_same_user() -> None:
-    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=2, rate_limit_burst=10), redis_client=fakeredis.FakeRedis())
+    redis_client = _AsyncRedisStub()
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(rate_limit_rpm=2, rate_limit_burst=10),
+        redis_client=redis_client,
+    )
 
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
@@ -199,11 +220,17 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
+    assert redis_client.incr_calls.count("ratelimit:u1") == 3
+    assert ("ratelimit:u1", 60) in redis_client.expire_calls
 
 
 @pytest.mark.asyncio
 async def test_rate_limits_are_independent_per_user() -> None:
-    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=1, rate_limit_burst=10), redis_client=fakeredis.FakeRedis())
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(rate_limit_rpm=1, rate_limit_burst=10),
+        redis_client=_AsyncRedisStub(),
+    )
 
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
@@ -214,7 +241,11 @@ async def test_rate_limits_are_independent_per_user() -> None:
 
 @pytest.mark.asyncio
 async def test_burst_limit_exceeded_for_same_user() -> None:
-    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=100, rate_limit_burst=3), redis_client=fakeredis.FakeRedis())
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(rate_limit_rpm=100, rate_limit_burst=3),
+        redis_client=_AsyncRedisStub(),
+    )
 
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
@@ -225,3 +256,19 @@ async def test_burst_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_uses_app_state_client_when_not_injected() -> None:
+    redis_client = _AsyncRedisStub()
+    middleware = RateLimitMiddleware(app=None, settings=Settings(rate_limit_rpm=1, rate_limit_burst=10))
+
+    async def ok(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    req = _request(
+        b'{"user_id":"u1","text":"hi"}',
+        app_state=SimpleNamespace(jwt_blocklist_redis=redis_client),
+    )
+    assert (await middleware.dispatch(req, ok)).status_code == 200
+    assert redis_client.incr_calls == ["ratelimit:u1", "ratelimit_burst:u1"]

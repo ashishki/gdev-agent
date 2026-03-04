@@ -105,6 +105,7 @@ class AgentService:
         if self.needs_approval(payload.text, classification, action):
             pending = PendingDecision(
                 pending_id=uuid4().hex,
+                tenant_id=str(payload.tenant_id or ""),
                 reason=action.risk_reason or "manual approval required",
                 user_id=payload.user_id,
                 expires_at=datetime.now(UTC) + timedelta(seconds=self.settings.approval_ttl_seconds),
@@ -230,13 +231,23 @@ class AgentService:
             action_result=action_result,
         )
 
-    def approve(self, request: ApproveRequest) -> ApproveResponse:
+    def approve(
+        self,
+        request: ApproveRequest,
+        jwt_tenant_id: str | None = None,
+    ) -> ApproveResponse:
         """Approve or reject a pending action."""
+        pending = self.approval_store.get_pending(request.pending_id)
+        if not pending:
+            raise HTTPException(status_code=404, detail="pending_id not found")
+        if jwt_tenant_id is None or str(pending.tenant_id) != str(jwt_tenant_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
         pending = self.approval_store.pop_pending(request.pending_id)
         if not pending:
             raise HTTPException(status_code=404, detail="pending_id not found")
 
-        tenant_id = pending.action.payload.get("tenant_id")
+        tenant_id = pending.tenant_id
         if not request.approved:
             self.store.log_event(
                 "pending_rejected",
