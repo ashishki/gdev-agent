@@ -227,6 +227,17 @@ class AgentConfigItem(BaseModel):
     created_at: datetime
 
 
+class AgentConfigUpdate(BaseModel):
+    """Agent config update payload for PUT /agents/{agent_id}."""
+
+    agent_name: str = Field(..., min_length=1)
+    model_id: str = Field(..., min_length=1)
+    max_turns: int = Field(..., ge=1)
+    tools_enabled: list[str]
+    guardrails: dict[str, Any]
+    prompt_version: str = Field(..., min_length=1)
+
+
 class EvalRunItem(BaseModel):
     """Eval run row."""
 

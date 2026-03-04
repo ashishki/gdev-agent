@@ -647,7 +647,7 @@ on `created_at`). Default limit 50, max 100.
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T11, T03
-**Status:** in_progress
+**Status:** done
 
 **Scope:**
 Implement agent config read and update. Update creates a new versioned row and marks the old

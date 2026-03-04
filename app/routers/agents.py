@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent_registry import AgentConfigNotFoundError, AgentRegistryService
 from app.db import get_db_session
 from app.dependencies import require_role
-from app.schemas import AgentConfigItem, AgentListResponse, ErrorResponse
+from app.schemas import AgentConfigItem, AgentConfigUpdate, AgentListResponse, ErrorResponse
 
 router = APIRouter()
+_agent_registry_service = AgentRegistryService()
 
 
 def _parse_cursor(cursor: str | None):
@@ -95,3 +98,33 @@ async def list_agents(
     data = [AgentConfigItem.model_validate(dict(row)) for row in page_rows]
     next_cursor = data[-1].created_at.isoformat() if len(rows) > limit else None
     return AgentListResponse(data=data, cursor=next_cursor, total=None)
+
+
+@router.put("/agents/{agent_id}", response_model=AgentConfigItem)
+async def update_agent(
+    agent_id: UUID,
+    payload: AgentConfigUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    _: None = require_role("tenant_admin"),
+) -> AgentConfigItem | JSONResponse:
+    """Create a new versioned agent config and mark the old one non-current."""
+    try:
+        updated = await _agent_registry_service.update_config(
+            tenant_id=request.state.tenant_id,
+            agent_config_id=agent_id,
+            payload=payload,
+            db=db,
+        )
+    except AgentConfigNotFoundError:
+        return JSONResponse(
+            status_code=404,
+            content=ErrorResponse(
+                error={"code": "agent_config_not_found", "message": "Agent config not found"}
+            ).model_dump(mode="json"),
+        )
+
+    tenant_registry = getattr(request.app.state, "tenant_registry", None)
+    if tenant_registry is not None:
+        await tenant_registry.invalidate(request.state.tenant_id)
+    return updated

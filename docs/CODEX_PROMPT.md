@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.9
+# Codex Implementation Agent Prompt v3.0
 
-_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — T11 done; proceed to T12)_
+_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — T12 done; proceed to T13)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,9 +8,9 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅  FIX-1 ✅  FIX-2 ✅  FIX-3 ✅  FIX-4 ✅  FIX-5 ✅  T11 ✅
-**Next task:** T12 · Agent Registry CRUD
-**Baseline:** 106 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅  FIX-1 ✅  FIX-2 ✅  FIX-3 ✅  FIX-4 ✅  FIX-5 ✅  T11 ✅  T12 ✅
+**Next task:** T13 · EmbeddingService
+**Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -297,12 +297,45 @@ HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
 Tests: 3 skipped locally (Docker required); 88 pass 12 skip overall.
 
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T12
+PROCEED TO T13
 ═══════════════════════════════════════════════════════════════════════
 
-T11 ✅ complete. Baseline: 106 pass, 12 skipped.
-Your next task is **T12 · Agent Registry CRUD**.
-Read docs/tasks.md §T12 now before writing any code.
+T12 ✅ complete. Baseline: 111 pass, 12 skipped.
+Your next task is **T13 · EmbeddingService**.
+Read docs/tasks.md §T13 now before writing any code.
+
+─── T12 (Agent Registry CRUD) ───────────────────────────────────────
+Files created:
+  app/agent_registry.py        — AgentRegistryService, AgentConfigNotFoundError
+  tests/test_agent_registry.py — 5 tests (version bump, cross-tenant 404, invalid payload,
+                                  role enforcement, missing config 404)
+Files modified:
+  app/routers/agents.py        — PUT /agents/{agent_id} (tenant_admin only)
+  app/schemas.py               — AgentConfigUpdate request model
+Contract:
+  - Fetch current row; tenant_id ≠ JWT tenant_id → HTTP 404 error envelope
+  - UPDATE old row is_current=FALSE; INSERT new row version+1 is_current=TRUE
+  - TenantRegistry.invalidate(tenant_id) after successful INSERT
+  - Structured log: agent_config_updated {old_version, new_version, tenant_id_hash}
+  - No eval auto-trigger
+  - Response: new agent_configs row via Pydantic model
+Tests: 5 new (test_agent_registry.py). 18/18 pass (test_endpoints + test_agent_registry).
+Note: coverage in tests/test_agent_registry.py (not test_agents.py).
+
+Pre-flight for T13:
+  Confirm these files exist:
+    app/agent.py               — add asyncio.create_task(embedding_service.upsert(...)) after response
+    app/config.py              — add voyage_api_key, embedding_model fields
+    alembic/versions/          — ticket_embeddings table must exist (0001)
+
+  Key requirements:
+    - New service: app/embedding_service.py
+    - Voyage AI API for embeddings (voyage-3-lite); SHA-256 mock vector if unavailable (dev/test)
+    - VECTOR(1024) for voyage-3; pin the model in config
+    - Upsert: ON CONFLICT (ticket_id) DO UPDATE embedding, model_version, created_at
+    - Fire-and-forget: asyncio.create_task() — failure must NOT affect /webhook response
+    - Error logged only (no propagation)
+    - ANTHROPIC_API_KEY must be set before importing app.main in new test files
 
 ─── T11 (New Read Endpoints) ────────────────────────────────────────
 Files created:
