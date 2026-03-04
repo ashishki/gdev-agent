@@ -1,0 +1,359 @@
+---
+# Codex Fix Packet — Phase 3 Review
+# Generated: 2026-03-04
+# Full review: docs/PHASE3_REVIEW.md
+# This packet is the authoritative work order for the Codex implementation agent.
+# Apply fixes in priority order: P1-4 first, then P2 items.
+
+codex_fix_packet:
+
+  context:
+    repo_overview: >
+      gdev-agent is a multi-tenant AI triage service for game studio player support.
+      FastAPI + Claude tool_use + Redis (async) + PostgreSQL (async SQLAlchemy, Alembic, RLS) + n8n.
+      Root: /home/artem/dev/ai-stack/projects/gdev-agent.
+      Baseline: 88 tests pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL).
+    assumptions:
+      - P0-1, P0-2, P1-2, P1-3 confirmed fixed and passing in baseline.
+      - All Redis clients in async def methods use redis.asyncio (established T00A, confirmed P1-2).
+      - gdev_app Postgres role has RLS enforced (no BYPASSRLS).
+      - testcontainers Postgres available for integration tests.
+    constraints:
+      - do not change the public API of protected modules (TenantRegistry, SignatureMiddleware, LLMClient, CostLedger)
+      - do not edit existing Alembic migrations (0001, 0002, 0003)
+      - all Redis usage in async def methods must use redis.asyncio
+      - all SQL must be parameterized (sqlalchemy text() with named params)
+      - new routes must use require_role()
+      - never add session-level SET (use SET LOCAL only)
+      - never store raw user_id, email, or player text in logs or span attributes
+
+  priorities:
+
+    - id: "P1-4"
+      title: "Enforce tenant_id presence before LLM call in webhook handler"
+      rationale: >
+        _enforce_budget() silently no-ops when tenant_id is None or unparseable (agent.py:470-488).
+        Any webhook request without a valid tenant_id bypasses the budget guard and proceeds to
+        make LLM calls unrestricted. CODEX_PROMPT §AGENT PIPELINE SAFETY mandates:
+        "Budget check must run BEFORE every LLM call." This invariant is violated when tenant_id
+        is absent. Since the webhook is HMAC-protected, the fix belongs at the HTTP layer where
+        the tenant_id should have been resolved via X-Tenant-Slug, not inside _enforce_budget.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/main.py
+          - tests/test_main.py
+        components:
+          - POST /webhook route handler (main.py:169-199)
+          - _enforce_budget no-op guard (agent.py:470-488) — add comment only, do NOT change behavior
+
+      tasks:
+        - >
+          In the POST /webhook route handler (app/main.py), after resolving the tenant context
+          from request.state or payload, add a guard:
+            resolved_tenant_id = getattr(request.state, "tenant_id", None) or payload.tenant_id
+            if not resolved_tenant_id:
+                raise HTTPException(status_code=400, detail="tenant_id is required")
+          This ensures _enforce_budget always receives a non-None tenant_id from authenticated
+          webhook calls. Place this check BEFORE app.state.agent.process_webhook(payload, ...).
+        - >
+          In app/agent.py:_enforce_budget(), add a comment above the `if tenant_uuid is None`
+          guard explaining it is a unit-test fallback (no DB session factory) and that production
+          calls always have a valid tenant_uuid because main.py validates it first. Do NOT change
+          the behavior — the guard is still needed for unit tests.
+        - >
+          In tests/test_main.py, add two test cases:
+            - POST /webhook with missing tenant_id (no JWT context, no payload tenant_id) → HTTP 400.
+            - POST /webhook with an invalid (non-UUID) tenant_id string → HTTP 400.
+
+      acceptance_criteria:
+        - "POST /webhook without tenant_id returns HTTP 400 with detail='tenant_id is required'."
+        - "POST /webhook with a valid tenant_id but exhausted budget returns HTTP 429."
+        - "No regression in existing 88 passing tests."
+        - "_enforce_budget still has the no-op guard for unit tests; comment explains why."
+
+      tests:
+        - ".venv/bin/pytest tests/test_main.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          The guard in main.py must run AFTER the dedup check (to avoid returning 400 on a
+          legitimate cached response) but BEFORE the agent call.
+        - >
+          Do NOT raise 401 — the request is authenticated (HMAC verified). The missing tenant_id
+          is a payload validation error, not an auth error.
+
+    - id: "P2-7"
+      title: "Hash reviewer field before storing in log events and AuditLogEntry"
+      rationale: >
+        app/agent.py stores the raw reviewer string (typically a Telegram user ID) in three places:
+        (1) pending_rejected log event (line 264), (2) pending_approved log event (line 282),
+        (3) AuditLogEntry.approved_by (line 299) which is written to Google Sheets.
+        data-map.md §2 specifies audit_log.approved_by = 'auto' or reviewer email_hash.
+        Storing raw Telegram IDs violates dev-standards §PII and the data-map contract.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/agent.py
+          - docs/data-map.md
+        components:
+          - AgentService.approve() — pending_rejected and pending_approved log events
+          - AuditLogEntry construction in approve()
+
+      tasks:
+        - >
+          In app/agent.py, at the top of approve(), compute a hashed reviewer identifier:
+            reviewer_hash = (
+                hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
+                if request.reviewer
+                else None
+            )
+          Use reviewer_hash in all three storage sites (lines 264, 282, 299) instead of
+          request.reviewer.
+        - >
+          Confirm hashlib is already imported (it is — app/agent.py:7). No new import needed.
+        - >
+          In docs/data-map.md §2, update the audit_log.approved_by comment to read:
+            approved_by: TEXT -- 'auto' or SHA-256[:16] hash of reviewer identity
+        - >
+          Add one unit test to tests/test_agent.py verifying that when approve() is called
+          with reviewer="raw_user_123", the stored log event payload does NOT contain
+          "raw_user_123" and DOES contain a hex string of length 16.
+
+      acceptance_criteria:
+        - "No raw reviewer string appears in any store.log_event() payload."
+        - "AuditLogEntry.approved_by stores the SHA-256[:16] hash, not the raw reviewer."
+        - "If reviewer is None, approved_by is None (not 'None' the string)."
+        - "Unit test asserting raw reviewer absent from log event passes."
+
+      tests:
+        - ".venv/bin/pytest tests/test_agent.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          SHA-256[:16] (64-bit hex prefix) is sufficient for audit correlation while
+          preventing direct PII exposure. This follows the pattern used for user_id_hash
+          in audit_log (store.py:125) and email hashing in the auth rate limiter.
+
+    - id: "P2-8"
+      title: "Remove duplicate anthropic_*_cost_per_1k config fields"
+      rationale: >
+        app/config.py defines two sets of semantically identical LLM rate fields:
+        - anthropic_input_cost_per_1k: float = 0.003 (unused in production code)
+        - anthropic_output_cost_per_1k: float = 0.015 (unused in production code)
+        - llm_input_rate_per_1k: Decimal = Decimal("0.003") (used by agent.py)
+        - llm_output_rate_per_1k: Decimal = Decimal("0.015") (used by agent.py)
+        tests/test_agent.py:80-81 passes anthropic_*_cost_per_1k which has no effect on the
+        actual cost calculation, creating a misleading test fixture.
+      change_strategy: "surgical"
+
+      targets:
+        files:
+          - app/config.py
+          - tests/test_agent.py
+        components:
+          - Settings class (remove anthropic_*_cost_per_1k fields)
+          - test_webhook_uses_llm_draft_and_tracks_cost fixture
+
+      tasks:
+        - >
+          Remove anthropic_input_cost_per_1k and anthropic_output_cost_per_1k fields
+          from app/config.py (lines 26-27). The llm_*_rate_per_1k Decimal fields are
+          the canonical cost rates.
+        - >
+          In tests/test_agent.py:test_webhook_uses_llm_draft_and_tracks_cost, replace:
+            Settings(
+                approval_categories=[],
+                auto_approve_threshold=0.5,
+                anthropic_input_cost_per_1k=0.003,
+                anthropic_output_cost_per_1k=0.015,
+            )
+          with:
+            Settings(
+                approval_categories=[],
+                auto_approve_threshold=0.5,
+                llm_input_rate_per_1k=Decimal("0.003"),
+                llm_output_rate_per_1k=Decimal("0.015"),
+            )
+          Add `from decimal import Decimal` import to test_agent.py if not present.
+        - >
+          Update the cost assertion at test_agent.py:98 to reference the Decimal rates
+          directly:
+            expected = float((Decimal("100") / Decimal("1000")) * Decimal("0.003")
+                           + (Decimal("50") / Decimal("1000")) * Decimal("0.015"))
+            assert round(audit_entries[0].cost_usd, 6) == round(expected, 6)
+
+      acceptance_criteria:
+        - "app/config.py has no anthropic_input_cost_per_1k or anthropic_output_cost_per_1k."
+        - "test_agent.py cost assertion uses llm_*_rate_per_1k values."
+        - "Full test suite passes."
+
+      tests:
+        - ".venv/bin/pytest tests/test_agent.py -x -q"
+        - ".venv/bin/pytest tests/ -x -q"
+
+      notes:
+        - >
+          Check that no other file references anthropic_input_cost_per_1k before removing:
+            git grep -rn "anthropic_input_cost\|anthropic_output_cost" app/ tests/
+          Expected: only app/config.py and tests/test_agent.py (safe to remove both).
+
+  non_blocking:
+
+    - id: "P1-1"
+      title: "Resolve HS256 vs RS256 architecture decision and update ADR-003"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          DECISION REQUIRED FROM ARCHITECTURE before any code change.
+          Option A — Accept HS256 for v1:
+            Update docs/adr/003-rbac-design.md:
+              - Change "RS256 (asymmetric)" to "HS256 (symmetric, v1 simplification)"
+              - Remove JWKS endpoint reference
+              - Document rationale and v2 upgrade path
+            In app/main.py lifespan, change the jwt_secret length check from LOGGER.error
+            (current) to raise RuntimeError to enforce minimum key strength at startup.
+            In app/config.py, change the default jwt_secret from the known-value default
+            to "" (empty), so startup always fails if JWT_SECRET is not explicitly set.
+          Option B — Implement RS256:
+            Add RS_PRIVATE_KEY and RS_PUBLIC_KEY to app/config.py.
+            Update JWTMiddleware to decode with RS256 public key.
+            Update auth.py to sign with RS256 private key.
+            Add GET /auth/jwks.json endpoint serving the public key in JWK format.
+            Add key rotation docs to docs/adr/003-rbac-design.md.
+        - >
+          Until the decision is made, document the current HS256 usage in ADR-003 as
+          "Implementation Note: v1 uses HS256 pending architecture decision."
+      acceptance_criteria:
+        - "ADR-003 matches the implemented JWT algorithm."
+        - "If HS256 accepted: startup raises RuntimeError on jwt_secret shorter than 32 bytes."
+
+    - id: "P2-1"
+      title: "Document Redis key namespace drift in data-map.md"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Update docs/data-map.md §3 to reflect the CURRENT implementation.
+          Replace the tenant-prefixed key patterns with the actual flat-key patterns:
+            dedup:{message_id}           (not {tenant_id}:dedup:{message_id})
+            pending:{pending_id}          (not {tenant_id}:pending:{pending_id})
+            ratelimit:{user_id}           (not {tenant_id}:ratelimit:{user_id})
+          Add a note: "Current implementation uses flat keys. Tenant prefix ({tenant_id}:)
+          is Phase 5 hardening — requires coordinated rollout to avoid breaking in-flight keys."
+      acceptance_criteria:
+        - "data-map.md §3 describes current flat key patterns with drift note."
+
+    - id: "P2-3"
+      title: "Add KB_BASE_URL to .env.example; document URL allowlist requirement"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Add to .env.example:
+            # Knowledge base base URL for FAQ lookups (required — no default in production)
+            # Must also be added to URL_ALLOWLIST or FAQ links will be stripped by output guard
+            KB_BASE_URL=https://kb.yourdomain.com
+        - >
+          Add a comment to app/config.py above DEFAULT_KB_BASE_URL:
+            # WARNING: kb_base_url must be in url_allowlist or FAQ URLs will be silently stripped
+            # by the output guard. Set KB_BASE_URL and add it to URL_ALLOWLIST in .env.
+      acceptance_criteria:
+        - "KB_BASE_URL present in .env.example with inline documentation."
+        - "config.py has a warning comment above DEFAULT_KB_BASE_URL."
+
+    - id: "P2-5"
+      title: "Remove dangling REVIEW_NOTES.md reference from N8N.md"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          In docs/N8N.md, find the line containing "See REVIEW_NOTES.md §5.12 for mitigation guidance."
+          Replace with:
+            "Mitigation: monitor the `approval_notify_failed` log event (emitted by
+            AgentService._notify_approval_channel on Telegram failure). Configure an alerting
+            rule that fires if this event exceeds N occurrences in a rolling window without a
+            corresponding `pending_approved` or `pending_rejected` for the same pending_id
+            within APPROVAL_TTL_SECONDS. The pending entry remains valid in Redis until TTL
+            expires and can be approved directly via the API."
+      acceptance_criteria:
+        - "No reference to REVIEW_NOTES.md remains in docs/N8N.md."
+
+    - id: "P2-6"
+      title: "Remove fastapi HTTPException import from AgentService"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Define domain exceptions in app/agent.py (or app/exceptions.py):
+            class PendingNotFoundError(Exception):
+                pass
+            class AgentInputGuardError(ValueError):
+                pass
+          Note: BudgetExhaustedError already lives in app/cost_ledger.py (correct pattern).
+        - >
+          Replace all HTTPException raises in AgentService with domain exceptions:
+            - approve(): PendingNotFoundError for 404 cases, retain HTTP 403 for cross-tenant
+              (this one case is security-critical and may remain as HTTPException temporarily
+              until exception mapping infrastructure is in place)
+            - process_webhook(): AgentInputGuardError for output guard block (currently HTTP 500)
+        - >
+          In route handlers (app/main.py), add exception handlers:
+            @app.exception_handler(PendingNotFoundError)
+            async def pending_not_found_handler(...) → JSONResponse(status_code=404, ...)
+        - >
+          Remove `from fastapi import HTTPException` from app/agent.py after all raises are replaced.
+      acceptance_criteria:
+        - "app/agent.py has no import from fastapi."
+        - "Unit tests for AgentService pass without FastAPI test client dependency."
+
+    - id: "P2-9"
+      title: "Extract duplicated _run_blocking utility to shared module"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          Create app/async_utils.py with the shared _run_blocking function:
+            def run_blocking(coroutine):
+                """Run an async coroutine synchronously, bridging to a new event loop if needed."""
+                try:
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    return asyncio.run(coroutine)
+                queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+                def _target() -> None:
+                    try:
+                        result = asyncio.run(coroutine)
+                        queue.put((True, result))
+                    except Exception as exc:
+                        queue.put((False, exc))
+                thread = threading.Thread(target=_target, daemon=True)
+                thread.start()
+                ok, data = queue.get()
+                thread.join()
+                if ok:
+                    return data
+                raise data
+        - >
+          Replace EventStore._run_blocking (store.py:83-104) with a call to run_blocking
+          from app.async_utils.
+        - >
+          Replace AgentService._run_blocking (agent.py:447-468) with a call to run_blocking
+          from app.async_utils.
+      acceptance_criteria:
+        - "_run_blocking defined in exactly one place (app/async_utils.py)."
+        - "store.py and agent.py import and use run_blocking from app.async_utils."
+        - "Full test suite passes."
+
+    - id: "P2-11"
+      title: "Add explanatory comments to DDL string formatting in integration test helpers"
+      change_strategy: "surgical"
+      tasks:
+        - >
+          In tests/test_isolation.py:_enable_role_login(), add a comment above the
+          string-formatted ALTER ROLE statement:
+            # NOTE: PostgreSQL DDL (ALTER ROLE, GRANT) does not support parameterized identifiers.
+            # The role name is a hardcoded constant — not user input. This is safe.
+        - >
+          Apply the same comment to tests/test_cost_ledger.py:_enable_gdev_app_login().
+      acceptance_criteria:
+        - "Both test helpers have comments explaining why DDL uses string formatting."

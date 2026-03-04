@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v2.6
+# Codex Implementation Agent Prompt v2.7
 
-_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 2 review complete; P0 security fixes required before T08 merges)_
+_Owner: Architecture · Date: 2026-03-04 (updated 2026-03-04 — Phase 3 review complete; T11 cleared to proceed)_
 _This file is the authoritative prompt for the Codex implementation agent._
 _Update this file when the implementation contract changes. Bump the version number._
 
@@ -8,9 +8,9 @@ _Update this file when the implementation contract changes. Bump the version num
 SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
-**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅
-**Next task:** T10 · CostLedger Service + Budget Guard
-**Baseline:** 87 pass, 9 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Completed:** T01 ✅  T02 ✅  T03 ✅  T04 ✅  T00A ✅  T00B ✅  T05 ✅  T06 ✅  T06B ✅  T07 ✅  T08 ✅  P0-1 ✅  P0-2 ✅  P1-2 ✅  P1-3 ✅  T09 ✅  T10 ✅
+**Next task:** T11 · New Read Endpoints
+**Baseline:** 88 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
 ─── T01 (Alembic + Initial Schema) ──────────────────────────────────
 Files: alembic.ini, alembic/env.py, alembic/versions/0001_initial_schema.py,
@@ -37,6 +37,72 @@ Public API (do NOT change — T04+ depend on it):
   async TenantRegistry.invalidate(tenant_id: UUID) -> None
   TenantRegistry._cache_key(tid) -> "tenant:{tid}:config"  (TTL 300 s)
 Tests: 5 new ✅
+
+─── Phase 3 Review Findings ─────────────────────────────────────────
+Full review: docs/PHASE3_REVIEW.md
+Date: 2026-03-04 · Scope: T08–T10 (EventStore, CostLedger, isolation tests + P0/P1 remediations)
+Baseline confirmed: 88 pass, 12 skipped (unchanged)
+Stop-ship: NO — T11 cleared to proceed.
+
+✅ P0-1 CONFIRMED FIXED — /approve cross-tenant isolation verified at agent.py:248-256
+  get_pending() → validate tenant → pop_pending() sequence correct.
+  test_isolation.py:test_approve_cross_tenant_is_forbidden_and_pending_remains ✅
+
+✅ P0-2 CONFIRMED FIXED — EventStore SET LOCAL at store.py:129-132 before all INSERTs
+  test_isolation.py:test_event_store_binds_all_rows_to_payload_tenant ✅
+
+✅ P1-2 CONFIRMED FIXED — RateLimitMiddleware uses async Redis from app.state at request time.
+  All incr/expire calls awaited. rate_limit.py:45,61-67 ✅
+
+✅ P1-3 CONFIRMED FIXED — main.py:148 uses get_settings() (lru_cache); redis_client=None passed.
+  Note: ANTHROPIC_API_KEY required at import time (see P2-10 below).
+
+🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
+  Decision required: Accept HS256 (update ADR-003, enforce 32-byte jwt_secret as RuntimeError)
+  OR implement RS256 (RS_PRIVATE_KEY/RS_PUBLIC_KEY, JWKS endpoint, key rotation docs).
+  Files: app/config.py:45-46, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
+
+🔴 P1-4 NEW — _enforce_budget() silently no-ops when tenant_id is None
+  Any webhook without a valid tenant_id bypasses budget guard entirely.
+  Violates CODEX_PROMPT §AGENT PIPELINE SAFETY: "Budget check must run BEFORE every LLM call."
+  Fix: validate payload.tenant_id is non-None in webhook route handler; return HTTP 400 if absent.
+  Files: app/main.py (webhook handler), app/agent.py:470-488
+
+🟡 P2-1 OPEN — Redis keys not tenant-namespaced (doc-only, Phase 5 hardening)
+  data-map.md §3 shows tenant-prefixed patterns; code uses flat keys. Deferred.
+
+🟡 P2-3 OPEN — kb_base_url defaults to kb.example.com, not in URL_ALLOWLIST
+  Add KB_BASE_URL to .env.example as required (no default). Address in T11 or standalone.
+
+🟡 P2-5 OPEN — docs/N8N.md §8.8 references REVIEW_NOTES.md §5.12 (file does not exist)
+  Replace with inline mitigation note. Surgical doc-only fix.
+
+🟡 P2-6 OPEN — app/agent.py imports HTTPException from fastapi (layer violation)
+  Define PendingNotFoundError, AgentInputGuardError in app/agent.py. Catch in route handlers.
+
+🟡 P2-7 OPEN — reviewer field stored raw (PII) in 3 places in agent.py
+  app/agent.py:264 (pending_rejected log), :282 (pending_approved log), :299 (AuditLogEntry.approved_by → Sheets)
+  Fix: hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16] at all three sites.
+  Update data-map.md §2 audit_log.approved_by comment.
+
+🟡 P2-8 NEW — Duplicate cost config fields: anthropic_*_cost_per_1k (float, unused) vs
+  llm_*_rate_per_1k (Decimal, used by agent.py). test_agent.py:80-81 sets wrong field.
+  Fix: deprecate anthropic_* fields; update test_agent.py assertions to use llm_*_rate_per_1k.
+  Files: app/config.py:26-27, tests/test_agent.py:80-81,98
+
+🟡 P2-9 NEW — _run_blocking() duplicated in store.py:83-104 and agent.py:447-468
+  Code duplication; divergence risk. Extract to app/async_utils.py (P3 cleanup).
+
+🟡 P2-10 NEW — get_settings() at main.py:148 requires ANTHROPIC_API_KEY at import time
+  All new test files that import app.main must set ANTHROPIC_API_KEY via monkeypatch or conftest
+  BEFORE the first import. Use get_settings.cache_clear() between tests that patch settings.
+
+🟡 P2-11 NEW — SQL DDL string interpolation in integration test helpers (test_isolation.py:121,
+  test_cost_ledger.py:124). ALTER ROLE {role} is safe (hardcoded constants) but add a comment
+  explaining why DDL cannot use parameterized identifiers.
+
+🟡 P2-12 NEW (doc) — tasks.md T05/T06/T09 show Status: pending but are done.
+  Patch tasks.md to mark these done.
 
 ─── Phase 2 Review Findings ─────────────────────────────────────────
 Full review: docs/PHASE2_REVIEW.md
@@ -72,6 +138,19 @@ Baseline confirmed: 85 pass, 1 skipped (unchanged)
 🟡 P2-3 OPEN — kb_base_url defaults to kb.example.com, not in URL_ALLOWLIST
   FAQ URLs in draft responses are silently stripped by output guard.
   Fix: add KB_BASE_URL to .env.example as required (no default). Address in T08 pre-flight.
+
+🟡 P2-5 OPEN — docs/N8N.md §8.8 references REVIEW_NOTES.md §5.12 (file does not exist)
+  Replace with inline mitigation note. Surgical doc-only fix.
+
+🟡 P2-6 OPEN — app/agent.py imports HTTPException from fastapi (layer violation)
+  AgentService should not depend on FastAPI. Define domain exceptions (PendingNotFoundError,
+  AgentInputGuardError); catch in route handlers in app/main.py. BudgetExhaustedError (T10)
+  already follows the correct pattern — extend it to remaining raises.
+
+🟡 P2-7 OPEN — reviewer field stored raw in audit log (PII risk)
+  In app/agent.py store.log_event() call, hash reviewer:
+  hashlib.sha256((reviewer or "").encode()).hexdigest()[:16]
+  Update data-map.md §2 audit_log.approved_by comment accordingly.
 
 Resolved (confirmed closed in Phase 2 review):
   ✅ JsonFormatter exc_info handling — was a false finding; code is correct
@@ -237,27 +316,38 @@ Isolation verified: DB RLS read/write, EventStore binding, approve 403, gdev_adm
 Files: app/store.py, tests/test_store.py, app/schemas.py — all ✅ DONE.
 P0-2 RLS fix: SET LOCAL added before INSERTs (P0-2 resolved 2026-03-04).
 
+─── T10 (CostLedger Service + Budget Guard) ─────────────────────────
+Files: app/cost_ledger.py (new), app/agent.py(+budget check/record),
+       app/config.py(+llm_input_rate_per_1k, llm_output_rate_per_1k),
+       tests/test_cost_ledger.py (3 integration tests), tests/test_agent.py(+1)
+Key: check_budget() before LLMClient.run_agent(); record() after (best-effort, non-fatal).
+HTTP 429 {"error": {"code": "budget_exhausted"}} on exhaustion.
+Tests: 3 skipped locally (Docker required); 88 pass 12 skip overall.
+
 ═══════════════════════════════════════════════════════════════════════
-PROCEED TO T10
+PROCEED TO T11
 ═══════════════════════════════════════════════════════════════════════
 
-T09 ✅ complete. Baseline: 87 pass, 9 skipped.
-Your next task is **T10 · CostLedger Service + Budget Guard**.
-Read docs/tasks.md §T10 now before writing any code.
+T10 ✅ complete. Baseline: 88 pass, 12 skipped.
+Your next task is **T11 · New Read Endpoints**.
+Read docs/tasks.md §T11 now before writing any code.
 
-Pre-flight for T10:
+Pre-flight for T11:
   Confirm these files exist before starting:
-    app/agent.py        — AgentService.process_webhook() calls LLMClient.run_agent()
-    app/config.py       — Settings with anthropic_input_cost_per_1k, anthropic_output_cost_per_1k
-    app/db.py           — make_session_factory(), get_db_session()
-    alembic/versions/   — cost_ledger table already exists (T01 migration)
+    app/main.py         — include new routers here
+    app/db.py           — get_db_session() for all new handlers
+    app/dependencies.py — require_role() already implemented (T05)
+    alembic/versions/   — tickets, audit_log, agent_configs, cost_ledger, eval_runs all exist
 
   Key requirements:
-    - Budget check MUST run BEFORE every LLMClient.run_agent() call in AgentService.
-    - If budget exhausted: return HTTP 429 with {"error": {"code": "budget_exhausted"}}.
-    - CostLedger.record() must use UPSERT (INSERT ... ON CONFLICT DO UPDATE).
-    - CostLedger is an async service; use get_db_session pattern.
-    - New file: app/cost_ledger.py — do not put logic in agent.py directly.
+    - New routers: app/routers/tickets.py, app/routers/analytics.py, app/routers/agents.py
+    - All endpoints use require_role() per T07 enforcement matrix.
+    - All list endpoints use cursor pagination (?cursor=<ISO-timestamp>&limit=<int>).
+    - Response envelope: {"data": [...], "cursor": "<ISO|null>", "total": null}
+    - Error envelope: {"error": {"code": "...", "message": "..."}}
+    - GET /tickets/{id}: return HTTP 404 (not 403) for cross-tenant IDs.
+    - GET /audit: newest-first ordering.
+    - Tenant isolation via RLS + SET LOCAL (get_db_session handles this already).
 
 ---
 

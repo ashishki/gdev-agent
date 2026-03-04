@@ -5,15 +5,19 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from decimal import Decimal
+from queue import Queue
 import threading
 import time
-from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import text
 
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
+from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.guardrails.output_guard import OutputGuard
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
@@ -66,6 +70,7 @@ class AgentService:
         output_guard: OutputGuard | None = None,
         telegram_client: TelegramClient | None = None,
         sheets_client: SheetsClient | None = None,
+        cost_ledger: CostLedger | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -74,11 +79,13 @@ class AgentService:
         self.output_guard = output_guard or OutputGuard(settings)
         self.telegram_client = telegram_client
         self.sheets_client = sheets_client
+        self.cost_ledger = cost_ledger or CostLedger()
 
     def process_webhook(self, payload: WebhookRequest, message_id: str | None = None) -> WebhookResponse:
         """Run the full agent flow and return either executed or pending result."""
         start = time.monotonic()
         self._guard_input(payload.text)
+        self._enforce_budget(payload.tenant_id)
 
         triage = self.llm_client.run_agent(payload.text, payload.user_id)
         classification = triage.classification
@@ -86,6 +93,7 @@ class AgentService:
         action, fallback_draft = self.propose_action(payload, classification, extracted)
         draft_response = triage.draft_text or fallback_draft
         cost_usd = self._estimate_llm_cost_usd(triage.input_tokens, triage.output_tokens)
+        self._record_cost_best_effort(payload.tenant_id, triage.input_tokens, triage.output_tokens, cost_usd)
 
         guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
         if guard_result.blocked:
@@ -423,7 +431,95 @@ class AgentService:
 
     def _estimate_llm_cost_usd(self, input_tokens: int, output_tokens: int) -> float:
         """Estimate LLM cost in USD from token usage."""
-        return (
-            (input_tokens / 1000) * self.settings.anthropic_input_cost_per_1k
-            + (output_tokens / 1000) * self.settings.anthropic_output_cost_per_1k
+        return float(
+            (Decimal(input_tokens) / Decimal(1000)) * self.settings.llm_input_rate_per_1k
+            + (Decimal(output_tokens) / Decimal(1000)) * self.settings.llm_output_rate_per_1k
         )
+
+    def _tenant_uuid(self, tenant_id: str | None) -> UUID | None:
+        if tenant_id is None:
+            return None
+        try:
+            return UUID(str(tenant_id))
+        except (ValueError, TypeError):
+            return None
+
+    def _run_blocking(self, coroutine):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coroutine)
+
+        queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+
+        def _target() -> None:
+            try:
+                result = asyncio.run(coroutine)
+                queue.put((True, result))
+            except Exception as exc:  # pragma: no cover - defensive branch
+                queue.put((False, exc))
+
+        thread = threading.Thread(target=_target, daemon=True)
+        thread.start()
+        ok, data = queue.get()
+        thread.join()
+        if ok:
+            return data
+        raise data  # type: ignore[misc]
+
+    def _enforce_budget(self, tenant_id: str | None) -> None:
+        tenant_uuid = self._tenant_uuid(tenant_id)
+        session_factory = getattr(self.store, "_db_session_factory", None)
+        if tenant_uuid is None or session_factory is None:
+            return
+
+        async def _check_budget() -> None:
+            async with session_factory() as session:
+                async with session.begin():
+                    await session.execute(
+                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                        {"tenant_id": str(tenant_uuid)},
+                    )
+                    await self.cost_ledger.check_budget(tenant_uuid, session)
+
+        try:
+            self._run_blocking(_check_budget())
+        except BudgetExhaustedError as exc:
+            raise HTTPException(status_code=429, detail={"error": {"code": "budget_exhausted"}}) from exc
+
+    def _record_cost_best_effort(
+        self,
+        tenant_id: str | None,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+    ) -> None:
+        tenant_uuid = self._tenant_uuid(tenant_id)
+        session_factory = getattr(self.store, "_db_session_factory", None)
+        if tenant_uuid is None or session_factory is None:
+            return
+
+        async def _record() -> None:
+            async with session_factory() as session:
+                async with session.begin():
+                    await session.execute(
+                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                        {"tenant_id": str(tenant_uuid)},
+                    )
+                    await self.cost_ledger.record(
+                        tenant_id=tenant_uuid,
+                        day=date.today(),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cost_usd=Decimal(str(cost_usd)),
+                        db=session,
+                    )
+
+        try:
+            self._run_blocking(_record())
+        except Exception:
+            LOGGER.warning(
+                "failed recording llm cost",
+                extra={"event": "cost_ledger_record_failed", "context": {"tenant_id": str(tenant_uuid)}},
+                exc_info=True,
+            )

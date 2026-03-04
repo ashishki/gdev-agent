@@ -5,6 +5,7 @@ from __future__ import annotations
 import fakeredis
 import logging
 from unittest.mock import Mock
+from uuid import uuid4
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
@@ -33,6 +34,43 @@ class CapturingStore(EventStore):
 
     def log_event(self, event_type: str, payload: dict[str, object]) -> None:
         self.events.append((event_type, payload))
+
+
+class _FakeSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def begin(self):
+        return self
+
+    async def execute(self, _query, _params=None) -> None:
+        return None
+
+
+class _FailingCostLedger:
+    def __init__(self) -> None:
+        self.record_calls = 0
+
+    async def check_budget(self, _tenant_id, _db) -> None:
+        return None
+
+    async def record(self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db) -> None:
+        _ = (tenant_id, day, input_tokens, output_tokens, cost_usd, db)
+        self.record_calls += 1
+        raise RuntimeError("db down")
+
+
+class _CostLedgerStore(CapturingStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self._db_session_factory = lambda: _FakeSession()
+
+    def persist_pipeline_run(self, *args, **kwargs):
+        _ = (args, kwargs)
+        return None
 
 
 def test_webhook_uses_llm_draft_and_tracks_cost() -> None:
@@ -86,4 +124,28 @@ def test_approval_notification_failure_logs_exc_info(caplog) -> None:
 
     assert response.status == "pending"
     record = next(r for r in caplog.records if r.msg == "failed sending approval notification")
+    assert record.exc_info is not None
+
+
+def test_cost_ledger_record_failure_is_logged_and_non_fatal(caplog) -> None:
+    settings = Settings(
+        approval_categories=[],
+        auto_approve_threshold=0.5,
+    )
+    store = _CostLedgerStore()
+    failing_ledger = _FailingCostLedger()
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=FakeLLMClient(),
+        cost_ledger=failing_ledger,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        response = agent.process_webhook(WebhookRequest(text="hello", user_id="u1", tenant_id=str(uuid4())))
+
+    assert response.status == "executed"
+    assert failing_ledger.record_calls == 1
+    record = next(r for r in caplog.records if r.msg == "failed recording llm cost")
     assert record.exc_info is not None

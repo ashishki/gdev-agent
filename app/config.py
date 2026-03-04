@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -24,6 +25,8 @@ class Settings(BaseSettings):
     kb_base_url: str = DEFAULT_KB_BASE_URL
     anthropic_input_cost_per_1k: float = 0.003
     anthropic_output_cost_per_1k: float = 0.015
+    llm_input_rate_per_1k: Decimal = Decimal("0.003")
+    llm_output_rate_per_1k: Decimal = Decimal("0.015")
     max_input_length: int = 2000
     auto_approve_threshold: float = 0.85
     approval_categories: list[str] = Field(default_factory=lambda: ["billing"])

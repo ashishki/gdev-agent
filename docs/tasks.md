@@ -1,6 +1,6 @@
 # gdev-agent — Implementation TaskGraph v1.0
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-04 — Phase 2 review findings added)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-04 — Phase 3 review; T05/T06/T09 statuses corrected)_
 _This document is the authoritative task contract for Codex and human reviewers._
 _All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
@@ -276,7 +276,7 @@ HMAC check. The JWT is then validated second.
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T03
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Implement JWT validation middleware using HS256 (v1 simplification; RS256 deferred to v2).
@@ -352,7 +352,7 @@ def require_role(*roles: str):
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T05
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Minimal token issuance endpoint. Users authenticate with email + password (bcrypt-hashed in
@@ -491,7 +491,7 @@ re-processing the same message.
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T07, T08
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Dedicated integration test suite that proves Tenant A cannot read or act on Tenant B's data.
@@ -537,7 +537,7 @@ said 404 — that was pre-P0-1. 403 is the correct contract now.
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T02, T03
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Implement `CostLedger` service for real-time token accounting and pre-call budget enforcement.
