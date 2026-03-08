@@ -12,37 +12,65 @@ SESSION HANDOFF — START HERE
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅
 
-**Next task:** T13 · EmbeddingService
+**Phase 4 queue:** T13 → T14 → T15 (implement sequentially, do not skip)
+**After T15:** STOP — do not start T16. Review gate: user runs Cycle 4 audit.
 **Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+
+─── Fix Queue (resolve before Phase 4 queue) ────────────────────────
+(empty — Cycle 3 produced no P0/P1 requiring code fixes before T13)
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
-  Decision required: Accept HS256 (update ADR-003, enforce 32-byte jwt_secret as RuntimeError)
-  OR implement RS256 (RS_PRIVATE_KEY/RS_PUBLIC_KEY, JWKS endpoint, key rotation docs).
+  Decision required (architecture, not Codex).
   Files: app/config.py:45-46, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
 
-🟡 P2-1 OPEN — Redis keys not tenant-namespaced (doc-only, Phase 5 hardening)
+🟡 P2-1 OPEN — Redis keys not tenant-namespaced (Phase 5 hardening)
 🟡 P2-6 OPEN — app/agent.py imports HTTPException from fastapi (layer violation, deferred)
 🟡 P2-9 OPEN — _run_blocking() duplicated in store.py and agent.py (deferred)
-🟡 P2-10 OPEN — get_settings() at main.py requires ANTHROPIC_API_KEY at import time
-  All test files importing app.main must set ANTHROPIC_API_KEY before import.
+🟡 P2-10 OPEN — get_settings() requires ANTHROPIC_API_KEY at import time; set in conftest.py
 
-─── Pre-flight for T13 ──────────────────────────────────────────────
+─── T13 · EmbeddingService ──────────────────────────────────────────
 
-  Confirm these files exist:
-    app/agent.py               — add asyncio.create_task(embedding_service.upsert(...)) after response
-    app/config.py              — add voyage_api_key, embedding_model fields
-    alembic/versions/          — ticket_embeddings table must exist (0001)
+Files to CREATE: app/embedding_service.py, tests/test_embedding_service.py
+Files to MODIFY: app/agent.py, app/config.py
 
-  Key requirements:
-    - New service: app/embedding_service.py
-    - Voyage AI API for embeddings (voyage-3-lite); SHA-256 mock vector if unavailable (dev/test)
-    - VECTOR(1024) for voyage-3; pin the model in config
-    - Upsert: ON CONFLICT (ticket_id) DO UPDATE embedding, model_version, created_at
-    - Fire-and-forget: asyncio.create_task() — failure must NOT affect /webhook response
-    - Error logged only (no propagation)
-    - ANTHROPIC_API_KEY must be set before importing app.main in new test files
+Key requirements:
+  - Voyage AI API (voyage-3-lite); SHA-256 mock vector in dev/test (VOYAGE_API_KEY absent)
+  - VECTOR(1024); pin model in config.embedding_model
+  - Upsert: ON CONFLICT (ticket_id) DO UPDATE embedding, model_version, created_at=NOW()
+  - Fire-and-forget: asyncio.create_task() after response — failure must NOT affect /webhook
+  - ANTHROPIC_API_KEY must be set before importing app.main in test files
+
+─── T14 · RCA Clusterer Background Job ─────────────────────────────
+
+Depends-on: T13
+Files to CREATE: app/jobs/__init__.py, app/jobs/rca_clusterer.py, tests/test_rca_clusterer.py
+Files to MODIFY: app/main.py (register APScheduler job), app/config.py (+rca_lookback_hours, +rca_budget_per_run_usd)
+
+Key requirements:
+  - APScheduler job every 15 min per active tenant
+  - pgvector ANN + DBSCAN(eps=0.15, min_samples=3); cap at 50 clusters
+  - LLMClient.summarize_cluster() — single call, no tool_use loop
+  - gdev_admin role for raw_text fetch (bypasses RLS); MUST include WHERE tenant_id=$1
+  - assert cluster_tenant_id == expected_tenant_id before LLM call
+  - asyncio.wait_for(rca_run(), timeout=300)
+  - On API failure: use "Cluster {n}" label, log warning, continue
+
+─── T15 · Cluster API Endpoints ─────────────────────────────────────
+
+Depends-on: T14, T11
+Files to MODIFY: app/routers/ (new cluster router), app/main.py, tests/test_endpoints.py
+
+Key requirements:
+  - GET /clusters — viewer+ role; filter ?is_active=true / ?severity=high; RLS-scoped
+  - GET /clusters/{id} — includes up to 10 member ticket_ids; cross-tenant → 404
+  - No cost/audit data exposed to viewer role
+
+─── STOP AFTER T15 ──────────────────────────────────────────────────
+
+Do NOT start T16. After T15 report is complete, notify:
+"Phase 4 complete (T13–T15). Ready for Cycle 4 review."
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 

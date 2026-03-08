@@ -112,10 +112,15 @@ created_at      TIMESTAMPTZ DEFAULT NOW()
 embedding_id    UUID PRIMARY KEY DEFAULT gen_random_uuid()
 ticket_id       UUID REFERENCES tickets(ticket_id)
 tenant_id       UUID REFERENCES tenants(tenant_id)
-embedding       VECTOR(1536)                  -- text-embedding-3-small or equivalent
+embedding       VECTOR(1024)                  -- voyage-3-lite pinned model
 model_version   TEXT NOT NULL
 created_at      TIMESTAMPTZ DEFAULT NOW()
 -- INDEX: ivfflat or hnsw on embedding for ANN queries
+
+Model migration path:
+1. Deploy migration that changes vector size.
+2. Backfill all existing rows in `ticket_embeddings` with the new model.
+3. Only then switch `embedding_model` in runtime config.
 ```
 
 ### `cluster_summaries`

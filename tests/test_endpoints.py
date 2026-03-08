@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from app import main
 from app.routers.agents import list_agents
 from app.routers.analytics import list_audit, list_cost_metrics, list_eval_runs
+from app.routers.clusters import get_cluster, list_clusters
 from app.routers.tickets import get_ticket, list_tickets
 
 
@@ -45,6 +46,17 @@ class _SessionStub:
         return _ResultStub(self.rows)
 
 
+class _SequencedSessionStub:
+    def __init__(self, rows_by_call: list[list[dict[str, object]]]) -> None:
+        self.rows_by_call = rows_by_call
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def execute(self, statement, params):  # noqa: ANN001
+        self.calls.append((str(statement), params))
+        rows = self.rows_by_call.pop(0) if self.rows_by_call else []
+        return _ResultStub(rows)
+
+
 def _request(tenant_id: UUID, role: str = "tenant_admin") -> SimpleNamespace:
     return SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id, role=role))
 
@@ -53,12 +65,17 @@ def _route_dependency(path: str) -> object:
     route = next(
         route
         for route in main.app.router.routes
-        if getattr(route, "path", None) == path and "GET" in getattr(route, "methods", set())
+        if getattr(route, "path", None) == path
+        and "GET" in getattr(route, "methods", set())
     )
     dependencies = route.dependant.dependencies
     assert dependencies, f"Expected dependencies on {path}"
     role_dependency = next(
-        (dependency.call for dependency in dependencies if getattr(dependency.call, "__name__", "") == "dependency"),
+        (
+            dependency.call
+            for dependency in dependencies
+            if getattr(dependency.call, "__name__", "") == "dependency"
+        ),
         None,
     )
     assert role_dependency is not None, f"Expected role dependency on {path}"
@@ -81,7 +98,9 @@ async def test_list_tickets_happy_path() -> None:
         ]
     )
 
-    response = await list_tickets(request=_request(tenant_id), cursor=None, limit=50, db=session)
+    response = await list_tickets(
+        request=_request(tenant_id), cursor=None, limit=50, db=session
+    )
 
     assert response.data[0].message_id == "m1"
     assert response.cursor is None
@@ -112,7 +131,9 @@ async def test_list_tickets_pagination_sets_cursor() -> None:
         ]
     )
 
-    response = await list_tickets(request=_request(tenant_id), cursor=None, limit=1, db=session)
+    response = await list_tickets(
+        request=_request(tenant_id), cursor=None, limit=1, db=session
+    )
 
     assert len(response.data) == 1
     assert response.cursor is not None
@@ -121,7 +142,9 @@ async def test_list_tickets_pagination_sets_cursor() -> None:
 @pytest.mark.asyncio
 async def test_get_ticket_cross_tenant_returns_404() -> None:
     session = _SessionStub([])
-    response = await get_ticket(ticket_id=uuid4(), request=_request(uuid4()), db=session)
+    response = await get_ticket(
+        ticket_id=uuid4(), request=_request(uuid4()), db=session
+    )
     assert isinstance(response, JSONResponse)
     assert response.status_code == 404
     assert b'"code":"ticket_not_found"' in response.body
@@ -152,7 +175,9 @@ async def test_list_audit_happy_path_newest_first_query() -> None:
         ]
     )
 
-    response = await list_audit(request=_request(tenant_id), cursor=None, limit=50, db=session)
+    response = await list_audit(
+        request=_request(tenant_id), cursor=None, limit=50, db=session
+    )
 
     assert response.data[0].request_id == "r1"
     assert "ORDER BY created_at DESC" in session.last_statement
@@ -199,7 +224,9 @@ async def test_list_audit_pagination_sets_cursor() -> None:
         ]
     )
 
-    response = await list_audit(request=_request(tenant_id), cursor=None, limit=1, db=session)
+    response = await list_audit(
+        request=_request(tenant_id), cursor=None, limit=1, db=session
+    )
     assert response.cursor is not None
 
 
@@ -220,7 +247,9 @@ async def test_list_cost_metrics_happy_path() -> None:
         ]
     )
 
-    response = await list_cost_metrics(request=_request(tenant_id), cursor=None, limit=50, db=session)
+    response = await list_cost_metrics(
+        request=_request(tenant_id), cursor=None, limit=50, db=session
+    )
     assert response.data[0].request_count == 2
 
 
@@ -251,7 +280,9 @@ async def test_list_cost_metrics_pagination_sets_cursor() -> None:
         ]
     )
 
-    response = await list_cost_metrics(request=_request(tenant_id), cursor=None, limit=1, db=session)
+    response = await list_cost_metrics(
+        request=_request(tenant_id), cursor=None, limit=1, db=session
+    )
     assert response.cursor is not None
 
 
@@ -275,7 +306,9 @@ async def test_list_agents_happy_path() -> None:
         ]
     )
 
-    response = await list_agents(request=_request(tenant_id), cursor=None, limit=50, db=session)
+    response = await list_agents(
+        request=_request(tenant_id), cursor=None, limit=50, db=session
+    )
     assert response.data[0].agent_name == "triage"
 
 
@@ -312,7 +345,9 @@ async def test_list_agents_pagination_sets_cursor() -> None:
         ]
     )
 
-    response = await list_agents(request=_request(tenant_id), cursor=None, limit=1, db=session)
+    response = await list_agents(
+        request=_request(tenant_id), cursor=None, limit=1, db=session
+    )
     assert response.cursor is not None
 
 
@@ -334,7 +369,9 @@ async def test_list_eval_runs_happy_path() -> None:
         ]
     )
 
-    response = await list_eval_runs(request=_request(tenant_id), cursor=None, limit=50, db=session)
+    response = await list_eval_runs(
+        request=_request(tenant_id), cursor=None, limit=50, db=session
+    )
     assert response.data[0].status == "completed"
 
 
@@ -367,8 +404,88 @@ async def test_list_eval_runs_pagination_sets_cursor() -> None:
         ]
     )
 
-    response = await list_eval_runs(request=_request(tenant_id), cursor=None, limit=1, db=session)
+    response = await list_eval_runs(
+        request=_request(tenant_id), cursor=None, limit=1, db=session
+    )
     assert response.cursor is not None
+
+
+@pytest.mark.asyncio
+async def test_list_clusters_filters_active_and_severity() -> None:
+    tenant_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SessionStub(
+        [
+            {
+                "cluster_id": uuid4(),
+                "label": "Payment timeout",
+                "summary": "Checkout failures",
+                "ticket_count": 5,
+                "severity": "high",
+                "first_seen": now - timedelta(hours=1),
+                "last_seen": now,
+                "is_active": True,
+                "updated_at": now,
+            }
+        ]
+    )
+
+    response = await list_clusters(
+        request=_request(tenant_id),
+        cursor=None,
+        limit=50,
+        is_active=True,
+        severity="high",
+        db=session,
+    )
+
+    assert response.data[0].label == "Payment timeout"
+    assert session.last_params["tenant_id"] == str(tenant_id)
+    assert session.last_params["is_active"] is True
+    assert session.last_params["severity"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_returns_ticket_ids_up_to_10() -> None:
+    tenant_id = uuid4()
+    cluster_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SequencedSessionStub(
+        [
+            [
+                {
+                    "cluster_id": cluster_id,
+                    "label": "Payment timeout",
+                    "summary": "Checkout failures",
+                    "ticket_count": 12,
+                    "severity": "high",
+                    "first_seen": now - timedelta(hours=1),
+                    "last_seen": now,
+                    "is_active": True,
+                    "updated_at": now,
+                }
+            ],
+            [{"ticket_id": uuid4()} for _ in range(12)],
+        ]
+    )
+
+    response = await get_cluster(
+        cluster_id=cluster_id, request=_request(tenant_id), db=session
+    )
+
+    assert len(response.data[0].ticket_ids) == 10
+    assert str(response.data[0].cluster_id) == str(cluster_id)
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_cross_tenant_returns_404() -> None:
+    session = _SequencedSessionStub([[]])
+    response = await get_cluster(
+        cluster_id=uuid4(), request=_request(uuid4()), db=session
+    )
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 404
+    assert b'"code":"cluster_not_found"' in response.body
 
 
 def test_wrong_role_is_rejected_for_tenant_admin_endpoints() -> None:
@@ -380,7 +497,13 @@ def test_wrong_role_is_rejected_for_tenant_admin_endpoints() -> None:
 
 
 def test_reader_roles_allowed_for_jwt_read_endpoints() -> None:
-    for path in ("/tickets", "/tickets/{ticket_id}", "/eval/runs"):
+    for path in (
+        "/tickets",
+        "/tickets/{ticket_id}",
+        "/eval/runs",
+        "/clusters",
+        "/clusters/{cluster_id}",
+    ):
         dependency = _route_dependency(path)
         dependency(SimpleNamespace(state=SimpleNamespace(role="viewer")))
         dependency(SimpleNamespace(state=SimpleNamespace(role="support_agent")))

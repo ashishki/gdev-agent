@@ -10,14 +10,19 @@ _v1.0 · gdev-agent_
 | `META_ANALYSIS.md`, `ARCH_REPORT.md`, `REVIEW_REPORT.md` | Overwritten each cycle (current state) |
 | `archive/PHASE{N}_REVIEW.md` | Permanent snapshot — move REVIEW_REPORT.md here before next cycle |
 
-## Cycle History
+## Review Schedule (phase-gated)
 
-| Cycle | Date | Scope | P0 | P1 | P2 | Status |
-|-------|------|-------|----|----|----|--------|
-| 1 | 2026-03-04 | T01–T04 | 0 | 4 | 2 | Closed |
-| 2 | 2026-03-04 | T05–T08 | 2 | 3 | 5 | Closed |
-| 3 | 2026-03-04 | T09–T12 | 0 | 0 | 6 | 1 P1 open, 4 P2 open |
-| 4 | — | T13+ | — | — | — | Pending |
+Reviews run at phase boundaries, not between individual tasks.
+
+| Cycle | Phase | Tasks | Trigger | Status |
+|-------|-------|-------|---------|--------|
+| 1 | Phase 1 | T01–T04 | Phase 1 gate | ✅ Closed 2026-03-04 |
+| 2 | Phase 2 | T05–T08 | Phase 2 gate | ✅ Closed 2026-03-04 |
+| 3 | Phase 3 | T09–T12 | Phase 3 gate | ✅ Closed 2026-03-04 · 1 P1 open |
+| 4 | Phase 4 | T13–T15 | Phase 4 gate | ⬜ Pending |
+| 5 | Phase 5 | T16–T18 | Phase 5 gate | ⬜ Pending |
+| 6 | Phase 6 | T19–T21 | Phase 6 gate | ⬜ Pending |
+| 7 | Phase 7 | T22–T24 | Phase 7 gate | ⬜ Pending |
 
 ## Archive
 

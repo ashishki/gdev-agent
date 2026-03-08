@@ -680,6 +680,11 @@ one `is_current=FALSE`. Triggers `TenantRegistry.invalidate()` and an eval run (
 
 ---
 
+---
+> **Review gate:** Phase 3 complete (T08–T12). Run Cycle 3 audit before starting Phase 4.
+> Cycle 3 done ✅ — see `docs/audit/REVIEW_REPORT.md`.
+---
+
 ## Phase 4 — Embeddings + RCA (Target: Week 3)
 
 ---
@@ -811,6 +816,10 @@ and `?severity=high`.
 
 ---
 
+---
+> **Review gate:** Phase 4 complete (T13–T15). Run Cycle 4 audit before starting Phase 5.
+---
+
 ## Phase 5 — Observability (Target: Week 4)
 
 ---
@@ -932,6 +941,10 @@ Produce a Grafana dashboard JSON (provisioned via `docker/grafana/provisioning/d
 **Notes:**
 - Do not use Grafana Alerting in v1 — too complex to configure in Docker Compose. Use dashboard annotations + visual thresholds only.
 
+---
+
+---
+> **Review gate:** Phase 5 complete (T16–T18). Run Cycle 5 audit before starting Phase 6.
 ---
 
 ## Phase 6 — Security Hardening (Target: Week 4–5)
@@ -1069,6 +1082,10 @@ If Redis GETDEL returns None (expired/already-consumed) → HTTP 404. Do NOT wri
 **Tests required:**
 - `tests/test_approval_store.py` — extend with Postgres write assertions.
 
+---
+
+---
+> **Review gate:** Phase 6 complete (T19–T21). Run Cycle 6 audit before starting Phase 7.
 ---
 
 ## Phase 7 — Eval Harness + Load Testing (Target: Week 5–6)

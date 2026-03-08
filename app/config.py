@@ -16,13 +16,17 @@ DEFAULT_KB_BASE_URL = "https://kb." + "example.com"
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     app_name: str = "gdev-agent"
     app_env: str = "dev"
     log_level: str = "INFO"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
+    voyage_api_key: str = ""
+    embedding_model: str = "voyage-3-lite"
     kb_base_url: str = DEFAULT_KB_BASE_URL
     llm_input_rate_per_1k: Decimal = Decimal("0.003")
     llm_output_rate_per_1k: Decimal = Decimal("0.015")
@@ -48,6 +52,8 @@ class Settings(BaseSettings):
     rate_limit_rpm: int = 10
     rate_limit_burst: int = 3
     auth_rate_limit_attempts: int = 5
+    rca_lookback_hours: int = 24
+    rca_budget_per_run_usd: Decimal = Decimal("0.15")
     linear_api_key: str | None = None
     linear_team_id: str | None = None
     telegram_bot_token: str | None = None

@@ -12,14 +12,21 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+try:  # pragma: no cover - optional in minimal local envs
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - scheduler remains disabled
+    AsyncIOScheduler = None  # type: ignore[assignment]
+
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import get_settings
 from app.dependencies import require_role
 from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
+from app.embedding_service import EmbeddingService
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
+from app.jobs.rca_clusterer import RCAClusterer
 from app.logging import clear_request_id, configure_logging, set_request_id
 from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -27,6 +34,7 @@ from app.middleware.signature import SignatureMiddleware
 from app.routers.agents import router as agents_router
 from app.routers.analytics import router as analytics_router
 from app.routers.auth import router as auth_router
+from app.routers.clusters import router as clusters_router
 from app.routers.tickets import router as tickets_router
 from app.schemas import (
     ApproveRequest,
@@ -109,10 +117,24 @@ async def lifespan(app: FastAPI):
         sqlite_path=settings.sqlite_log_path,
         db_session_factory=db_session_factory,
     )
+    embedding_service = EmbeddingService(
+        settings=settings, db_session_factory=db_session_factory
+    )
+    rca_clusterer = RCAClusterer(
+        settings=settings,
+        db_session_factory=db_session_factory,
+    )
     approval_store = RedisApprovalStore(
         redis_client, ttl_seconds=settings.approval_ttl_seconds
     )
     dedup_cache = DedupCache(redis_client)
+    scheduler = None
+    if AsyncIOScheduler is not None:
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.add_job(
+            rca_clusterer.run_with_timeout, "interval", minutes=15, id="rca_clusterer"
+        )
+        scheduler.start()
 
     telegram_client = (
         TelegramClient(settings.telegram_bot_token)
@@ -139,10 +161,16 @@ async def lifespan(app: FastAPI):
         approval_store=approval_store,
         telegram_client=telegram_client,
         sheets_client=sheets_client,
+        embedding_service=embedding_service,
     )
+    app.state.rca_clusterer = rca_clusterer
+    app.state.rca_scheduler = scheduler
     try:
         yield
     finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+        await rca_clusterer.aclose()
         await tenant_registry_redis.aclose()
         await db_engine.dispose()
 
@@ -161,6 +189,7 @@ app.add_middleware(
 app.add_middleware(SignatureMiddleware, settings=_middleware_settings)
 app.include_router(auth_router)
 app.include_router(tickets_router)
+app.include_router(clusters_router)
 app.include_router(analytics_router)
 app.include_router(agents_router)
 
@@ -193,11 +222,15 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
     try:
         resolved_tenant_uuid = UUID(str(resolved_tenant_id))
     except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail="tenant_id must be a valid UUID") from exc
+        raise HTTPException(
+            status_code=400, detail="tenant_id must be a valid UUID"
+        ) from exc
 
     if request_tenant_id is not None:
         payload_tenant_id = payload.tenant_id
-        if payload_tenant_id is not None and payload_tenant_id != str(request_tenant_id):
+        if payload_tenant_id is not None and payload_tenant_id != str(
+            request_tenant_id
+        ):
             raise HTTPException(status_code=401, detail="Unauthorized")
     payload = payload.model_copy(update={"tenant_id": str(resolved_tenant_uuid)})
 

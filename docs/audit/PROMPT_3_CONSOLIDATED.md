@@ -50,11 +50,25 @@ Note: finding ID → task ID mapping.
 
 ## Artifact C: CODEX_PROMPT.md patch
 
-Update "Open Findings" section only:
-- Close verified findings (note: Closed + evidence)
-- Add new findings from this cycle
-- Update baseline (pass/skip/fail)
-- Update "Next task"
+Make two targeted edits:
+
+**1. Fix Queue** — insert/replace the `── Fix Queue ──` section (between SESSION HANDOFF and Phase queue).
+List every P0 and P1 finding as a concrete actionable task for Codex.
+Format:
+```
+─── Fix Queue (resolve before Phase N queue) ────────────────────────
+🔴 FIX-N [P0] — Short title
+  File: app/foo.py:line · Change: one-line description · Test: what to verify
+
+🟡 FIX-N [P1] — Short title
+  File: app/bar.py:line · Change: one-line description · Test: what to verify
+```
+If no P0/P1 findings: write `─── Fix Queue ─── (empty — proceed to phase queue)`.
+
+**2. Open Findings** — update the findings table:
+- Close verified findings (Closed + evidence)
+- Add new P2/P3 from this cycle
+- Update baseline and "Next task" line
 - Bump version (v3.N → v3.N+1)
 
 Do NOT touch: IMPLEMENTATION CONTRACT, MANDATORY PRE-TASK PROTOCOL, FORBIDDEN ACTIONS, GOVERNING DOCUMENTS.

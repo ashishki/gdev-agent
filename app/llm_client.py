@@ -9,7 +9,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
-from tenacity import Retrying, before_sleep_log, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import (
+    Retrying,
+    before_sleep_log,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.config import Settings
 from app.schemas import ClassificationResult, ExtractedFields
@@ -21,7 +27,9 @@ SYSTEM_PROMPT = (
     "Use available tools to classify requests and extract entities. "
     "Always call classify_request and extract_entities before ending your turn."
 )
-ERROR_CODE_PATTERN = re.compile(r"\b(?:ERR[-_ ]?\d{3,}|E[-_]\d{4,})\b", flags=re.IGNORECASE)
+ERROR_CODE_PATTERN = re.compile(
+    r"\b(?:ERR[-_ ]?\d{3,}|E[-_]\d{4,})\b", flags=re.IGNORECASE
+)
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -101,7 +109,10 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "reason": {"type": "string"},
-                "risk_level": {"type": "string", "enum": ["medium", "high", "critical"]},
+                "risk_level": {
+                    "type": "string",
+                    "enum": ["medium", "high", "critical"],
+                },
             },
             "required": ["reason", "risk_level"],
         },
@@ -128,11 +139,15 @@ class LLMClient:
         try:
             import anthropic  # type: ignore
         except ImportError as exc:  # pragma: no cover - environment-specific
-            raise RuntimeError("anthropic package is required. Install with: pip install anthropic") from exc
+            raise RuntimeError(
+                "anthropic package is required. Install with: pip install anthropic"
+            ) from exc
         self._anthropic = anthropic
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-    def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
+    def run_agent(
+        self, text: str, user_id: str | None = None, max_turns: int = 5
+    ) -> TriageResult:
         """Run Claude tool-use loop and return structured triage outputs."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": text}]
         classification: ClassificationResult | None = None
@@ -160,7 +175,9 @@ class LLMClient:
             for block in response.content:
                 block_type = getattr(block, "type", None)
                 if block_type == "text":
-                    assistant_content.append({"type": "text", "text": getattr(block, "text", "")})
+                    assistant_content.append(
+                        {"type": "text", "text": getattr(block, "text", "")}
+                    )
                     continue
                 if block_type != "tool_use":
                     continue
@@ -205,7 +222,9 @@ class LLMClient:
             messages.append({"role": "user", "content": tool_results})
 
         if classification is None:
-            classification = ClassificationResult(category="other", urgency="low", confidence=0.0)
+            classification = ClassificationResult(
+                category="other", urgency="low", confidence=0.0
+            )
         if extracted.user_id is None:
             extracted.user_id = user_id
         return TriageResult(
@@ -215,6 +234,56 @@ class LLMClient:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+
+    def summarize_cluster(self, ticket_texts: list[str]) -> dict[str, str | None]:
+        """Summarize a cluster of ticket texts with a single LLM call."""
+        if not ticket_texts:
+            return {
+                "label": "Cluster",
+                "summary": "No ticket texts available",
+                "severity": "low",
+            }
+
+        prompt = (
+            "Summarize these support tickets into a short RCA label and summary.\n"
+            "Return JSON with keys: label, summary, severity (low|medium|high).\n\n"
+            f"Tickets:\n{chr(10).join(f'- {item}' for item in ticket_texts[:5])}"
+        )
+        response = self._create_message(
+            model=self.settings.anthropic_model,
+            max_tokens=250,
+            system="You summarize ticket clusters for internal support analytics.",
+            tools=[],
+            tool_choice={"type": "auto"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text_blocks = [
+            str(getattr(block, "text", ""))
+            for block in getattr(response, "content", [])
+            if getattr(block, "type", None) == "text"
+        ]
+        raw_text = "\n".join(block for block in text_blocks if block).strip()
+        if not raw_text:
+            return {
+                "label": "Cluster",
+                "summary": "Summary unavailable",
+                "severity": None,
+            }
+
+        try:
+            parsed = json.loads(raw_text)
+        except json.JSONDecodeError:
+            return {"label": "Cluster", "summary": raw_text[:400], "severity": None}
+
+        label = str(parsed.get("label", "Cluster")).strip() or "Cluster"
+        summary = (
+            str(parsed.get("summary", "Summary unavailable")).strip()
+            or "Summary unavailable"
+        )
+        severity = parsed.get("severity")
+        if isinstance(severity, str) and severity in {"low", "medium", "high"}:
+            return {"label": label, "summary": summary, "severity": severity}
+        return {"label": label, "summary": summary, "severity": None}
 
     def _create_message(self, **kwargs: Any) -> Any:
         """Call Claude messages API with retries on transient 5xx responses."""
@@ -244,13 +313,17 @@ class LLMClient:
 
         raise RuntimeError("unreachable")
 
-    def _dispatch_tool(self, name: str, tool_input: dict[str, Any], user_id: str | None) -> dict[str, Any]:
+    def _dispatch_tool(
+        self, name: str, tool_input: dict[str, Any], user_id: str | None
+    ) -> dict[str, Any]:
         """Dispatch local tool handlers for model tool_use blocks."""
         if name == "classify_request":
             try:
                 return ClassificationResult(**tool_input).model_dump()
             except ValidationError:
-                return ClassificationResult(category="other", urgency="low", confidence=0.0).model_dump()
+                return ClassificationResult(
+                    category="other", urgency="low", confidence=0.0
+                ).model_dump()
 
         if name == "extract_entities":
             merged_input = dict(tool_input)
@@ -269,7 +342,10 @@ class LLMClient:
             keywords = [str(item) for item in tool_input.get("keywords", [])][:3]
             return {
                 "articles": [
-                    {"title": f"FAQ: {keyword}", "url": f"{self.settings.kb_base_url}/{keyword}"}
+                    {
+                        "title": f"FAQ: {keyword}",
+                        "url": f"{self.settings.kb_base_url}/{keyword}",
+                    }
                     for keyword in keywords
                 ]
             }
@@ -278,7 +354,9 @@ class LLMClient:
             tone = str(tool_input.get("tone", "informational"))
             draft_text = str(tool_input.get("draft_text", "")).strip()
             if not draft_text:
-                draft_text = "Thanks for contacting support. We have logged your request."
+                draft_text = (
+                    "Thanks for contacting support. We have logged your request."
+                )
             return {
                 "tone": tone,
                 "include_faq_links": bool(tool_input.get("include_faq_links", False)),

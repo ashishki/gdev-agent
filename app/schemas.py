@@ -251,6 +251,35 @@ class EvalRunItem(BaseModel):
     created_at: datetime
 
 
+class ClusterListItem(BaseModel):
+    """Cluster summary row."""
+
+    cluster_id: UUID
+    label: str
+    summary: str
+    ticket_count: int
+    severity: str | None = None
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    is_active: bool
+    updated_at: datetime
+
+
+class ClusterDetailItem(BaseModel):
+    """Cluster detail row including ticket members."""
+
+    cluster_id: UUID
+    label: str
+    summary: str
+    ticket_count: int
+    severity: str | None = None
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+    is_active: bool
+    updated_at: datetime
+    ticket_ids: list[UUID] = Field(default_factory=list)
+
+
 class TicketListResponse(BaseModel):
     """Envelope for ticket list responses."""
 
@@ -295,5 +324,21 @@ class EvalRunListResponse(BaseModel):
     """Envelope for eval run list responses."""
 
     data: list[EvalRunItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class ClusterListResponse(BaseModel):
+    """Envelope for cluster list responses."""
+
+    data: list[ClusterListItem]
+    cursor: str | None = None
+    total: None = None
+
+
+class ClusterDetailResponse(BaseModel):
+    """Envelope for cluster detail responses."""
+
+    data: list[ClusterDetailItem]
     cursor: str | None = None
     total: None = None

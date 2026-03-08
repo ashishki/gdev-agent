@@ -19,10 +19,14 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     warning = Mock()
     engine = SimpleNamespace(dispose=AsyncMock())
     async_redis = SimpleNamespace(aclose=AsyncMock())
+    scheduler = SimpleNamespace(add_job=Mock(), start=Mock(), shutdown=Mock())
+    rca_clusterer = SimpleNamespace(run_with_timeout=AsyncMock(), aclose=AsyncMock())
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "configure_logging", lambda *_: None)
     monkeypatch.setattr(main.LOGGER, "warning", warning)
-    monkeypatch.setattr(main.redis, "from_url", lambda *_: SimpleNamespace(ping=lambda: None))
+    monkeypatch.setattr(
+        main.redis, "from_url", lambda *_: SimpleNamespace(ping=lambda: None)
+    )
     monkeypatch.setattr(main.aioredis, "from_url", lambda *_: async_redis)
     monkeypatch.setattr(main, "make_engine", lambda *_: engine)
     monkeypatch.setattr(main, "make_session_factory", lambda *_: object())
@@ -33,6 +37,8 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
     monkeypatch.setattr(main, "TenantRegistry", lambda *_, **__: object())
     monkeypatch.setattr(main, "SheetsClient", lambda *_, **__: object())
     monkeypatch.setattr(main, "TelegramClient", lambda *_, **__: object())
+    monkeypatch.setattr(main, "RCAClusterer", lambda **_: rca_clusterer)
+    monkeypatch.setattr(main, "AsyncIOScheduler", lambda **_: scheduler)
     monkeypatch.setattr(main, "AgentService", lambda **_: object())
     return warning
 
@@ -40,7 +46,9 @@ def _stub_runtime(monkeypatch, settings: Settings) -> Mock:
 def test_startup_no_warning_when_webhook_secret_missing(monkeypatch) -> None:
     warning = _stub_runtime(
         monkeypatch,
-        Settings(anthropic_api_key="k", webhook_secret=None, approve_secret="approve-secret"),
+        Settings(
+            anthropic_api_key="k", webhook_secret=None, approve_secret="approve-secret"
+        ),
     )
 
     async def _run() -> None:
@@ -54,7 +62,11 @@ def test_startup_no_warning_when_webhook_secret_missing(monkeypatch) -> None:
 def test_startup_warns_when_webhook_secret_present(monkeypatch) -> None:
     warning = _stub_runtime(
         monkeypatch,
-        Settings(anthropic_api_key="k", webhook_secret="secret", approve_secret="approve-secret"),
+        Settings(
+            anthropic_api_key="k",
+            webhook_secret="secret",
+            approve_secret="approve-secret",
+        ),
     )
 
     async def _run() -> None:
@@ -84,7 +96,10 @@ def test_startup_warns_when_approve_secret_missing(monkeypatch) -> None:
 def test_approve_rejects_when_secret_missing_or_wrong() -> None:
     main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="secret")
     main.app.state.agent = SimpleNamespace(
-        approve=lambda payload, jwt_tenant_id=None: {"unexpected": payload.pending_id, "tenant": jwt_tenant_id}
+        approve=lambda payload, jwt_tenant_id=None: {
+            "unexpected": payload.pending_id,
+            "tenant": jwt_tenant_id,
+        }
     )
     payload = ApproveRequest(pending_id="p1", approved=True)
 
@@ -96,7 +111,9 @@ def test_approve_rejects_when_secret_missing_or_wrong() -> None:
         assert exc.detail == "Unauthorized"
 
     try:
-        main.approve(payload, request=SimpleNamespace(headers={"X-Approve-Secret": "wrong"}))
+        main.approve(
+            payload, request=SimpleNamespace(headers={"X-Approve-Secret": "wrong"})
+        )
         assert False, "Expected HTTPException for invalid X-Approve-Secret"
     except HTTPException as exc:
         assert exc.status_code == 401
@@ -106,7 +123,9 @@ def test_approve_rejects_when_secret_missing_or_wrong() -> None:
 def test_approve_allows_when_secret_matches() -> None:
     approved = {"status": "approved", "pending_id": "p1", "result": {"ok": True}}
     main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="secret")
-    main.app.state.agent = SimpleNamespace(approve=lambda payload, jwt_tenant_id=None: approved)
+    main.app.state.agent = SimpleNamespace(
+        approve=lambda payload, jwt_tenant_id=None: approved
+    )
 
     response = main.approve(
         ApproveRequest(pending_id="p1", approved=True),
@@ -138,7 +157,9 @@ def test_lifespan_creates_and_closes_db_engine(monkeypatch) -> None:
 
 def test_webhook_rejects_missing_tenant_id() -> None:
     main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
-    main.app.state.agent = SimpleNamespace(process_webhook=lambda *_args, **_kwargs: None)
+    main.app.state.agent = SimpleNamespace(
+        process_webhook=lambda *_args, **_kwargs: None
+    )
 
     with pytest.raises(HTTPException) as exc:
         main.webhook(
@@ -152,7 +173,9 @@ def test_webhook_rejects_missing_tenant_id() -> None:
 
 def test_webhook_rejects_non_uuid_tenant_id() -> None:
     main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
-    main.app.state.agent = SimpleNamespace(process_webhook=lambda *_args, **_kwargs: None)
+    main.app.state.agent = SimpleNamespace(
+        process_webhook=lambda *_args, **_kwargs: None
+    )
 
     with pytest.raises(HTTPException) as exc:
         main.webhook(
@@ -166,14 +189,18 @@ def test_webhook_rejects_non_uuid_tenant_id() -> None:
 
 def test_webhook_propagates_budget_exhausted_http_429() -> None:
     def _raise_budget(*_args, **_kwargs):
-        raise HTTPException(status_code=429, detail={"error": {"code": "budget_exhausted"}})
+        raise HTTPException(
+            status_code=429, detail={"error": {"code": "budget_exhausted"}}
+        )
 
     main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
     main.app.state.agent = SimpleNamespace(process_webhook=_raise_budget)
 
     with pytest.raises(HTTPException) as exc:
         main.webhook(
-            WebhookRequest(text="hello", tenant_id="3d0f5f00-ec44-4d3f-893f-c8f89ee5f80c"),
+            WebhookRequest(
+                text="hello", tenant_id="3d0f5f00-ec44-4d3f-893f-c8f89ee5f80c"
+            ),
             request=SimpleNamespace(state=SimpleNamespace()),
         )
 

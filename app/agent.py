@@ -18,6 +18,7 @@ from sqlalchemy import text
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
+from app.embedding_service import EmbeddingService
 from app.guardrails.output_guard import OutputGuard
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
@@ -71,6 +72,7 @@ class AgentService:
         telegram_client: TelegramClient | None = None,
         sheets_client: SheetsClient | None = None,
         cost_ledger: CostLedger | None = None,
+        embedding_service: EmbeddingService | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -80,8 +82,11 @@ class AgentService:
         self.telegram_client = telegram_client
         self.sheets_client = sheets_client
         self.cost_ledger = cost_ledger or CostLedger()
+        self.embedding_service = embedding_service
 
-    def process_webhook(self, payload: WebhookRequest, message_id: str | None = None) -> WebhookResponse:
+    def process_webhook(
+        self, payload: WebhookRequest, message_id: str | None = None
+    ) -> WebhookResponse:
         """Run the full agent flow and return either executed or pending result."""
         start = time.monotonic()
         self._guard_input(payload.text)
@@ -92,12 +97,20 @@ class AgentService:
         extracted = triage.extracted
         action, fallback_draft = self.propose_action(payload, classification, extracted)
         draft_response = triage.draft_text or fallback_draft
-        cost_usd = self._estimate_llm_cost_usd(triage.input_tokens, triage.output_tokens)
-        self._record_cost_best_effort(payload.tenant_id, triage.input_tokens, triage.output_tokens, cost_usd)
+        cost_usd = self._estimate_llm_cost_usd(
+            triage.input_tokens, triage.output_tokens
+        )
+        self._record_cost_best_effort(
+            payload.tenant_id, triage.input_tokens, triage.output_tokens, cost_usd
+        )
 
-        guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
+        guard_result = self.output_guard.scan(
+            draft_response, classification.confidence, action
+        )
         if guard_result.blocked:
-            raise HTTPException(status_code=500, detail="Internal: output guard blocked response")
+            raise HTTPException(
+                status_code=500, detail="Internal: output guard blocked response"
+            )
         if guard_result.action_override is not None:
             action = guard_result.action_override
         if guard_result.redacted_draft != draft_response:
@@ -116,7 +129,8 @@ class AgentService:
                 tenant_id=str(payload.tenant_id or ""),
                 reason=action.risk_reason or "manual approval required",
                 user_id=payload.user_id,
-                expires_at=datetime.now(UTC) + timedelta(seconds=self.settings.approval_ttl_seconds),
+                expires_at=datetime.now(UTC)
+                + timedelta(seconds=self.settings.approval_ttl_seconds),
                 action=action,
                 draft_response=draft_response,
             )
@@ -127,7 +141,9 @@ class AgentService:
                 request_id=REQUEST_ID.get(),
                 tenant_id=payload.tenant_id,
                 message_id=message_id,
-                user_id=hashlib.sha256(payload.user_id.encode()).hexdigest() if payload.user_id else None,
+                user_id=hashlib.sha256(payload.user_id.encode()).hexdigest()
+                if payload.user_id
+                else None,
                 category=classification.category,
                 urgency=classification.urgency,
                 confidence=classification.confidence,
@@ -138,7 +154,7 @@ class AgentService:
                 latency_ms=latency_ms,
                 cost_usd=cost_usd,
             )
-            self.store.persist_pipeline_run(
+            ticket_id = self.store.persist_pipeline_run(
                 payload,
                 classification,
                 extracted,
@@ -146,6 +162,11 @@ class AgentService:
                 audit_entry,
                 input_tokens=triage.input_tokens,
                 output_tokens=triage.output_tokens,
+            )
+            self._schedule_embedding(
+                ticket_id=ticket_id,
+                tenant_id=payload.tenant_id,
+                text_value=payload.text,
             )
             self.store.log_event(
                 "pending_created",
@@ -208,7 +229,9 @@ class AgentService:
             request_id=REQUEST_ID.get(),
             tenant_id=payload.tenant_id,
             message_id=message_id,
-            user_id=hashlib.sha256(payload.user_id.encode()).hexdigest() if payload.user_id else None,
+            user_id=hashlib.sha256(payload.user_id.encode()).hexdigest()
+            if payload.user_id
+            else None,
             category=classification.category,
             urgency=classification.urgency,
             confidence=classification.confidence,
@@ -219,7 +242,7 @@ class AgentService:
             latency_ms=latency_ms,
             cost_usd=cost_usd,
         )
-        self.store.persist_pipeline_run(
+        ticket_id = self.store.persist_pipeline_run(
             payload,
             classification,
             extracted,
@@ -227,6 +250,9 @@ class AgentService:
             audit_entry,
             input_tokens=triage.input_tokens,
             output_tokens=triage.output_tokens,
+        )
+        self._schedule_embedding(
+            ticket_id=ticket_id, tenant_id=payload.tenant_id, text_value=payload.text
         )
         self._append_audit_async(audit_entry)
 
@@ -295,7 +321,9 @@ class AgentService:
                 request_id=REQUEST_ID.get(),
                 tenant_id=str(tenant_id) if tenant_id is not None else None,
                 message_id=None,
-                user_id=hashlib.sha256(pending.user_id.encode()).hexdigest() if pending.user_id else None,
+                user_id=hashlib.sha256(pending.user_id.encode()).hexdigest()
+                if pending.user_id
+                else None,
                 category=str(pending.action.payload.get("category", "other")),
                 urgency=str(pending.action.payload.get("urgency", "low")),
                 confidence=0.0,
@@ -307,7 +335,9 @@ class AgentService:
                 cost_usd=0.0,
             )
         )
-        return ApproveResponse(status="approved", pending_id=request.pending_id, result=result)
+        return ApproveResponse(
+            status="approved", pending_id=request.pending_id, result=result
+        )
 
     def propose_action(
         self,
@@ -351,7 +381,9 @@ class AgentService:
         )
         return action, draft
 
-    def needs_approval(self, text: str, classification: ClassificationResult, action: ProposedAction) -> bool:
+    def needs_approval(
+        self, text: str, classification: ClassificationResult, action: ProposedAction
+    ) -> bool:
         """Determine if action must go through manual approval."""
         _ = (text, classification)
         return action.risky
@@ -382,7 +414,9 @@ class AgentService:
     def _guard_input(self, text: str) -> None:
         """Validate incoming text and raise ValueError on guardrail hit."""
         if len(text) > self.settings.max_input_length:
-            raise ValueError(f"Input exceeds max length ({self.settings.max_input_length})")
+            raise ValueError(
+                f"Input exceeds max length ({self.settings.max_input_length})"
+            )
         lowered = text.lower()
         if any(pattern in lowered for pattern in INJECTION_PATTERNS):
             raise ValueError("Input failed injection guard")
@@ -401,7 +435,9 @@ class AgentService:
             return "Thanks for your question. We will send the best available guidance shortly."
         return "Thanks for contacting support. We have logged your request and will reply soon."
 
-    def _notify_approval_channel(self, pending: PendingDecision, classification: ClassificationResult) -> None:
+    def _notify_approval_channel(
+        self, pending: PendingDecision, classification: ClassificationResult
+    ) -> None:
         """Send pending approval notification to Telegram approval chat."""
         if not self.telegram_client or not self.settings.telegram_approval_chat_id:
             return
@@ -417,7 +453,10 @@ class AgentService:
         except Exception:
             LOGGER.warning(
                 "failed sending approval notification",
-                extra={"event": "approval_notify_failed", "context": {"pending_id": pending.pending_id}},
+                extra={
+                    "event": "approval_notify_failed",
+                    "context": {"pending_id": pending.pending_id},
+                },
                 exc_info=True,
             )
 
@@ -432,13 +471,17 @@ class AgentService:
                 return
         except RuntimeError:
             pass
-        threading.Thread(target=self.sheets_client.append_log, args=(entry,), daemon=True).start()
+        threading.Thread(
+            target=self.sheets_client.append_log, args=(entry,), daemon=True
+        ).start()
 
     def _estimate_llm_cost_usd(self, input_tokens: int, output_tokens: int) -> float:
         """Estimate LLM cost in USD from token usage."""
         return float(
-            (Decimal(input_tokens) / Decimal(1000)) * self.settings.llm_input_rate_per_1k
-            + (Decimal(output_tokens) / Decimal(1000)) * self.settings.llm_output_rate_per_1k
+            (Decimal(input_tokens) / Decimal(1000))
+            * self.settings.llm_input_rate_per_1k
+            + (Decimal(output_tokens) / Decimal(1000))
+            * self.settings.llm_output_rate_per_1k
         )
 
     def _tenant_uuid(self, tenant_id: str | None) -> UUID | None:
@@ -492,7 +535,9 @@ class AgentService:
         try:
             self._run_blocking(_check_budget())
         except BudgetExhaustedError as exc:
-            raise HTTPException(status_code=429, detail={"error": {"code": "budget_exhausted"}}) from exc
+            raise HTTPException(
+                status_code=429, detail={"error": {"code": "budget_exhausted"}}
+            ) from exc
 
     def _record_cost_best_effort(
         self,
@@ -527,6 +572,39 @@ class AgentService:
         except Exception:
             LOGGER.warning(
                 "failed recording llm cost",
-                extra={"event": "cost_ledger_record_failed", "context": {"tenant_id": str(tenant_uuid)}},
+                extra={
+                    "event": "cost_ledger_record_failed",
+                    "context": {"tenant_id": str(tenant_uuid)},
+                },
                 exc_info=True,
             )
+
+    def _schedule_embedding(
+        self, *, ticket_id: str | None, tenant_id: str | None, text_value: str
+    ) -> None:
+        embedding_service = self.embedding_service
+        if embedding_service is None or ticket_id is None or tenant_id is None:
+            return
+
+        async def _upsert() -> None:
+            try:
+                await embedding_service.upsert(
+                    tenant_id=tenant_id,
+                    ticket_id=ticket_id,
+                    text_value=text_value,
+                )
+            except Exception:
+                LOGGER.warning(
+                    "embedding upsert failed",
+                    extra={
+                        "event": "embedding_upsert_failed",
+                        "context": {"tenant_id": tenant_id, "ticket_id": ticket_id},
+                    },
+                    exc_info=True,
+                )
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_upsert())
+        except RuntimeError:
+            threading.Thread(target=lambda: asyncio.run(_upsert()), daemon=True).start()
