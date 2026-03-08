@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import hashlib
 from datetime import UTC, datetime
+from queue import Queue
+from threading import Thread
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.metrics import APPROVAL_QUEUE_DEPTH
 from app.schemas import PendingDecision
@@ -16,9 +23,15 @@ LOGGER = logging.getLogger(__name__)
 class RedisApprovalStore:
     """Stores pending decisions in Redis with TTL."""
 
-    def __init__(self, redis_client: Any, ttl_seconds: int) -> None:
+    def __init__(
+        self,
+        redis_client: Any,
+        ttl_seconds: int,
+        db_session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         self.redis = redis_client
         self.ttl_seconds = ttl_seconds
+        self._db_session_factory = db_session_factory
 
     def put_pending(self, decision: PendingDecision) -> None:
         """Store pending decision with expiration TTL."""
@@ -29,6 +42,12 @@ class RedisApprovalStore:
             PendingDecision(**payload).model_dump_json(),
             ex=self.ttl_seconds,
         )
+        if self._db_session_factory is not None:
+            try:
+                self._run_blocking(self._persist_pending_async(decision))
+            except Exception:
+                self.redis.delete(key)
+                raise
         APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).inc()
 
     def pop_pending(self, pending_id: str) -> PendingDecision | None:
@@ -65,6 +84,59 @@ class RedisApprovalStore:
             )
             return None
         return decision
+
+    def _run_blocking(self, coroutine):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coroutine)
+
+        queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+
+        def _target() -> None:
+            try:
+                result = asyncio.run(coroutine)
+                queue.put((True, result))
+            except Exception as exc:  # pragma: no cover - defensive branch
+                queue.put((False, exc))
+
+        thread = Thread(target=_target, daemon=True)
+        thread.start()
+        ok, data = queue.get()
+        thread.join()
+        if ok:
+            return data
+        raise data  # type: ignore[misc]
+
+    async def _persist_pending_async(self, decision: PendingDecision) -> None:
+        if self._db_session_factory is None:
+            return
+        tenant_uuid = UUID(str(decision.tenant_id))
+        pending_uuid = UUID(str(decision.pending_id))
+        async with self._db_session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SET LOCAL app.current_tenant_id = :tid"),
+                    {"tid": str(tenant_uuid)},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO pending_decisions (
+                            pending_id, tenant_id, payload, expires_at, status
+                        )
+                        VALUES (
+                            :pending_id, :tenant_id, CAST(:payload AS jsonb), :expires_at, 'pending'
+                        )
+                        """
+                    ),
+                    {
+                        "pending_id": str(pending_uuid),
+                        "tenant_id": str(tenant_uuid),
+                        "payload": PendingDecision(**decision.model_dump(mode="json")).model_dump_json(),
+                        "expires_at": decision.expires_at,
+                    },
+                )
 
 
 def _sha256_short(value: str) -> str:

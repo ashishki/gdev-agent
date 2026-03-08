@@ -80,3 +80,9 @@ def test_error_code_validation_filters_non_codes() -> None:
 
     err_code = client._dispatch_tool("extract_entities", {"error_code": "error code ERR-1234"}, "u-3")
     assert err_code["error_code"] == "ERR-1234"
+
+
+def test_unknown_tool_marks_response_for_pending() -> None:
+    client = object.__new__(LLMClient)
+    result = client._dispatch_tool("nonexistent_tool", {"x": 1}, "u-3")
+    assert result["__force_pending__"] is True

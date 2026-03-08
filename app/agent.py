@@ -446,6 +446,12 @@ class AgentService:
 
         tenant_id = pending.tenant_id
         if not request.approved:
+            self._record_approval_event(
+                pending_id=str(pending.pending_id),
+                tenant_id=str(tenant_id),
+                decision="rejected",
+                reviewer_hash=reviewer_hash,
+            )
             REJECTED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
             self.store.log_event(
                 "pending_rejected",
@@ -493,6 +499,12 @@ class AgentService:
                 latency_ms=latency_ms,
                 cost_usd=0.0,
             )
+        )
+        self._record_approval_event(
+            pending_id=str(pending.pending_id),
+            tenant_id=str(tenant_id),
+            decision="approved",
+            reviewer_hash=reviewer_hash,
         )
         APPROVED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
         return ApproveResponse(
@@ -768,10 +780,77 @@ class AgentService:
                 "failed recording llm cost",
                 extra={
                     "event": "cost_ledger_record_failed",
-                    "context": {"tenant_id_hash": _sha256_short(str(tenant_uuid))},
+                "context": {"tenant_id_hash": _sha256_short(str(tenant_uuid))},
+            },
+            exc_info=True,
+        )
+
+    def _record_approval_event(
+        self,
+        *,
+        pending_id: str,
+        tenant_id: str,
+        decision: str,
+        reviewer_hash: str | None,
+    ) -> None:
+        session_factory = getattr(self.store, "_db_session_factory", None)
+        if session_factory is None:
+            return
+        try:
+            pending_uuid = UUID(str(pending_id))
+            tenant_uuid = UUID(str(tenant_id))
+        except (ValueError, TypeError):
+            LOGGER.error(
+                "invalid approval event identifiers",
+                extra={
+                    "event": "approval_event_invalid_identifiers",
+                    "context": {"tenant_id_hash": _sha256_short(str(tenant_id))},
                 },
                 exc_info=True,
             )
+            raise
+
+        async def _record() -> None:
+            async with session_factory() as session:
+                async with session.begin():
+                    await session.execute(
+                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                        {"tenant_id": str(tenant_uuid)},
+                    )
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO approval_events (
+                                pending_id, tenant_id, decision, reviewer_id_hash
+                            )
+                            VALUES (
+                                :pending_id, :tenant_id, :decision, :reviewer_id_hash
+                            )
+                            """
+                        ),
+                        {
+                            "pending_id": str(pending_uuid),
+                            "tenant_id": str(tenant_uuid),
+                            "decision": decision,
+                            "reviewer_id_hash": reviewer_hash,
+                        },
+                    )
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE pending_decisions
+                            SET status = :status
+                            WHERE pending_id = :pending_id AND tenant_id = :tenant_id
+                            """
+                        ),
+                        {
+                            "status": decision,
+                            "pending_id": str(pending_uuid),
+                            "tenant_id": str(tenant_uuid),
+                        },
+                    )
+
+        self._run_blocking(_record())
 
     def _schedule_embedding(
         self, *, ticket_id: str | None, tenant_id: str | None, text_value: str

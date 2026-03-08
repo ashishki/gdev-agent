@@ -134,3 +134,32 @@ def test_approve_forbidden_when_jwt_tenant_missing() -> None:
             jwt_tenant_id=None,
         )
     assert exc.value.status_code == 403
+
+
+def test_double_approve_returns_404() -> None:
+    settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    agent = AgentService(
+        settings=settings,
+        store=EventStore(sqlite_path=None),
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+
+    response = agent.process_webhook(
+        WebhookRequest(text="Charged twice for a purchase", user_id="user-123", tenant_id="tenant-a")
+    )
+    assert response.pending is not None
+
+    first = agent.approve(
+        ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
+        jwt_tenant_id="tenant-a",
+    )
+    assert first.status == "approved"
+
+    with pytest.raises(HTTPException) as exc:
+        agent.approve(
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
+            jwt_tenant_id="tenant-a",
+        )
+    assert exc.value.status_code == 404

@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.5
+# Codex Implementation Agent Prompt v3.7
 
-_Owner: Architecture · Updated: 2026-03-08 (Cycle 7 consolidated)_
+_Owner: Architecture · Updated: 2026-03-08 (Phase 6 complete)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -8,25 +8,27 @@ SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
 **Completed:** T01 ✅ T02 ✅ T03 ✅ T04 ✅ T00A ✅ T00B ✅ T05 ✅ T06 ✅ T06B ✅ T07 ✅
-              T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅ T13 ✅ T14 ✅ T15 ✅
+              T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅ T13 ✅ T14 ✅ T15 ✅ T16 ✅ T17 ✅ T18 ✅
+              T19 ✅ T20 ✅ T21 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
-              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅
+              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅
 
-**Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
-**Next task:** T16
+**Baseline:** 138 pass, 13 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Next task:** T22
 
 ─── Fix Queue (resolve before Phase 6 queue) ────────────────────────
-🟡 FIX-8 [P1] — ADR-003 RS256/JWKS drift (HS256 still active)
-  File: app/config.py:49 · Change: align auth architecture (ADR amendment to HS256 or implement RS256 + `/auth/jwks.json`) · Test: auth token validation and JWKS/ADR consistency checks
+✅ FIX-8 [P1] — ADR-003/runtime alignment complete (HS256 contract)
+  Evidence: `docs/adr/003-rbac-design.md`, `app/config.py`, `tests/test_auth.py::test_adr_decision_matches_runtime_hs256_contract`
 
-**Phase 5 queue:** T16 → T17 → T18 (implement sequentially)
-**After T18:** STOP — do not start T19. Review gate: user runs Cycle 8 audit.
+**Phase 5 queue:** T16 ✅ → T17 ✅ → T18 ✅
+**Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
+**Phase 7 queue:** T22 → T23 → T24 (implement sequentially)
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 | ID | Sev | Status | Evidence / Note |
 |----|-----|--------|-----------------|
-| ARCH-1 | P1 | OPEN | HS256 configured, ADR-003 still mandates RS256/JWKS (`app/config.py:49`, `docs/adr/003-rbac-design.md`) |
+| ARCH-1 | P1 | CLOSED | ADR/runtime aligned on HS256 (`app/config.py:49`, `docs/adr/003-rbac-design.md`) |
 | CODE-3 | P2 | CLOSED | `tenant_id_hash` logging verified in `app/agent.py` |
 | CODE-4 | P2 | CLOSED | Secrets scan clean; `Bearer ` literal removed from `app/` scope |
 | CODE-5 | P2 | OPEN | Silent broad fallback exception remains in `_fetch_embeddings` (`app/jobs/rca_clusterer.py:228`) |
@@ -65,10 +67,10 @@ Files modified: app/main.py, app/config.py
 Files created: app/routers/clusters.py
 Files modified: app/main.py, tests/test_endpoints.py
 
-─── NEXT: T16 ───────────────────────────────────────────────────────
+─── NEXT: T22 ───────────────────────────────────────────────────────
 
-FIX-6 and FIX-7 are resolved. Start Phase 5 queue: T16 → T17 → T18.
-After T18: STOP — do not start T19. Review gate: user runs Cycle 8 audit.
+Phase 6 queue is complete (T19–T21).
+Start Phase 7 queue: T22 → T23 → T24.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 

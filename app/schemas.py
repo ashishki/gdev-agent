@@ -39,8 +39,28 @@ class ClassificationResult(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
+class ClassifyToolResult(BaseModel):
+    """Validated classify_request tool output."""
+
+    category: Category
+    urgency: Urgency
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
 class ExtractedFields(BaseModel):
     """Structured fields extracted from free-form text."""
+
+    user_id: str | None = None
+    platform: str = "unknown"
+    game_title: str | None = None
+    transaction_id: str | None = None
+    error_code: str | None = None
+    reported_username: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class ExtractToolResult(BaseModel):
+    """Validated extract_entities tool output."""
 
     user_id: str | None = None
     platform: str = "unknown"
@@ -57,6 +77,15 @@ class ProposedAction(BaseModel):
     tool: str
     payload: dict[str, Any]
     risky: bool = False
+    risk_reason: str | None = None
+
+
+class CreateTicketToolResult(BaseModel):
+    """Validated action tool payload shape."""
+
+    tool: Literal["create_ticket_and_reply", "escalate_to_human"]
+    payload: dict[str, Any]
+    risky: bool
     risk_reason: str | None = None
 
 

@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
 class SignatureMiddleware:
     """Validates webhook signatures using per-tenant secrets."""
 
-    def __init__(self, app, settings: Settings):
+    def __init__(self, app, settings: Settings | None = None):
         self.app = app
         self.settings = settings
 

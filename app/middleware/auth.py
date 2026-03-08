@@ -41,11 +41,12 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
 class JWTMiddleware(BaseHTTPMiddleware):
     """Validates JWTs and injects tenant/user context into request.state."""
 
-    def __init__(self, app, settings: Settings):
+    def __init__(self, app, settings: Settings | None = None):
         super().__init__(app)
         self.settings = settings
 
     async def dispatch(self, request: Request, call_next):
+        settings = self.settings or request.app.state.settings
         with TRACER.start_as_current_span("middleware.auth") as span:
             span.set_attribute("http.method", request.method)
             span.set_attribute("http.route", request.url.path)
@@ -71,8 +72,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
             try:
                 claims = jwt.decode(
                     token,
-                    self.settings.jwt_secret,
-                    algorithms=[self.settings.jwt_algorithm],
+                    settings.jwt_secret,
+                    algorithms=[settings.jwt_algorithm],
                 )
             except ExpiredSignatureError:
                 span.set_attribute("auth.valid", False)

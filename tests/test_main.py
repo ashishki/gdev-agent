@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -206,3 +207,17 @@ def test_webhook_propagates_budget_exhausted_http_429() -> None:
 
     assert exc.value.status_code == 429
     assert exc.value.detail == {"error": {"code": "budget_exhausted"}}
+
+
+def test_main_import_does_not_require_get_settings(monkeypatch) -> None:
+    import app.config as config_module
+    import app.main as main_module
+
+    monkeypatch.setattr(
+        config_module,
+        "get_settings",
+        lambda: (_ for _ in ()).throw(RuntimeError("should not be called at import")),
+    )
+    reloaded = importlib.reload(main_module)
+
+    assert reloaded.app is not None

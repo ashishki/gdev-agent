@@ -21,7 +21,12 @@ from tenacity import (
 
 from app.config import Settings
 from app.metrics import LLM_DURATION_SECONDS, LLM_REQUESTS_TOTAL, LLM_RETRY_TOTAL
-from app.schemas import ClassificationResult, ExtractedFields
+from app.schemas import (
+    ClassificationResult,
+    ClassifyToolResult,
+    ExtractToolResult,
+    ExtractedFields,
+)
 
 LOGGER = logging.getLogger(__name__)
 try:  # pragma: no cover - optional dependency in minimal local envs
@@ -188,6 +193,7 @@ class LLMClient:
         input_tokens = 0
         output_tokens = 0
         turns_used = 0
+        force_pending = False
 
         for _ in range(max_turns):
             turns_used += 1
@@ -220,6 +226,8 @@ class LLMClient:
                 tool_name = str(getattr(block, "name", ""))
                 tool_input = getattr(block, "input", {}) or {}
                 tool_output = self._dispatch_tool(tool_name, tool_input, user_id)
+                if bool(tool_output.pop("__force_pending__", False)):
+                    force_pending = True
 
                 if tool_name == "classify_request":
                     classification = ClassificationResult(**tool_output)
@@ -260,6 +268,8 @@ class LLMClient:
             classification = ClassificationResult(
                 category="other", urgency="low", confidence=0.0
             )
+        elif force_pending:
+            classification = classification.model_copy(update={"confidence": 0.0})
         if extracted.user_id is None:
             extracted.user_id = user_id
         return TriageResult(
@@ -395,12 +405,34 @@ class LLMClient:
     ) -> dict[str, Any]:
         """Dispatch local tool handlers for model tool_use blocks."""
         if name == "classify_request":
+            candidate = dict(tool_input)
+            confidence = candidate.get("confidence")
+            if isinstance(confidence, (int, float)):
+                clamped = max(0.0, min(float(confidence), 1.0))
+                if clamped != float(confidence):
+                    LOGGER.warning(
+                        "invalid llm tool output",
+                        extra={
+                            "event": "llm_invalid_response",
+                            "context": {
+                                "tool": name,
+                                "reason": "confidence_clamped",
+                            },
+                        },
+                    )
+                candidate["confidence"] = clamped
             try:
-                return ClassificationResult(**tool_input).model_dump()
+                return ClassifyToolResult(**candidate).model_dump()
             except ValidationError:
-                return ClassificationResult(
-                    category="other", urgency="low", confidence=0.0
-                ).model_dump()
+                LOGGER.error(
+                    "invalid llm tool output",
+                    extra={
+                        "event": "llm_invalid_response",
+                        "context": {"tool": name, "reason": "schema_validation_failed"},
+                    },
+                    exc_info=True,
+                )
+                return ClassificationResult(category="other", urgency="low", confidence=0.0).model_dump()
 
         if name == "extract_entities":
             merged_input = dict(tool_input)
@@ -411,8 +443,17 @@ class LLMClient:
                 match = ERROR_CODE_PATTERN.search(raw_error_code.strip())
                 merged_input["error_code"] = match.group(0) if match else None
             try:
-                return ExtractedFields(**merged_input).model_dump()
+                validated = ExtractToolResult(**merged_input)
+                return validated.model_dump()
             except ValidationError:
+                LOGGER.error(
+                    "invalid llm tool output",
+                    extra={
+                        "event": "llm_invalid_response",
+                        "context": {"tool": name, "reason": "schema_validation_failed"},
+                    },
+                    exc_info=True,
+                )
                 return ExtractedFields(user_id=user_id).model_dump()
 
         if name == "lookup_faq":
@@ -447,7 +488,11 @@ class LLMClient:
                 risk_level = "medium"
             return {"reason": reason, "risk_level": risk_level}
 
-        return {"ignored_tool": name}
+        LOGGER.warning(
+            "unknown llm tool",
+            extra={"event": "llm_unknown_tool", "context": {"tool": name}},
+        )
+        return {"ignored_tool": name, "__force_pending__": True}
 
 
 def _sha256_short(value: str) -> str:

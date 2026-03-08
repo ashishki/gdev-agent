@@ -1,133 +1,168 @@
-"""Observability tests for tracing instrumentation."""
+"""Observability trace tests for webhook processing."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from uuid import uuid4
 
-import fakeredis
-
 from app.agent import AgentService
-from app.approval_store import RedisApprovalStore
 from app.config import Settings
-from app.llm_client import TriageResult
-from app.schemas import (
-    ClassificationResult,
-    ExtractedFields,
-    ProposedAction,
-    WebhookRequest,
-    WebhookResponse,
-)
-from app.store import EventStore
+from app.main import webhook
+from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
 
 
-class _Span:
-    def __init__(self, tracer: "_Tracer", name: str) -> None:
-        self._tracer = tracer
-        self.name = name
-        self.attributes: dict[str, object] = {}
+@dataclass
+class _RecordedSpan:
+    name: str
+    attributes: dict[str, object] = field(default_factory=dict)
 
-    def __enter__(self) -> "_Span":
-        self._tracer.spans.append(self)
+    def __enter__(self) -> "_RecordedSpan":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
         return False
 
-    def set_attribute(self, name: str, value: object) -> None:
-        self.attributes[name] = value
+    def set_attribute(self, key: str, value: object) -> None:
+        self.attributes[key] = value
 
     def record_exception(self, _exc: BaseException) -> None:
         return None
 
 
-class _Tracer:
+class _RecordingTracer:
     def __init__(self) -> None:
-        self.spans: list[_Span] = []
+        self.spans: list[_RecordedSpan] = []
 
-    def start_as_current_span(self, name: str, **_kwargs) -> _Span:
-        return _Span(self, name)
+    def start_as_current_span(self, name: str, **_kwargs) -> _RecordedSpan:
+        span = _RecordedSpan(name=name)
+        self.spans.append(span)
+        return span
 
 
-class _FakeLLMClient:
-    def run_agent(
-        self,
-        text: str,
-        user_id: str | None = None,
-        max_turns: int = 5,
-        tenant_id: str | None = None,
-    ) -> TriageResult:
-        _ = (text, user_id, max_turns, tenant_id)
-        return TriageResult(
+class _StoreStub:
+    _db_session_factory = None
+
+    def log_event(self, _event_type: str, _payload: dict[str, object]) -> None:
+        return None
+
+    def persist_pipeline_run(self, *_args, **_kwargs) -> str:
+        return "ticket-1"
+
+
+class _ApprovalStoreStub:
+    def put_pending(self, _pending) -> None:
+        return None
+
+
+class _LLMStub:
+    def run_agent(self, _text: str, user_id: str | None, tenant_id: str | None = None):
+        _ = tenant_id
+        return SimpleNamespace(
             classification=ClassificationResult(
-                category="other", urgency="low", confidence=0.95
+                category="gameplay_question", urgency="low", confidence=0.92
             ),
-            extracted=ExtractedFields(user_id=user_id),
-            draft_text="draft",
-            input_tokens=120,
-            output_tokens=80,
+            extracted=ExtractedFields(user_id=user_id, keywords=["help"]),
+            draft_text="Thanks, we are reviewing this.",
+            input_tokens=123,
+            output_tokens=45,
             turns_used=2,
         )
 
 
-def test_agent_emits_required_pipeline_spans(monkeypatch) -> None:
-    tracer = _Tracer()
-    monkeypatch.setattr("app.agent.TRACER", tracer)
+def test_webhook_trace_contains_required_agent_spans_and_attributes(
+    monkeypatch,
+) -> None:
+    tracer = _RecordingTracer()
+    settings = Settings(
+        anthropic_api_key="test-key",
+        output_guard_enabled=False,
+        approval_categories=["billing"],
+    )
+
+    import app.agent as agent_module
+    import app.main as main_module
+
+    monkeypatch.setattr(agent_module, "TRACER", tracer)
+    monkeypatch.setattr(main_module, "TRACER", tracer)
+    monkeypatch.setattr(main_module, "OTEL_PROPAGATE", None)
 
     agent = AgentService(
-        settings=Settings(approval_categories=[], auto_approve_threshold=0.5),
-        store=EventStore(sqlite_path=None),
-        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
-        llm_client=_FakeLLMClient(),
+        settings=settings,
+        store=_StoreStub(),
+        approval_store=_ApprovalStoreStub(),
+        llm_client=_LLMStub(),
     )
-    tenant_id = str(uuid4())
+
+    dedup_cache = SimpleNamespace(
+        check=lambda _message_id: None,
+        set=lambda _message_id, _body: None,
+    )
+    main_module.app.state.agent = agent
+    main_module.app.state.dedup = dedup_cache
+
+    request = SimpleNamespace(headers={}, state=SimpleNamespace())
+    payload = WebhookRequest(
+        tenant_id=str(uuid4()),
+        user_id="user-123",
+        text="Need help with quest progression",
+        message_id="msg-1",
+    )
+
+    response = webhook(payload, request)
+
+    assert response.status == "executed"
+    span_names = [span.name for span in tracer.spans]
+    assert "http.request" in span_names
+    assert "agent.input_guard" in span_names
+    assert "agent.budget_check" in span_names
+    assert "agent.llm_classify" in span_names
+    assert "agent.propose_action" in span_names
+    assert "agent.output_guard" in span_names
+    assert "agent.route" in span_names
+
+    llm_span = next(span for span in tracer.spans if span.name == "agent.llm_classify")
+    assert llm_span.attributes["model"] == settings.anthropic_model
+    assert llm_span.attributes["input_tokens"] == 123
+    assert llm_span.attributes["output_tokens"] == 45
+    assert llm_span.attributes["cost_usd"] > 0
+    assert llm_span.attributes["turns_used"] == 2
+
+
+def test_agent_span_attributes_do_not_include_raw_text_or_user_id(monkeypatch) -> None:
+    tracer = _RecordingTracer()
+    settings = Settings(
+        anthropic_api_key="test-key",
+        output_guard_enabled=False,
+        approval_categories=["billing"],
+    )
+
+    import app.agent as agent_module
+
+    monkeypatch.setattr(agent_module, "TRACER", tracer)
+
+    agent = AgentService(
+        settings=settings,
+        store=_StoreStub(),
+        approval_store=_ApprovalStoreStub(),
+        llm_client=_LLMStub(),
+    )
+
     response = agent.process_webhook(
-        WebhookRequest(text="hello", user_id="u1", tenant_id=tenant_id)
+        WebhookRequest(
+            tenant_id=str(uuid4()),
+            user_id="user-123",
+            text="Player email is demo@example.com and account is blocked",
+        ),
+        message_id="msg-2",
     )
 
     assert response.status == "executed"
-    names = [span.name for span in tracer.spans]
-    assert names == [
-        "agent.input_guard",
-        "agent.budget_check",
-        "agent.llm_classify",
-        "agent.propose_action",
-        "agent.output_guard",
-        "agent.route",
-    ]
-    llm_span = tracer.spans[2]
-    assert llm_span.attributes["model"] == "claude-sonnet-4-6"
-    assert llm_span.attributes["input_tokens"] == 120
-    assert llm_span.attributes["output_tokens"] == 80
-    assert llm_span.attributes["turns_used"] == 2
-    assert "cost_usd" in llm_span.attributes
-
-
-def test_main_webhook_wraps_request_in_http_root_span(monkeypatch) -> None:
-    from app import main
-
-    tracer = _Tracer()
-    monkeypatch.setattr(main, "TRACER", tracer)
-    monkeypatch.setattr(
-        main, "OTEL_PROPAGATE", SimpleNamespace(extract=lambda *_: None)
-    )
-    main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
-    main.app.state.agent = SimpleNamespace(
-        process_webhook=lambda *_args, **_kwargs: WebhookResponse(
-            status="executed",
-            classification=ClassificationResult(
-                category="other", urgency="low", confidence=0.9
-            ),
-            extracted=ExtractedFields(user_id="u1"),
-            action=ProposedAction(tool="create_ticket_and_reply", payload={}),
-            draft_response="ok",
-            action_result={},
-        )
-    )
-    main.webhook(
-        WebhookRequest(text="hello", tenant_id=str(uuid4())),
-        request=SimpleNamespace(headers={}, state=SimpleNamespace()),
-    )
-
-    assert tracer.spans[0].name == "http.request"
-    assert tracer.spans[1].name == "middleware.dedup"
+    for span in tracer.spans:
+        for key, value in span.attributes.items():
+            assert "raw_text" not in key
+            assert key != "user_id"
+            if isinstance(value, str):
+                assert "demo@example.com" not in value
+                assert "Player email is" not in value
+                assert value != "user-123"

@@ -52,6 +52,24 @@ class _FakeSession:
         return None
 
 
+class _CapturingSession:
+    def __init__(self, execute_calls: list[tuple[str, dict[str, object]]]) -> None:
+        self._execute_calls = execute_calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def begin(self):
+        return self
+
+    async def execute(self, query, params=None) -> None:
+        self._execute_calls.append((str(query), dict(params or {})))
+        return None
+
+
 class _FailingCostLedger:
     def __init__(self) -> None:
         self.record_calls = 0
@@ -65,10 +83,30 @@ class _FailingCostLedger:
         raise RuntimeError("db down")
 
 
+class _NoopCostLedger:
+    async def check_budget(self, _tenant_id, _db) -> None:
+        return None
+
+    async def record(self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db) -> None:
+        _ = (tenant_id, day, input_tokens, output_tokens, cost_usd, db)
+        return None
+
+
 class _CostLedgerStore(CapturingStore):
     def __init__(self) -> None:
         super().__init__()
         self._db_session_factory = lambda: _FakeSession()
+
+    def persist_pipeline_run(self, *args, **kwargs):
+        _ = (args, kwargs)
+        return None
+
+
+class _ApprovalEventStore(CapturingStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sql_calls: list[tuple[str, dict[str, object]]] = []
+        self._db_session_factory = lambda: _CapturingSession(self.sql_calls)
 
     def persist_pipeline_run(self, *args, **kwargs):
         _ = (args, kwargs)
@@ -169,6 +207,7 @@ def test_approve_hashes_reviewer_in_logs_and_audit() -> None:
         store=store,
         approval_store=approval_store,
         llm_client=FakeLLMClient(),
+        cost_ledger=_NoopCostLedger(),
     )
     audit_entries = []
     agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
@@ -210,6 +249,7 @@ def test_approve_keeps_approved_by_none_when_reviewer_missing() -> None:
         store=store,
         approval_store=approval_store,
         llm_client=FakeLLMClient(),
+        cost_ledger=_NoopCostLedger(),
     )
     audit_entries = []
     agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
@@ -229,3 +269,35 @@ def test_approve_keeps_approved_by_none_when_reviewer_missing() -> None:
     )
     assert approve_response.status == "approved"
     assert audit_entries[0].approved_by is None
+
+
+def test_approve_persists_approval_event_and_updates_pending_status() -> None:
+    settings = Settings(approval_categories=["other"], auto_approve_threshold=0.5)
+    store = _ApprovalEventStore()
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+        cost_ledger=_NoopCostLedger(),
+    )
+    tenant_id = "33333333-3333-3333-3333-333333333333"
+    response = agent.process_webhook(
+        WebhookRequest(text="hello", user_id="u1", tenant_id=tenant_id)
+    )
+    assert response.pending is not None
+
+    first = agent.approve(
+        ApproveRequest(
+            pending_id=response.pending.pending_id,
+            approved=True,
+            reviewer="rev-1",
+        ),
+        jwt_tenant_id=tenant_id,
+    )
+    assert first.status == "approved"
+
+    statements = [sql.lower() for sql, _ in store.sql_calls]
+    assert any("insert into approval_events" in sql for sql in statements)
+    assert any("update pending_decisions" in sql for sql in statements)

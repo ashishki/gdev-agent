@@ -43,12 +43,13 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Simple per-user request cap in a 60s window."""
 
-    def __init__(self, app, settings: Settings, redis_client=None):
+    def __init__(self, app, settings: Settings | None = None, redis_client=None):
         super().__init__(app)
         self.settings = settings
         self.redis = redis_client
 
     async def dispatch(self, request: Request, call_next):
+        settings = self.settings or request.app.state.settings
         if request.url.path not in {"/webhook", "/auth/token"}:
             return await call_next(request)
 
@@ -103,8 +104,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         await redis_client.expire(burst_key, 10)
 
                     if (
-                        minute_count > self.settings.rate_limit_rpm
-                        or burst_count > self.settings.rate_limit_burst
+                        minute_count > settings.rate_limit_rpm
+                        or burst_count > settings.rate_limit_burst
                     ):
                         span.set_attribute("rate_limit.blocked", True)
                         return JSONResponse(
@@ -126,7 +127,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     auth_count = int(await redis_client.incr(auth_key))
                     if auth_count == 1:
                         await redis_client.expire(auth_key, 60)
-                    if auth_count > self.settings.auth_rate_limit_attempts:
+                    if auth_count > settings.auth_rate_limit_attempts:
                         span.set_attribute("rate_limit.blocked", True)
                         return JSONResponse(
                             {"detail": "Rate limit exceeded"},

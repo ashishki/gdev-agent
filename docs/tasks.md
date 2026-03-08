@@ -24,7 +24,7 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 6)
 
 | ID | Severity | Summary | Fix In |
 |----|----------|---------|--------|
-| FIX-8 (ARCH-1) | P1 | ADR-003 requires RS256 + JWKS, but runtime remains HS256 and no JWKS endpoint exists | OPEN — architecture decision + implementation/doc alignment required before auth-phase tasks |
+| FIX-8 (ARCH-1) | P1 | ADR-003/runtime crypto contract alignment | ✅ DONE — HS256 contract documented and runtime-aligned |
 
 ---
 
@@ -34,7 +34,7 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 7)
 
 | ID | Severity | Summary | Fix In |
 |----|----------|---------|--------|
-| FIX-8 (ARCH-1) | P1 | Carry-forward blocker unchanged: ADR-003 requires RS256 + JWKS, runtime remains HS256, no JWKS endpoint | OPEN — existing task retained (no new P0/P1 tasks added in Cycle 7) |
+| FIX-8 (ARCH-1) | P1 | Former carry-forward blocker (RS256/JWKS vs HS256) | ✅ DONE — closed after ADR/runtime alignment |
 
 ---
 
@@ -941,7 +941,7 @@ async with self._db_session_factory() as session:
 **Owner:** Human (architecture decision) — Codex implements after decision
 **Priority:** P1
 **Depends-on:** none
-**Status:** pending
+**Status:** done _(ADR-003 and runtime aligned to HS256 contract)_
 
 **Scope:**
 ADR-003 §Decision mandates RS256 (asymmetric) JWT signing with public key published at `/auth/jwks.json`. The implementation uses HS256 (symmetric, `jwt_algorithm = "HS256"` in `app/config.py:49`). This is an open architectural decision, not a Codex code task — it requires a human decision on which path to take.
@@ -973,7 +973,7 @@ ADR-003 §Decision mandates RS256 (asymmetric) JWT signing with public key publi
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T08
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Wire OTel spans throughout the agent pipeline as defined in `docs/observability.md §3`.
@@ -1017,7 +1017,7 @@ generate a new root span. Inject `trace_id` and `span_id` into every log record.
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T16
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Register all Prometheus metrics from `docs/observability.md §2`. Expose `/metrics` endpoint.
@@ -1056,7 +1056,7 @@ This is non-trivial. Do not use Redis SCAN. Instead, maintain a counter:
 **Owner:** Human (Codex drafts JSON)
 **Priority:** P2
 **Depends-on:** T17
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Produce a Grafana dashboard JSON (provisioned via `docker/grafana/provisioning/dashboards/`) that covers the demo-critical panels.
@@ -1100,7 +1100,7 @@ Produce a Grafana dashboard JSON (provisioned via `docker/grafana/provisioning/d
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T02
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Close all known bugs catalogued in project MEMORY.md that are not already addressed by other tasks.
@@ -1135,7 +1135,7 @@ Close all known bugs catalogued in project MEMORY.md that are not already addres
 **Owner:** Codex
 **Priority:** P0
 **Depends-on:** T08
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Every LLM tool call result must be validated against a strict Pydantic schema before it is
@@ -1189,7 +1189,7 @@ breaking user experience.
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T08
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Currently `pending_decisions` exist only in Redis (expire silently). Per the spec, every pending

@@ -55,3 +55,49 @@ def test_lookup_faq_uses_configured_kb_base_url() -> None:
 
     urls = [article["url"] for article in result["articles"]]
     assert urls == ["https://support.mygame.com/billing", "https://support.mygame.com/refund"]
+
+
+def test_classify_tool_invalid_category_falls_back_to_safe_default(caplog) -> None:
+    client = object.__new__(LLMClient)
+    client.settings = Settings(anthropic_api_key="test-key")
+
+    with caplog.at_level("ERROR"):
+        result = client._dispatch_tool(
+            "classify_request",
+            {"category": "made_up", "urgency": "low", "confidence": 0.7},
+            user_id="u1",
+        )
+
+    assert result["category"] == "other"
+    assert result["confidence"] == 0.0
+    assert any(getattr(r, "event", None) == "llm_invalid_response" for r in caplog.records)
+
+
+def test_classify_tool_clamps_confidence_and_logs_warning(caplog) -> None:
+    client = object.__new__(LLMClient)
+    client.settings = Settings(anthropic_api_key="test-key")
+
+    with caplog.at_level("WARNING"):
+        result = client._dispatch_tool(
+            "classify_request",
+            {"category": "other", "urgency": "low", "confidence": 9.9},
+            user_id="u1",
+        )
+
+    assert result["confidence"] == 1.0
+    assert any(
+        getattr(r, "event", None) == "llm_invalid_response"
+        and r.context.get("reason") == "confidence_clamped"
+        for r in caplog.records
+    )
+
+
+def test_unknown_tool_sets_force_pending_marker_and_logs(caplog) -> None:
+    client = object.__new__(LLMClient)
+    client.settings = Settings(anthropic_api_key="test-key")
+
+    with caplog.at_level("WARNING"):
+        result = client._dispatch_tool("unknown_tool", {"x": 1}, user_id="u1")
+
+    assert result["__force_pending__"] is True
+    assert any(getattr(r, "event", None) == "llm_unknown_tool" for r in caplog.records)

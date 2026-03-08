@@ -169,7 +169,9 @@ async def lifespan(app: FastAPI):
         db_session_factory=db_session_factory,
     )
     approval_store = RedisApprovalStore(
-        redis_client, ttl_seconds=settings.approval_ttl_seconds
+        redis_client,
+        ttl_seconds=settings.approval_ttl_seconds,
+        db_session_factory=db_session_factory,
     )
     dedup_cache = DedupCache(redis_client)
     scheduler = None
@@ -220,17 +222,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="gdev-agent", lifespan=lifespan)
-_middleware_settings = get_settings()
 
 # Starlette adds latest middleware first, so add reverse of desired runtime order.
 app.add_middleware(RequestIDMiddleware)
-app.add_middleware(JWTMiddleware, settings=_middleware_settings)
+app.add_middleware(JWTMiddleware)
 app.add_middleware(
     RateLimitMiddleware,
-    settings=_middleware_settings,
     redis_client=None,
 )
-app.add_middleware(SignatureMiddleware, settings=_middleware_settings)
+app.add_middleware(SignatureMiddleware)
 app.include_router(auth_router)
 app.include_router(tickets_router)
 app.include_router(clusters_router)
