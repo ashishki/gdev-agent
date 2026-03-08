@@ -1,9 +1,20 @@
 # gdev-agent — Implementation TaskGraph v1.0
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-04 — Phase 3 review; T05/T06/T09 statuses corrected)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Phase 4 review; FIX-6/FIX-7 added)_
 _This document is the authoritative task contract for Codex and human reviewers._
 _All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
+
+---
+
+## Phase 4 Review Blockers (2026-03-08) — MUST FIX BEFORE T16 SHIPS
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 4)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| FIX-6 | P1 | `assert` used as cross-tenant guard in `rca_clusterer.py` — disabled under `-O`; complete PII leak path | pending |
+| FIX-7 | P1 | RCAClusterer 3 session blocks missing `SET LOCAL` — job is silent no-op in production | pending |
 
 ---
 
@@ -818,6 +829,80 @@ and `?severity=high`.
 
 ---
 > **Review gate:** Phase 4 complete (T13–T15). Run Cycle 4 audit before starting Phase 5.
+> Cycle 4 done — see `docs/audit/REVIEW_REPORT.md`. FIX-6 and FIX-7 must ship before T16.
+---
+
+## Phase 4 Fix Tasks (Cycle 4 Review — resolve before T16)
+
+---
+
+### FIX-6 · Replace `assert` with Explicit Cross-Tenant Guard in RCAClusterer
+
+**Owner:** Codex
+**Priority:** P1
+**Depends-on:** T14
+**Status:** pending
+
+**Scope:**
+Replace Python `assert` used as a cross-tenant security boundary in `_fetch_raw_texts_admin` with an explicit conditional check and `ValueError`. Python `assert` statements are disabled when the interpreter runs with `-O` (optimizations), which is common in production distroless images.
+
+**Files to MODIFY (must exist — read before editing):**
+- `app/jobs/rca_clusterer.py` — replace `assert` at line 382-383; add negative test hook
+
+**Files to MODIFY:**
+- `tests/test_rca_clusterer.py` — add negative test (admin stub returns wrong-tenant row; call must raise `ValueError`)
+
+**Change:**
+```python
+# Before (line 382-383):
+cluster_tenant_id = str(row["tenant_id"])
+assert cluster_tenant_id == tenant_id
+
+# After:
+cluster_tenant_id = str(row["tenant_id"])
+if cluster_tenant_id != tenant_id:
+    LOGGER.error(
+        "cross-tenant row detected in admin fetch",
+        extra={"event": "rca_cross_tenant_breach", "context": {"tenant_id_hash": _sha256_short(tenant_id)}},
+    )
+    raise ValueError(f"Cross-tenant isolation breach: got {cluster_tenant_id}, expected {tenant_id}")
+```
+
+**Acceptance Criteria:**
+1. `python -O -c "from app.jobs.rca_clusterer import RCAClusterer"` — guard still fires (no assert).
+2. Unit test: admin stub returns row with mismatched `tenant_id` → `ValueError` raised with "Cross-tenant" message.
+3. `git grep -n "assert cluster_tenant_id" app/` returns zero matches.
+
+---
+
+### FIX-7 · Add `SET LOCAL app.current_tenant_id` to RCAClusterer Session Blocks
+
+**Owner:** Codex
+**Priority:** P1
+**Depends-on:** T14
+**Status:** pending
+
+**Scope:**
+Three session blocks in `rca_clusterer.py` open sessions via `_db_session_factory` without executing `SET LOCAL app.current_tenant_id = :tid`. In production, RLS on `ticket_embeddings` and `cluster_summaries` blocks all `gdev_app` queries that lack this context — making the entire RCA job a silent no-op.
+
+**Files to MODIFY (must exist — read before editing):**
+- `app/jobs/rca_clusterer.py` — add `SET LOCAL` at lines 212, 258, 314
+
+**Change pattern (repeat for all three session blocks):**
+```python
+async with self._db_session_factory() as session:
+    await session.execute(
+        text("SET LOCAL app.current_tenant_id = :tid"),
+        {"tid": tenant_id},
+    )
+    # ... existing query ...
+```
+
+**Acceptance Criteria:**
+1. Integration test (testcontainers Postgres + RLS enabled): `run_tenant(tenant_id)` writes at least one cluster row to `cluster_summaries`.
+2. All three session blocks confirmed to have `SET LOCAL` before their first tenant-scoped query.
+3. Existing unit tests still pass (stub sessions are unaffected).
+
 ---
 
 ## Phase 5 — Observability (Target: Week 4)

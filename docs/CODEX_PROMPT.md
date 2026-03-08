@@ -1,4 +1,4 @@
-# Codex Implementation Agent Prompt v3.1
+# Codex Implementation Agent Prompt v3.2
 
 _Owner: Architecture · Updated: 2026-03-08_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
@@ -8,69 +8,67 @@ SESSION HANDOFF — START HERE
 ═══════════════════════════════════════════════════════════════════════
 
 **Completed:** T01 ✅ T02 ✅ T03 ✅ T04 ✅ T00A ✅ T00B ✅ T05 ✅ T06 ✅ T06B ✅ T07 ✅
-              T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅
+              T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅ T13 ✅ T14 ✅ T15 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅
 
-**Phase 4 queue:** T13 → T14 → T15 (implement sequentially, do not skip)
-**After T15:** STOP — do not start T16. Review gate: user runs Cycle 4 audit.
+**Fix queue:** FIX-6 → FIX-7 (resolve before Phase 5 queue)
+**Phase 5 queue:** T16 → T17 → T18 (implement sequentially after fixes, do not skip)
+**After T18:** STOP — do not start T19. Review gate: user runs Cycle 5 audit.
 **Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
-─── Fix Queue (resolve before Phase 4 queue) ────────────────────────
-(empty — Cycle 3 produced no P0/P1 requiring code fixes before T13)
+─── Fix Queue (resolve before Phase 5 queue) ────────────────────────
+🔴 FIX-6 [P1] — Replace `assert` with explicit ValueError for cross-tenant guard
+  File: app/jobs/rca_clusterer.py:382-383
+  Change: replace `assert cluster_tenant_id == tenant_id` with `if` + `ValueError` + `LOGGER.error`
+  Test: unit test — admin stub returns wrong-tenant row; call raises ValueError; confirm with python -O
+
+🔴 FIX-7 [P1] — Add SET LOCAL to all 3 RCAClusterer session blocks
+  File: app/jobs/rca_clusterer.py:212, 258, 314
+  Change: add `SET LOCAL app.current_tenant_id = :tid` at start of each session block
+  Test: integration test (real Postgres + RLS) — run_tenant() writes cluster rows to cluster_summaries
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
-  Decision required (architecture, not Codex).
-  Files: app/config.py:45-46, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
+  Decision required (architecture, not Codex). Escalate if Phase 5 touches auth.
+  Files: app/config.py:49, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
 
+🟡 CODE-3 OPEN — Raw tenant_id UUID in log extra (app/agent.py:578,602) — use sha256[:16]
+🟡 CODE-4 OPEN — `Bearer ` literal in embedding_service.py:146 fails mandatory secrets scan
+🟡 CODE-5 OPEN — Silent except Exception without LOGGER.warning in rca_clusterer.py:236
+🟡 CODE-6 OPEN — No negative test for cross-tenant guard (fix after FIX-6)
+🟡 CODE-7 OPEN — summarize_cluster() sends tool_choice=auto with tools=[] (app/llm_client.py:252-259)
+🟡 ARCH-2 OPEN — ADR-002 stale: documents OpenAI/1536-dim; actual is Voyage AI/1024-dim (doc fix)
+🟡 ARCH-3 OPEN — RCAClusterer missing OTel trace spans (ADR-004 violation)
+🟡 ARCH-4 OPEN — RCAClusterer budget bypasses CostLedger; RCA costs not recorded per tenant
+🟡 ARCH-6 OPEN — GET /clusters/{id} ticket_ids by timestamp heuristic, not membership
 🟡 P2-1 OPEN — Redis keys not tenant-namespaced (Phase 5 hardening)
-🟡 P2-6 OPEN — app/agent.py imports HTTPException from fastapi (layer violation, deferred)
-🟡 P2-9 OPEN — _run_blocking() duplicated in store.py and agent.py (deferred)
-🟡 P2-10 OPEN — get_settings() requires ANTHROPIC_API_KEY at import time; set in conftest.py
+🟡 P2-6 OPEN — app/agent.py:15 imports HTTPException from fastapi (layer violation, deferred)
+🟡 P2-9 OPEN — _run_blocking() duplicated in agent.py and approval_store.py (deferred)
+🟡 P2-10 OPEN — get_settings() at module level requires ANTHROPIC_API_KEY at import time
 
-─── T13 · EmbeddingService ──────────────────────────────────────────
+─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 
-Files to CREATE: app/embedding_service.py, tests/test_embedding_service.py
-Files to MODIFY: app/agent.py, app/config.py
+Files created: app/embedding_service.py, tests/test_embedding_service.py
+Files modified: app/agent.py, app/config.py
 
-Key requirements:
-  - Voyage AI API (voyage-3-lite); SHA-256 mock vector in dev/test (VOYAGE_API_KEY absent)
-  - VECTOR(1024); pin model in config.embedding_model
-  - Upsert: ON CONFLICT (ticket_id) DO UPDATE embedding, model_version, created_at=NOW()
-  - Fire-and-forget: asyncio.create_task() after response — failure must NOT affect /webhook
-  - ANTHROPIC_API_KEY must be set before importing app.main in test files
+─── T14 ✅ · RCA Clusterer Background Job — DONE ────────────────────
 
-─── T14 · RCA Clusterer Background Job ─────────────────────────────
+Files created: app/jobs/__init__.py, app/jobs/rca_clusterer.py, tests/test_rca_clusterer.py
+Files modified: app/main.py, app/config.py
 
-Depends-on: T13
-Files to CREATE: app/jobs/__init__.py, app/jobs/rca_clusterer.py, tests/test_rca_clusterer.py
-Files to MODIFY: app/main.py (register APScheduler job), app/config.py (+rca_lookback_hours, +rca_budget_per_run_usd)
+⚠ OPEN DEFECTS: FIX-6 (assert cross-tenant guard), FIX-7 (missing SET LOCAL) — resolve before T16.
 
-Key requirements:
-  - APScheduler job every 15 min per active tenant
-  - pgvector ANN + DBSCAN(eps=0.15, min_samples=3); cap at 50 clusters
-  - LLMClient.summarize_cluster() — single call, no tool_use loop
-  - gdev_admin role for raw_text fetch (bypasses RLS); MUST include WHERE tenant_id=$1
-  - assert cluster_tenant_id == expected_tenant_id before LLM call
-  - asyncio.wait_for(rca_run(), timeout=300)
-  - On API failure: use "Cluster {n}" label, log warning, continue
+─── T15 ✅ · Cluster API Endpoints — DONE ───────────────────────────
 
-─── T15 · Cluster API Endpoints ─────────────────────────────────────
+Files created: app/routers/clusters.py
+Files modified: app/main.py, tests/test_endpoints.py
 
-Depends-on: T14, T11
-Files to MODIFY: app/routers/ (new cluster router), app/main.py, tests/test_endpoints.py
+─── NEXT: FIX-6 → FIX-7 → T16 ─────────────────────────────────────
 
-Key requirements:
-  - GET /clusters — viewer+ role; filter ?is_active=true / ?severity=high; RLS-scoped
-  - GET /clusters/{id} — includes up to 10 member ticket_ids; cross-tenant → 404
-  - No cost/audit data exposed to viewer role
-
-─── STOP AFTER T15 ──────────────────────────────────────────────────
-
-Do NOT start T16. After T15 report is complete, notify:
-"Phase 4 complete (T13–T15). Ready for Cycle 4 review."
+Resolve FIX-6 and FIX-7 first (see Fix Queue above). Then start Phase 5 queue: T16 → T17 → T18.
+After T18: STOP — do not start T19. Review gate: user runs Cycle 5 audit.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 
