@@ -104,6 +104,27 @@ INTEGRATION_DURATION_SECONDS = Histogram(
     ["integration", "tenant_hash"],
 )
 
+RCA_CLUSTERS_ACTIVE = Gauge(
+    "gdev_rca_clusters_active",
+    "Active RCA cluster count by tenant",
+    ["tenant_hash"],
+)
+RCA_RUN_DURATION_SECONDS = Histogram(
+    "gdev_rca_run_duration_seconds",
+    "RCA run duration per tenant",
+    ["tenant_hash"],
+)
+RCA_TICKETS_SCANNED_TOTAL = Counter(
+    "gdev_rca_tickets_scanned",
+    "Tickets scanned by RCA runs",
+    ["tenant_hash"],
+)
+EMBEDDING_DURATION_SECONDS = Histogram(
+    "gdev_embedding_duration_seconds",
+    "Embedding upsert latency in seconds",
+    ["tenant_hash"],
+)
+
 
 def render_metrics() -> bytes:
     return generate_latest()

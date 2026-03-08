@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import hashlib
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -250,68 +250,93 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
     message_id = payload.message_id or uuid4().hex
     cacheable = payload.message_id is not None
 
-    if cacheable:
-        cached = app.state.dedup.check(message_id)
-        if cached is not None:
-            LOGGER.info(
-                "dedup hit",
-                extra={"event": "dedup_hit", "context": {"message_id": message_id}},
-            )
-            return WebhookResponse.model_validate_json(cached)
-
-    request_tenant_id = getattr(request.state, "tenant_id", None)
-    resolved_tenant_id = request_tenant_id or payload.tenant_id
-    if not resolved_tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required")
-    try:
-        resolved_tenant_uuid = UUID(str(resolved_tenant_id))
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=400, detail="tenant_id must be a valid UUID"
-        ) from exc
-
-    if request_tenant_id is not None:
-        payload_tenant_id = payload.tenant_id
-        if payload_tenant_id is not None and payload_tenant_id != str(
-            request_tenant_id
-        ):
-            raise HTTPException(status_code=401, detail="Unauthorized")
-    payload = payload.model_copy(update={"tenant_id": str(resolved_tenant_uuid)})
-
     trace_context = None
     if OTEL_PROPAGATE is not None:
         trace_context = OTEL_PROPAGATE.extract(dict(request.headers))
-    if TRACER is not None:
-        span_cm = TRACER.start_as_current_span(
-            "http.request", context=trace_context
-        )
-    else:
-        span_cm = None
+    root_cm = (
+        TRACER.start_as_current_span("http.request", context=trace_context)
+        if TRACER is not None
+        else nullcontext()
+    )
+    with root_cm as root_span:
+        if root_span is not None:
+            root_span.set_attribute("http.method", "POST")
+            root_span.set_attribute("http.route", "/webhook")
+            root_span.set_attribute("request_id", REQUEST_ID.get() or "")
+        try:
+            dedup_cm = (
+                TRACER.start_as_current_span("middleware.dedup")
+                if TRACER is not None
+                else nullcontext()
+            )
+            with dedup_cm as dedup_span:
+                if dedup_span is not None:
+                    dedup_span.set_attribute("cacheable", cacheable)
+                if cacheable:
+                    cached = app.state.dedup.check(message_id)
+                    if dedup_span is not None:
+                        dedup_span.set_attribute("dedup.hit", cached is not None)
+                    if cached is not None:
+                        LOGGER.info(
+                            "dedup hit",
+                            extra={
+                                "event": "dedup_hit",
+                                "context": {"message_id": message_id},
+                            },
+                        )
+                        if root_span is not None:
+                            root_span.set_attribute("http.status_code", 200)
+                        return WebhookResponse.model_validate_json(cached)
 
-    try:
-        if span_cm is not None:
-            with span_cm as span:
-                span.set_attribute("http.method", "POST")
-                span.set_attribute("http.route", "/webhook")
-                span.set_attribute("request_id", REQUEST_ID.get() or "")
-                span.set_attribute(
+            request_tenant_id = getattr(request.state, "tenant_id", None)
+            resolved_tenant_id = request_tenant_id or payload.tenant_id
+            if not resolved_tenant_id:
+                raise HTTPException(status_code=400, detail="tenant_id is required")
+            try:
+                resolved_tenant_uuid = UUID(str(resolved_tenant_id))
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="tenant_id must be a valid UUID"
+                ) from exc
+
+            if root_span is not None:
+                root_span.set_attribute(
                     "tenant_id_hash",
-                    hashlib.sha256(str(resolved_tenant_uuid).encode("utf-8")).hexdigest()[
-                        :16
-                    ],
+                    hashlib.sha256(
+                        str(resolved_tenant_uuid).encode("utf-8")
+                    ).hexdigest()[:16],
                 )
-                response = app.state.agent.process_webhook(payload, message_id=message_id)
-                span.set_attribute("http.status_code", 200)
-        else:
-            response = app.state.agent.process_webhook(payload, message_id=message_id)
-    except ValueError as exc:
-        if str(exc).startswith("Input "):
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        raise
 
-    if cacheable:
-        app.state.dedup.set(message_id, response.model_dump_json())
-    return response
+            if request_tenant_id is not None:
+                payload_tenant_id = payload.tenant_id
+                if payload_tenant_id is not None and payload_tenant_id != str(
+                    request_tenant_id
+                ):
+                    raise HTTPException(status_code=401, detail="Unauthorized")
+            payload = payload.model_copy(
+                update={"tenant_id": str(resolved_tenant_uuid)}
+            )
+
+            try:
+                response = app.state.agent.process_webhook(
+                    payload, message_id=message_id
+                )
+            except ValueError as exc:
+                if str(exc).startswith("Input "):
+                    if root_span is not None:
+                        root_span.set_attribute("http.status_code", 400)
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                raise
+
+            if cacheable:
+                app.state.dedup.set(message_id, response.model_dump_json())
+            if root_span is not None:
+                root_span.set_attribute("http.status_code", 200)
+            return response
+        except HTTPException as exc:
+            if root_span is not None:
+                root_span.set_attribute("http.status_code", exc.status_code)
+            raise
 
 
 @app.post("/approve", response_model=ApproveResponse)

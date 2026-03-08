@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from uuid import UUID
 
@@ -59,9 +60,11 @@ class JWTMiddleware(BaseHTTPMiddleware):
             authorization = request.headers.get("Authorization", "")
             scheme, _, token = authorization.partition(" ")
             if scheme.lower() != "bearer":
+                span.set_attribute("auth.valid", False)
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
             token = token.strip()
             if not token:
+                span.set_attribute("auth.valid", False)
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 
             try:
@@ -71,6 +74,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                     algorithms=[self.settings.jwt_algorithm],
                 )
             except ExpiredSignatureError:
+                span.set_attribute("auth.valid", False)
                 return JSONResponse(
                     {
                         "error": {
@@ -81,6 +85,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                 )
             except JWTError:
+                span.set_attribute("auth.valid", False)
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 
             try:
@@ -89,10 +94,16 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 role = str(claims["role"])
                 jti = str(claims["jti"])
             except (KeyError, ValueError, TypeError):
+                span.set_attribute("auth.valid", False)
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+            span.set_attribute(
+                "tenant_id_hash",
+                hashlib.sha256(str(tenant_id).encode("utf-8")).hexdigest()[:16],
+            )
 
             redis_client = getattr(request.app.state, "jwt_blocklist_redis", None)
             if redis_client is None:
+                span.set_attribute("auth.valid", False)
                 LOGGER.critical(
                     "jwt blocklist redis unavailable",
                     extra={"event": "jwt_blocklist_unavailable", "context": {}},
@@ -104,6 +115,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
             try:
                 revoked = await redis_client.get(f"jwt:blocklist:{jti}")
             except Exception:
+                span.set_attribute("auth.valid", False)
                 LOGGER.critical(
                     "jwt blocklist redis check failed",
                     extra={"event": "jwt_blocklist_check_failed", "context": {}},
@@ -114,9 +126,11 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 )
 
             if revoked:
+                span.set_attribute("auth.valid", False)
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 
             request.state.tenant_id = tenant_id
             request.state.user_id = user_id
             request.state.role = role
+            span.set_attribute("auth.valid", True)
             return await call_next(request)

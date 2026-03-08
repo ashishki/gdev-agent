@@ -69,6 +69,7 @@ class SignatureMiddleware:
 
             tenant_slug = headers.get("x-tenant-slug")
             if not tenant_slug:
+                span.set_attribute("signature.valid", False)
                 await JSONResponse(
                     {"detail": "Missing X-Tenant-Slug header"}, status_code=400
                 )(scope, empty_receive, send)
@@ -77,30 +78,42 @@ class SignatureMiddleware:
 
             secret_store = getattr(scope["app"].state, "webhook_secret_store", None)
             if secret_store is None:
+                span.set_attribute("signature.valid", False)
                 await JSONResponse(
                     {"detail": "Signature verification unavailable"}, status_code=503
                 )(scope, empty_receive, send)
                 return
             try:
-                tenant_id, webhook_secret = (
-                    await secret_store.get_secret_and_tenant_by_slug(tenant_slug)
+                (
+                    tenant_id,
+                    webhook_secret,
+                ) = await secret_store.get_secret_and_tenant_by_slug(tenant_slug)
+                span.set_attribute(
+                    "tenant_id_hash",
+                    hashlib.sha256(str(tenant_id).encode("utf-8")).hexdigest()[:16],
                 )
             except (TenantNotFoundError, WebhookSecretNotFoundError):
+                span.set_attribute("signature.valid", False)
                 await JSONResponse({"detail": "Invalid signature"}, status_code=401)(
                     scope, empty_receive, send
                 )
                 return
-            expected = "sha256=" + hmac.new(
-                webhook_secret.encode(),
-                body,
-                hashlib.sha256,
-            ).hexdigest()
+            expected = (
+                "sha256="
+                + hmac.new(
+                    webhook_secret.encode(),
+                    body,
+                    hashlib.sha256,
+                ).hexdigest()
+            )
             received = headers.get("x-webhook-signature", "")
             if not hmac.compare_digest(expected, received):
+                span.set_attribute("signature.valid", False)
                 await JSONResponse({"detail": "Invalid signature"}, status_code=401)(
                     scope, empty_receive, send
                 )
                 return
+            span.set_attribute("signature.valid", True)
             scope.setdefault("state", {})["tenant_id"] = tenant_id
 
             body_sent = False

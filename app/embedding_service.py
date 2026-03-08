@@ -8,13 +8,14 @@ import time
 from uuid import UUID
 
 import httpx
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import Literal
 
 from app.config import Settings
+from app.metrics import EMBEDDING_DURATION_SECONDS
 
 LOGGER = logging.getLogger(__name__)
 try:  # pragma: no cover - optional dependency in local test env
@@ -46,11 +47,6 @@ EMBEDDING_UPSERTS_TOTAL = Counter(
     "gdev_embedding_upserts_total",
     "Embedding upsert attempts by status",
     ["tenant_hash", "status"],
-)
-EMBEDDING_DURATION_SECONDS = Histogram(
-    "gdev_embedding_duration_seconds",
-    "Embedding upsert latency in seconds",
-    ["tenant_hash"],
 )
 
 

@@ -96,6 +96,10 @@ def test_metrics_endpoint_returns_prometheus_text() -> None:
     assert "gdev_requests_total" in body
     assert "gdev_llm_tokens_total" in body
     assert "gdev_budget_utilization_ratio" in body
+    assert "gdev_rca_clusters_active" in body
+    assert "gdev_rca_run_duration_seconds" in body
+    assert "gdev_rca_tickets_scanned" in body
+    assert "gdev_embedding_duration_seconds" in body
 
 
 def test_approval_store_updates_queue_depth_gauge() -> None:

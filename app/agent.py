@@ -768,7 +768,7 @@ class AgentService:
                 "failed recording llm cost",
                 extra={
                     "event": "cost_ledger_record_failed",
-                    "context": {"tenant_id": str(tenant_uuid)},
+                    "context": {"tenant_id_hash": _sha256_short(str(tenant_uuid))},
                 },
                 exc_info=True,
             )
@@ -792,7 +792,10 @@ class AgentService:
                     "embedding upsert failed",
                     extra={
                         "event": "embedding_upsert_failed",
-                        "context": {"tenant_id": tenant_id, "ticket_id": ticket_id},
+                        "context": {
+                            "tenant_id_hash": _sha256_short(tenant_id),
+                            "ticket_id": ticket_id,
+                        },
                     },
                     exc_info=True,
                 )

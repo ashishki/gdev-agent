@@ -108,7 +108,9 @@ def test_main_webhook_wraps_request_in_http_root_span(monkeypatch) -> None:
 
     tracer = _Tracer()
     monkeypatch.setattr(main, "TRACER", tracer)
-    monkeypatch.setattr(main, "OTEL_PROPAGATE", SimpleNamespace(extract=lambda *_: None))
+    monkeypatch.setattr(
+        main, "OTEL_PROPAGATE", SimpleNamespace(extract=lambda *_: None)
+    )
     main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
     main.app.state.agent = SimpleNamespace(
         process_webhook=lambda *_args, **_kwargs: WebhookResponse(
@@ -128,3 +130,4 @@ def test_main_webhook_wraps_request_in_http_root_span(monkeypatch) -> None:
     )
 
     assert tracer.spans[0].name == "http.request"
+    assert tracer.spans[1].name == "middleware.dedup"

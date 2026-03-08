@@ -13,8 +13,6 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid5
 
-from prometheus_client import Counter as PromCounter
-from prometheus_client import Gauge, Histogram
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import (
@@ -26,24 +24,13 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import Settings
 from app.llm_client import LLMClient
+from app.metrics import (
+    RCA_CLUSTERS_ACTIVE,
+    RCA_RUN_DURATION_SECONDS,
+    RCA_TICKETS_SCANNED_TOTAL,
+)
 
 LOGGER = logging.getLogger(__name__)
-
-RCA_RUN_DURATION_SECONDS = Histogram(
-    "gdev_rca_run_duration_seconds",
-    "RCA run duration per tenant",
-    ["tenant_hash"],
-)
-RCA_TICKETS_SCANNED_TOTAL = PromCounter(
-    "gdev_rca_tickets_scanned",
-    "Tickets scanned by RCA runs",
-    ["tenant_hash"],
-)
-RCA_CLUSTERS_ACTIVE = Gauge(
-    "gdev_rca_clusters_active",
-    "Active RCA cluster count by tenant",
-    ["tenant_hash"],
-)
 
 _RCA_CLUSTER_NAMESPACE = UUID("9f0fd1bc-5310-4ae3-a721-68d1327ec244")
 
