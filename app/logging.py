@@ -8,6 +8,19 @@ from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from typing import Any
 
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry.trace import format_span_id, format_trace_id, get_current_span
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    def get_current_span():  # type: ignore[no-redef]
+        return None
+
+    def format_trace_id(value: int) -> str:  # type: ignore[no-redef]
+        return f"{value:032x}"
+
+    def format_span_id(value: int) -> str:  # type: ignore[no-redef]
+        return f"{value:016x}"
+
 REQUEST_ID: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 
@@ -33,6 +46,12 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": REQUEST_ID.get(),
         }
+        current_span = get_current_span()
+        if current_span is not None:
+            context = current_span.get_span_context()
+            if getattr(context, "is_valid", False):
+                payload["trace_id"] = format_trace_id(context.trace_id)
+                payload["span_id"] = format_span_id(context.span_id)
         if hasattr(record, "event"):
             payload["event"] = record.event
         if hasattr(record, "context"):

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hmac
+import hashlib
 import logging
 from contextlib import asynccontextmanager
+from typing import Any
 from uuid import UUID, uuid4
 
 import redis
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 try:  # pragma: no cover - optional in minimal local envs
@@ -27,7 +30,8 @@ from app.embedding_service import EmbeddingService
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
 from app.jobs.rca_clusterer import RCAClusterer
-from app.logging import clear_request_id, configure_logging, set_request_id
+from app.logging import REQUEST_ID, clear_request_id, configure_logging, set_request_id
+from app.metrics import render_metrics
 from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.signature import SignatureMiddleware
@@ -48,6 +52,28 @@ from app.store import EventStore
 from app.tenant_registry import TenantRegistry
 
 LOGGER = logging.getLogger(__name__)
+OTEL_TRACE = None
+OTEL_PROPAGATE = None
+TRACER: Any = None
+
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import propagate as _otel_propagate  # type: ignore[import-not-found]
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-not-found]
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import-not-found]
+        OTLPSpanExporter,
+    )
+    from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+    from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
+        BatchSpanProcessor,
+        ConsoleSpanExporter,
+    )
+
+    OTEL_TRACE = _otel_trace
+    OTEL_PROPAGATE = _otel_propagate
+except Exception:  # pragma: no cover - tracing remains disabled without dependencies
+    OTEL_TRACE = None
+    OTEL_PROPAGATE = None
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -64,11 +90,29 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _configure_tracing(settings) -> None:
+    global TRACER
+    if OTEL_TRACE is None:
+        TRACER = None
+        return
+    resource = Resource.create({"service.name": settings.otel_service_name})
+    provider = TracerProvider(resource=resource)
+    if settings.otlp_endpoint:
+        provider.add_span_processor(
+            BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otlp_endpoint))
+        )
+    elif settings.app_env == "dev":
+        provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+    OTEL_TRACE.set_tracer_provider(provider)
+    TRACER = OTEL_TRACE.get_tracer(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize runtime dependencies on startup."""
     settings = get_settings()
     configure_logging(settings.log_level)
+    _configure_tracing(settings)
     if settings.webhook_secret:
         LOGGER.warning(
             "legacy webhook secret configured",
@@ -234,8 +278,32 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
             raise HTTPException(status_code=401, detail="Unauthorized")
     payload = payload.model_copy(update={"tenant_id": str(resolved_tenant_uuid)})
 
+    trace_context = None
+    if OTEL_PROPAGATE is not None:
+        trace_context = OTEL_PROPAGATE.extract(dict(request.headers))
+    if TRACER is not None:
+        span_cm = TRACER.start_as_current_span(
+            "http.request", context=trace_context
+        )
+    else:
+        span_cm = None
+
     try:
-        response = app.state.agent.process_webhook(payload, message_id=message_id)
+        if span_cm is not None:
+            with span_cm as span:
+                span.set_attribute("http.method", "POST")
+                span.set_attribute("http.route", "/webhook")
+                span.set_attribute("request_id", REQUEST_ID.get() or "")
+                span.set_attribute(
+                    "tenant_id_hash",
+                    hashlib.sha256(str(resolved_tenant_uuid).encode("utf-8")).hexdigest()[
+                        :16
+                    ],
+                )
+                response = app.state.agent.process_webhook(payload, message_id=message_id)
+                span.set_attribute("http.status_code", 200)
+        else:
+            response = app.state.agent.process_webhook(payload, message_id=message_id)
     except ValueError as exc:
         if str(exc).startswith("Input "):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -264,3 +332,8 @@ def approve(
         if tenant_id is not None:
             jwt_tenant_id = str(tenant_id)
     return app.state.agent.approve(payload, jwt_tenant_id=jwt_tenant_id)
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(content=render_metrics(), media_type="text/plain; version=0.0.4")

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
+from app.metrics import APPROVAL_QUEUE_DEPTH
 from app.schemas import PendingDecision
 
 LOGGER = logging.getLogger(__name__)
@@ -22,7 +24,12 @@ class RedisApprovalStore:
         """Store pending decision with expiration TTL."""
         key = f"pending:{decision.pending_id}"
         payload = decision.model_dump(mode="json")
-        self.redis.set(key, PendingDecision(**payload).model_dump_json(), ex=self.ttl_seconds)
+        self.redis.set(
+            key,
+            PendingDecision(**payload).model_dump_json(),
+            ex=self.ttl_seconds,
+        )
+        APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).inc()
 
     def pop_pending(self, pending_id: str) -> PendingDecision | None:
         """Atomically fetch and delete pending decision."""
@@ -32,6 +39,7 @@ class RedisApprovalStore:
             return None
         text = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
         decision = PendingDecision.model_validate_json(text)
+        APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).dec()
         if decision.expires_at < datetime.now(UTC):
             LOGGER.info(
                 "pending expired",
@@ -50,9 +58,14 @@ class RedisApprovalStore:
         decision = PendingDecision.model_validate_json(text)
         if decision.expires_at < datetime.now(UTC):
             self.redis.delete(key)
+            APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).dec()
             LOGGER.info(
                 "pending expired",
                 extra={"event": "pending_expired", "context": {"pending_id": pending_id}},
             )
             return None
         return decision
+
+
+def _sha256_short(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]

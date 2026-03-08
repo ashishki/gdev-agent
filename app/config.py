@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     telegram_approval_chat_id: str | None = None
     google_sheets_credentials_json: str | None = None
     google_sheets_id: str | None = None
+    otlp_endpoint: str = ""
+    otel_service_name: str = "gdev-agent"
 
     @field_validator("approval_categories", mode="before")
     @classmethod

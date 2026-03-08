@@ -160,6 +160,30 @@ async def test_upsert_cluster_uses_generic_label_on_llm_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_raw_texts_admin_raises_on_cross_tenant_row() -> None:
+    clusterer = RCAClusterer(
+        settings=Settings(anthropic_api_key="k"),
+        db_session_factory=_SessionFactoryStub(_SessionStub()),
+        llm_client=_LLMStub(),
+        admin_session_factory=_SessionFactoryStub(
+            _SessionStub(
+                rows=[
+                    {
+                        "tenant_id": "tenant-b",
+                        "raw_text": "mismatched tenant row",
+                    }
+                ]
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Cross-tenant"):
+        await clusterer._fetch_raw_texts_admin(
+            tenant_id="tenant-a", ticket_ids=[str(uuid4())]
+        )
+
+
+@pytest.mark.asyncio
 async def test_run_with_timeout_wraps_runner_with_300_seconds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

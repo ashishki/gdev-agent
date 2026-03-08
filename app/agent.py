@@ -24,6 +24,22 @@ from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
 from app.llm_client import LLMClient
 from app.logging import REQUEST_ID
+from app.metrics import (
+    APPROVED_TOTAL,
+    BUDGET_EXCEEDED_TOTAL,
+    BUDGET_UTILIZATION_RATIO,
+    GUARD_BLOCKS_TOTAL,
+    GUARD_REDACTIONS_TOTAL,
+    INJECTION_ATTEMPTS_TOTAL,
+    LLM_COST_USD_TOTAL,
+    LLM_REQUESTS_TOTAL,
+    LLM_TOKENS_TOTAL,
+    LLM_TURNS_USED,
+    PENDING_TOTAL,
+    REJECTED_TOTAL,
+    REQUEST_DURATION_SECONDS,
+    REQUESTS_TOTAL,
+)
 from app.schemas import (
     ApproveRequest,
     ApproveResponse,
@@ -39,6 +55,30 @@ from app.store import EventStore
 from app.tools import TOOL_REGISTRY
 
 LOGGER = logging.getLogger(__name__)
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import trace  # type: ignore[import-not-found]
+
+    TRACER = trace.get_tracer(__name__)
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    class _NoopSpan:
+        def __enter__(self) -> "_NoopSpan":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def set_attribute(self, _name: str, _value: object) -> None:
+            return None
+
+        def record_exception(self, _exc: BaseException) -> None:
+            return None
+
+    class _NoopTracer:
+        def start_as_current_span(self, _name: str) -> _NoopSpan:
+            return _NoopSpan()
+
+    TRACER = _NoopTracer()
 
 INJECTION_PATTERNS = (
     "ignore previous instructions",
@@ -89,24 +129,117 @@ class AgentService:
     ) -> WebhookResponse:
         """Run the full agent flow and return either executed or pending result."""
         start = time.monotonic()
-        self._guard_input(payload.text)
-        self._enforce_budget(payload.tenant_id)
-
-        triage = self.llm_client.run_agent(payload.text, payload.user_id)
-        classification = triage.classification
-        extracted = triage.extracted
-        action, fallback_draft = self.propose_action(payload, classification, extracted)
-        draft_response = triage.draft_text or fallback_draft
-        cost_usd = self._estimate_llm_cost_usd(
-            triage.input_tokens, triage.output_tokens
+        tenant_hash = (
+            hashlib.sha256(payload.tenant_id.encode("utf-8")).hexdigest()[:16]
+            if payload.tenant_id
+            else None
         )
+        metric_tenant_hash = tenant_hash or "unknown"
+        with TRACER.start_as_current_span("agent.input_guard") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            span.set_attribute("text_length", len(payload.text))
+            try:
+                self._guard_input(payload.text)
+            except Exception as exc:
+                span.set_attribute("blocked", True)
+                INJECTION_ATTEMPTS_TOTAL.labels(tenant_hash=metric_tenant_hash).inc()
+                span.record_exception(exc)
+                raise
+            span.set_attribute("blocked", False)
+
+        with TRACER.start_as_current_span("agent.budget_check") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            try:
+                self._enforce_budget(payload.tenant_id)
+            except Exception as exc:
+                span.set_attribute("allowed", False)
+                span.record_exception(exc)
+                raise
+            span.set_attribute("allowed", True)
+
+        with TRACER.start_as_current_span("agent.llm_classify") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            span.set_attribute("model", self.settings.anthropic_model)
+            try:
+                triage = self.llm_client.run_agent(
+                    payload.text, payload.user_id, tenant_id=payload.tenant_id
+                )
+            except TypeError:
+                triage = self.llm_client.run_agent(payload.text, payload.user_id)
+            classification = triage.classification
+            cost_usd = self._estimate_llm_cost_usd(
+                triage.input_tokens, triage.output_tokens
+            )
+            span.set_attribute("input_tokens", triage.input_tokens)
+            span.set_attribute("output_tokens", triage.output_tokens)
+            span.set_attribute("cost_usd", cost_usd)
+            span.set_attribute("turns_used", triage.turns_used)
+            span.set_attribute("category", classification.category)
+            span.set_attribute("urgency", classification.urgency)
+            span.set_attribute("confidence", classification.confidence)
+            LLM_REQUESTS_TOTAL.labels(
+                model=self.settings.anthropic_model,
+                status="ok",
+                tenant_hash=metric_tenant_hash,
+            ).inc()
+            LLM_TOKENS_TOTAL.labels(
+                direction="input",
+                model=self.settings.anthropic_model,
+                tenant_hash=metric_tenant_hash,
+            ).inc(triage.input_tokens)
+            LLM_TOKENS_TOTAL.labels(
+                direction="output",
+                model=self.settings.anthropic_model,
+                tenant_hash=metric_tenant_hash,
+            ).inc(triage.output_tokens)
+            LLM_COST_USD_TOTAL.labels(
+                model=self.settings.anthropic_model, tenant_hash=metric_tenant_hash
+            ).inc(cost_usd)
+            LLM_TURNS_USED.labels(tenant_hash=metric_tenant_hash).observe(
+                triage.turns_used
+            )
+
+        extracted = triage.extracted
+        with TRACER.start_as_current_span("agent.propose_action") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            action, fallback_draft = self.propose_action(
+                payload, classification, extracted
+            )
+            span.set_attribute("tool", action.tool)
+            span.set_attribute("risky", action.risky)
+            span.set_attribute("risk_reason", action.risk_reason or "")
+        draft_response = triage.draft_text or fallback_draft
         self._record_cost_best_effort(
             payload.tenant_id, triage.input_tokens, triage.output_tokens, cost_usd
         )
 
-        guard_result = self.output_guard.scan(
-            draft_response, classification.confidence, action
-        )
+        with TRACER.start_as_current_span("agent.output_guard") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            guard_result = self.output_guard.scan(
+                draft_response, classification.confidence, action
+            )
+            span.set_attribute("blocked", guard_result.blocked)
+            span.set_attribute(
+                "redacted", guard_result.redacted_draft != draft_response
+            )
+            span.set_attribute(
+                "url_stripped", guard_result.redacted_draft != draft_response
+            )
+            if guard_result.blocked:
+                GUARD_BLOCKS_TOTAL.labels(
+                    guard_type="output",
+                    reason="blocked_response",
+                    tenant_hash=metric_tenant_hash,
+                ).inc()
+            if guard_result.redacted_draft != draft_response:
+                GUARD_REDACTIONS_TOTAL.labels(
+                    guard_type="output", tenant_hash=metric_tenant_hash
+                ).inc()
         if guard_result.blocked:
             raise HTTPException(
                 status_code=500, detail="Internal: output guard blocked response"
@@ -123,7 +256,14 @@ class AgentService:
             )
         draft_response = guard_result.redacted_draft
 
-        if self.needs_approval(payload.text, classification, action):
+        with TRACER.start_as_current_span("agent.route") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            route_pending = self.needs_approval(payload.text, classification, action)
+            span.set_attribute("outcome", "pending" if route_pending else "executed")
+
+        if route_pending:
+            PENDING_TOTAL.labels(tenant_hash=metric_tenant_hash).inc()
             pending = PendingDecision(
                 pending_id=uuid4().hex,
                 tenant_id=str(payload.tenant_id or ""),
@@ -189,6 +329,15 @@ class AgentService:
                     },
                 },
             )
+            REQUESTS_TOTAL.labels(
+                status="pending",
+                category=classification.category,
+                urgency=classification.urgency,
+                tenant_hash=metric_tenant_hash,
+            ).inc()
+            REQUEST_DURATION_SECONDS.labels(
+                endpoint="/webhook", tenant_hash=metric_tenant_hash
+            ).observe(time.monotonic() - start)
             return WebhookResponse(
                 status="pending",
                 classification=classification,
@@ -255,6 +404,15 @@ class AgentService:
             ticket_id=ticket_id, tenant_id=payload.tenant_id, text_value=payload.text
         )
         self._append_audit_async(audit_entry)
+        REQUESTS_TOTAL.labels(
+            status="executed",
+            category=classification.category,
+            urgency=classification.urgency,
+            tenant_hash=metric_tenant_hash,
+        ).inc()
+        REQUEST_DURATION_SECONDS.labels(
+            endpoint="/webhook", tenant_hash=metric_tenant_hash
+        ).observe(time.monotonic() - start)
 
         return WebhookResponse(
             status="executed",
@@ -288,6 +446,7 @@ class AgentService:
 
         tenant_id = pending.tenant_id
         if not request.approved:
+            REJECTED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
             self.store.log_event(
                 "pending_rejected",
                 {
@@ -335,6 +494,7 @@ class AgentService:
                 cost_usd=0.0,
             )
         )
+        APPROVED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
         return ApproveResponse(
             status="approved", pending_id=request.pending_id, result=result
         )
@@ -535,6 +695,10 @@ class AgentService:
         try:
             self._run_blocking(_check_budget())
         except BudgetExhaustedError as exc:
+            if tenant_uuid is not None:
+                BUDGET_EXCEEDED_TOTAL.labels(
+                    tenant_hash=_sha256_short(str(tenant_uuid))
+                ).inc()
             raise HTTPException(
                 status_code=429, detail={"error": {"code": "budget_exhausted"}}
             ) from exc
@@ -566,6 +730,36 @@ class AgentService:
                         cost_usd=Decimal(str(cost_usd)),
                         db=session,
                     )
+                    budget_row = (
+                        (
+                            await session.execute(
+                                text(
+                                    """
+                                    SELECT cost_usd, daily_budget_usd
+                                    FROM cost_ledger
+                                    JOIN tenants USING (tenant_id)
+                                    WHERE tenant_id = :tenant_id AND date = :day
+                                    """
+                                ),
+                                {"tenant_id": str(tenant_uuid), "day": date.today()},
+                            )
+                        )
+                        .mappings()
+                        .first()
+                    )
+                    if budget_row:
+                        cost_value = Decimal(str(budget_row["cost_usd"] or "0"))
+                        budget_value = Decimal(
+                            str(budget_row["daily_budget_usd"] or "0")
+                        )
+                        utilization = (
+                            float(cost_value / budget_value)
+                            if budget_value > 0
+                            else 0.0
+                        )
+                        BUDGET_UTILIZATION_RATIO.labels(
+                            tenant_hash=_sha256_short(str(tenant_uuid))
+                        ).set(utilization)
 
         try:
             self._run_blocking(_record())
@@ -608,3 +802,7 @@ class AgentService:
             loop.create_task(_upsert())
         except RuntimeError:
             threading.Thread(target=lambda: asyncio.run(_upsert()), daemon=True).start()
+
+
+def _sha256_short(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]

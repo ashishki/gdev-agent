@@ -211,52 +211,66 @@ class RCAClusterer:
         )
         async with self._db_session_factory() as session:
             try:
-                rows = (
-                    (
-                        await session.execute(
-                            text(
-                                """
-                            SELECT ticket_id, tenant_id, embedding, created_at
-                            FROM ticket_embeddings
-                            WHERE tenant_id = :tenant_id AND created_at > :lookback
-                            ORDER BY embedding <-> (
-                                SELECT AVG(embedding)
+                async with session.begin():
+                    await session.execute(
+                        text("SET LOCAL app.current_tenant_id = :tid"),
+                        {"tid": tenant_id},
+                    )
+                    rows = (
+                        (
+                            await session.execute(
+                                text(
+                                    """
+                                SELECT ticket_id, tenant_id, embedding, created_at
                                 FROM ticket_embeddings
-                                WHERE tenant_id = :tenant_id
-                            )
-                            LIMIT 500
-                            """
-                            ),
-                            {"tenant_id": tenant_id, "lookback": lookback},
-                        )
-                    )
-                    .mappings()
-                    .all()
-                )
-            except Exception:
-                rows = (
-                    (
-                        await session.execute(
-                            text(
+                                WHERE tenant_id = :tenant_id AND created_at > :lookback
+                                ORDER BY embedding <-> (
+                                    SELECT AVG(embedding)
+                                    FROM ticket_embeddings
+                                    WHERE tenant_id = :tenant_id
+                                )
+                                LIMIT 500
                                 """
-                            SELECT ticket_id, tenant_id, embedding, created_at
-                            FROM ticket_embeddings
-                            WHERE tenant_id = :tenant_id AND created_at > :lookback
-                            ORDER BY created_at DESC
-                            LIMIT 500
-                            """
-                            ),
-                            {"tenant_id": tenant_id, "lookback": lookback},
+                                ),
+                                {"tenant_id": tenant_id, "lookback": lookback},
+                            )
                         )
+                        .mappings()
+                        .all()
                     )
-                    .mappings()
-                    .all()
-                )
+            except Exception:
+                async with session.begin():
+                    await session.execute(
+                        text("SET LOCAL app.current_tenant_id = :tid"),
+                        {"tid": tenant_id},
+                    )
+                    rows = (
+                        (
+                            await session.execute(
+                                text(
+                                    """
+                                SELECT ticket_id, tenant_id, embedding, created_at
+                                FROM ticket_embeddings
+                                WHERE tenant_id = :tenant_id AND created_at > :lookback
+                                ORDER BY created_at DESC
+                                LIMIT 500
+                                """
+                                ),
+                                {"tenant_id": tenant_id, "lookback": lookback},
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
         return [dict(row) for row in rows]
 
     async def _deactivate_existing_clusters(self, tenant_id: str) -> None:
         async with self._db_session_factory() as session:
             async with session.begin():
+                await session.execute(
+                    text("SET LOCAL app.current_tenant_id = :tid"),
+                    {"tid": tenant_id},
+                )
                 await session.execute(
                     text(
                         """
@@ -313,6 +327,10 @@ class RCAClusterer:
 
         async with self._db_session_factory() as session:
             async with session.begin():
+                await session.execute(
+                    text("SET LOCAL app.current_tenant_id = :tid"),
+                    {"tid": tenant_id},
+                )
                 await session.execute(
                     text(
                         """
@@ -380,7 +398,17 @@ class RCAClusterer:
         texts: list[str] = []
         for row in rows:
             cluster_tenant_id = str(row["tenant_id"])
-            assert cluster_tenant_id == tenant_id
+            if cluster_tenant_id != tenant_id:
+                LOGGER.error(
+                    "cross-tenant row detected in admin fetch",
+                    extra={
+                        "event": "rca_cross_tenant_breach",
+                        "context": {"tenant_id_hash": _sha256_short(tenant_id)},
+                    },
+                )
+                raise ValueError(
+                    f"Cross-tenant isolation breach: got {cluster_tenant_id}, expected {tenant_id}"
+                )
             text_value = row.get("raw_text")
             if isinstance(text_value, str):
                 texts.append(text_value)

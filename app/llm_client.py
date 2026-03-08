@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,9 +20,34 @@ from tenacity import (
 )
 
 from app.config import Settings
+from app.metrics import LLM_DURATION_SECONDS, LLM_REQUESTS_TOTAL, LLM_RETRY_TOTAL
 from app.schemas import ClassificationResult, ExtractedFields
 
 LOGGER = logging.getLogger(__name__)
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import trace  # type: ignore[import-not-found]
+
+    TRACER = trace.get_tracer(__name__)
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    class _NoopSpan:
+        def __enter__(self) -> "_NoopSpan":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def set_attribute(self, _name: str, _value: object) -> None:
+            return None
+
+        def record_exception(self, _exc: BaseException) -> None:
+            return None
+
+    class _NoopTracer:
+        def start_as_current_span(self, _name: str, **_kwargs: Any) -> _NoopSpan:
+            return _NoopSpan()
+
+    TRACER = _NoopTracer()
 
 SYSTEM_PROMPT = (
     "You are a game support triage assistant. "
@@ -129,6 +156,7 @@ class TriageResult:
     draft_text: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    turns_used: int = 0
 
 
 class LLMClient:
@@ -146,7 +174,11 @@ class LLMClient:
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     def run_agent(
-        self, text: str, user_id: str | None = None, max_turns: int = 5
+        self,
+        text: str,
+        user_id: str | None = None,
+        max_turns: int = 5,
+        tenant_id: str | None = None,
     ) -> TriageResult:
         """Run Claude tool-use loop and return structured triage outputs."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": text}]
@@ -155,8 +187,10 @@ class LLMClient:
         draft_text: str | None = None
         input_tokens = 0
         output_tokens = 0
+        turns_used = 0
 
         for _ in range(max_turns):
+            turns_used += 1
             response = self._create_message(
                 model=self.settings.anthropic_model,
                 max_tokens=700,
@@ -164,6 +198,7 @@ class LLMClient:
                 tools=TOOLS,
                 tool_choice={"type": "auto"},
                 messages=messages,
+                tenant_id=tenant_id,
             )
             usage = getattr(response, "usage", None)
             input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
@@ -233,6 +268,7 @@ class LLMClient:
             draft_text=draft_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            turns_used=turns_used,
         )
 
     def summarize_cluster(self, ticket_texts: list[str]) -> dict[str, str | None]:
@@ -254,7 +290,6 @@ class LLMClient:
             max_tokens=250,
             system="You summarize ticket clusters for internal support analytics.",
             tools=[],
-            tool_choice={"type": "auto"},
             messages=[{"role": "user", "content": prompt}],
         )
         text_blocks = [
@@ -287,6 +322,8 @@ class LLMClient:
 
     def _create_message(self, **kwargs: Any) -> Any:
         """Call Claude messages API with retries on transient 5xx responses."""
+        tenant_id = kwargs.pop("tenant_id", None)
+        started = time.monotonic()
 
         def _should_retry(exc: BaseException) -> bool:
             api_status_error = getattr(self._anthropic, "APIStatusError", None)
@@ -307,9 +344,49 @@ class LLMClient:
             reraise=True,
             **retrying_kwargs,
         )
-        for attempt in retrying:
-            with attempt:
-                return self._client.messages.create(**kwargs)
+        with TRACER.start_as_current_span("llm.api_call") as span:
+            model = str(kwargs.get("model", ""))
+            span.set_attribute("model", model)
+            tenant_hash = "unknown"
+            if tenant_id:
+                tenant_hash = _sha256_short(str(tenant_id))
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            try:
+                attempt_count = 0
+                for attempt in retrying:
+                    with attempt:
+                        attempt_count += 1
+                        response = self._client.messages.create(**kwargs)
+                        usage = getattr(response, "usage", None)
+                        span.set_attribute(
+                            "input_tokens", int(getattr(usage, "input_tokens", 0) or 0)
+                        )
+                        span.set_attribute(
+                            "output_tokens", int(getattr(usage, "output_tokens", 0) or 0)
+                        )
+                        span.set_attribute("status", "ok")
+                        LLM_REQUESTS_TOTAL.labels(
+                            model=model, status="ok", tenant_hash=tenant_hash
+                        ).inc()
+                        if attempt_count > 1:
+                            LLM_RETRY_TOTAL.labels(tenant_hash=tenant_hash).inc(
+                                attempt_count - 1
+                            )
+                        return response
+            except Exception as exc:
+                span.set_attribute("status", "error")
+                span.record_exception(exc)
+                LLM_REQUESTS_TOTAL.labels(
+                    model=model, status="error", tenant_hash=tenant_hash
+                ).inc()
+                raise
+            finally:
+                span.set_attribute(
+                    "duration_ms", round((time.monotonic() - started) * 1000, 2)
+                )
+                LLM_DURATION_SECONDS.labels(
+                    model=model, tenant_hash=tenant_hash
+                ).observe(time.monotonic() - started)
 
         raise RuntimeError("unreachable")
 
@@ -371,3 +448,7 @@ class LLMClient:
             return {"reason": reason, "risk_level": risk_level}
 
         return {"ignored_tool": name}
+
+
+def _sha256_short(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]

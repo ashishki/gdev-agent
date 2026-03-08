@@ -14,6 +14,27 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 
 LOGGER = logging.getLogger(__name__)
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import trace  # type: ignore[import-not-found]
+
+    TRACER = trace.get_tracer(__name__)
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    class _NoopSpan:
+        def __enter__(self) -> "_NoopSpan":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def set_attribute(self, _name: str, _value: object) -> None:
+            return None
+
+    class _NoopTracer:
+        def start_as_current_span(self, _name: str) -> _NoopSpan:
+            return _NoopSpan()
+
+    TRACER = _NoopTracer()
 
 
 class JWTMiddleware(BaseHTTPMiddleware):
@@ -24,65 +45,78 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.settings = settings
 
     async def dispatch(self, request: Request, call_next):
-        if (request.method, request.url.path) in {
-            ("GET", "/health"),
-            ("POST", "/webhook"),
-            ("POST", "/auth/token"),
-        }:
+        with TRACER.start_as_current_span("middleware.auth") as span:
+            span.set_attribute("http.method", request.method)
+            span.set_attribute("http.route", request.url.path)
+            if (request.method, request.url.path) in {
+                ("GET", "/health"),
+                ("POST", "/webhook"),
+                ("POST", "/auth/token"),
+            }:
+                span.set_attribute("auth.exempt", True)
+                return await call_next(request)
+
+            authorization = request.headers.get("Authorization", "")
+            scheme, _, token = authorization.partition(" ")
+            if scheme.lower() != "bearer":
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+            token = token.strip()
+            if not token:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+            try:
+                claims = jwt.decode(
+                    token,
+                    self.settings.jwt_secret,
+                    algorithms=[self.settings.jwt_algorithm],
+                )
+            except ExpiredSignatureError:
+                return JSONResponse(
+                    {
+                        "error": {
+                            "code": "token_expired",
+                            "message": "JWT token has expired",
+                        }
+                    },
+                    status_code=401,
+                )
+            except JWTError:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+            try:
+                user_id = UUID(str(claims["sub"]))
+                tenant_id = UUID(str(claims["tenant_id"]))
+                role = str(claims["role"])
+                jti = str(claims["jti"])
+            except (KeyError, ValueError, TypeError):
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+            redis_client = getattr(request.app.state, "jwt_blocklist_redis", None)
+            if redis_client is None:
+                LOGGER.critical(
+                    "jwt blocklist redis unavailable",
+                    extra={"event": "jwt_blocklist_unavailable", "context": {}},
+                )
+                return JSONResponse(
+                    {"detail": "Authorization service unavailable"}, status_code=503
+                )
+
+            try:
+                revoked = await redis_client.get(f"jwt:blocklist:{jti}")
+            except Exception:
+                LOGGER.critical(
+                    "jwt blocklist redis check failed",
+                    extra={"event": "jwt_blocklist_check_failed", "context": {}},
+                    exc_info=True,
+                )
+                return JSONResponse(
+                    {"detail": "Authorization service unavailable"}, status_code=503
+                )
+
+            if revoked:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+            request.state.tenant_id = tenant_id
+            request.state.user_id = user_id
+            request.state.role = role
             return await call_next(request)
-
-        authorization = request.headers.get("Authorization", "")
-        scheme, _, token = authorization.partition(" ")
-        if scheme.lower() != "bearer":
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        token = token.strip()
-        if not token:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        try:
-            claims = jwt.decode(
-                token,
-                self.settings.jwt_secret,
-                algorithms=[self.settings.jwt_algorithm],
-            )
-        except ExpiredSignatureError:
-            return JSONResponse(
-                {"error": {"code": "token_expired", "message": "JWT token has expired"}},
-                status_code=401,
-            )
-        except JWTError:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        try:
-            user_id = UUID(str(claims["sub"]))
-            tenant_id = UUID(str(claims["tenant_id"]))
-            role = str(claims["role"])
-            jti = str(claims["jti"])
-        except (KeyError, ValueError, TypeError):
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        redis_client = getattr(request.app.state, "jwt_blocklist_redis", None)
-        if redis_client is None:
-            LOGGER.critical(
-                "jwt blocklist redis unavailable",
-                extra={"event": "jwt_blocklist_unavailable", "context": {}},
-            )
-            return JSONResponse({"detail": "Authorization service unavailable"}, status_code=503)
-
-        try:
-            revoked = await redis_client.get(f"jwt:blocklist:{jti}")
-        except Exception:
-            LOGGER.critical(
-                "jwt blocklist redis check failed",
-                extra={"event": "jwt_blocklist_check_failed", "context": {}},
-                exc_info=True,
-            )
-            return JSONResponse({"detail": "Authorization service unavailable"}, status_code=503)
-
-        if revoked:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        request.state.tenant_id = tenant_id
-        request.state.user_id = user_id
-        request.state.role = role
-        return await call_next(request)

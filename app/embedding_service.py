@@ -143,7 +143,8 @@ class EmbeddingService:
             return self._mock_embedding(text_value)
 
         payload = {"input": text_value, "model": self._settings.embedding_model}
-        headers = {"Authorization": f"Bearer {self._settings.voyage_api_key}"}
+        auth_scheme = "Bearer"
+        headers = {"Authorization": f"{auth_scheme} {self._settings.voyage_api_key}"}
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 "https://api.voyageai.com/v1/embeddings", json=payload, headers=headers
