@@ -1,6 +1,6 @@
 # gdev-agent — Implementation TaskGraph v1.0
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Cycle 6 review blockers)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Cycle 7 review blockers)_
 _This document is the authoritative task contract for Codex and human reviewers._
 _All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
@@ -25,6 +25,16 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 6)
 | ID | Severity | Summary | Fix In |
 |----|----------|---------|--------|
 | FIX-8 (ARCH-1) | P1 | ADR-003 requires RS256 + JWKS, but runtime remains HS256 and no JWKS endpoint exists | OPEN — architecture decision + implementation/doc alignment required before auth-phase tasks |
+
+---
+
+## Cycle 7 Review Blockers (2026-03-08) — CONSOLIDATED
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 7)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| FIX-8 (ARCH-1) | P1 | Carry-forward blocker unchanged: ADR-003 requires RS256 + JWKS, runtime remains HS256, no JWKS endpoint | OPEN — existing task retained (no new P0/P1 tasks added in Cycle 7) |
 
 ---
 

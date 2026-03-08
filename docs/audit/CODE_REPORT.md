@@ -1,5 +1,5 @@
 ---
-# CODE_REPORT — Cycle 6
+# CODE_REPORT — Cycle 7
 _Date: 2026-03-08 · Reviewer: PROMPT_2_CODE (senior security engineer)_
 
 ---
@@ -8,56 +8,74 @@ _Date: 2026-03-08 · Reviewer: PROMPT_2_CODE (senior security engineer)_
 
 | Check | Result | Notes |
 |-------|--------|-------|
-| SEC-1 SQL parameterization | PASS | Scoped SQL uses bound params (`:name`), no f-string SQL in scope files |
-| SEC-2 Tenant isolation | PASS | Tenant-scoped RCA/embedding/agent DB paths set `SET LOCAL app.current_tenant_id` |
-| SEC-3 PII in logs | PASS | No raw `tenant_id`/`email`/`user_id` in `LOGGER.*(... extra=...)` in scope |
+| SEC-1 SQL parameterization | PASS | Scoped SQL uses bound params; no f-string/concat SQL in `text()`/`execute()` |
+| SEC-2 Tenant isolation | FAIL | Redis hot-path keys remain non-tenant-prefixed in dedup/approval/rate-limit modules |
+| SEC-3 PII in logs | PASS | Scoped `LOGGER.*(... extra=...)` paths avoid raw `email`/`user_id`/`tenant_id` |
 | SEC-4 Secrets scan | PASS | `git grep -rn "sk-ant\|lin_api_\|AKIA\|Bearer " app/` returned no matches |
-| SEC-5 Async correctness | FAIL | Blocking sync I/O remains inside async paths (RCA summarize call) |
-| SEC-6 Auth/RBAC | FAIL | New `GET /metrics` handler has no `require_role()` and is not in T07 exemption matrix |
-| QUAL-1 Error handling | FAIL | `_fetch_embeddings` has silent `except Exception` fallback without required logging |
-| QUAL-2 Observability | PARTIAL | Prometheus is present; RCA background job still lacks OTel root spans |
-| QUAL-3 Test coverage | PARTIAL | Cross-tenant negative test added; ANN fallback branch still lacks direct test coverage |
-| CF carry-forward | Mixed | CODE-3/4/6/7 closed; CODE-5/8 and ARCH-6 remain open |
+| SEC-5 Async correctness | FAIL | Async RCA flow still performs sync Anthropic I/O via `summarize_cluster()` |
+| SEC-6 Auth/RBAC | FAIL | `GET /metrics` remains JWT-exempt and has no `require_role()` policy dependency |
+| QUAL-1 Error handling | FAIL | `_fetch_embeddings` still has broad fallback `except Exception` without warning log |
+| QUAL-2 Observability | PARTIAL | Prometheus metrics exist; RCA background flow still lacks OTel span hierarchy |
+| QUAL-3 Test coverage | PARTIAL | RCA fallback exception path still lacks direct unit coverage |
+| CF carry-forward | Mixed | Several Cycle 6/Cycle 7 findings remain open and unchanged |
 
 ---
 
 ## Findings
 
-### CODE-5 [P2] — ANN Fallback Still Uses Silent `except Exception`
-Symptom: `_fetch_embeddings` catches broad `Exception` and falls back to date-order query without logging fallback activation/error context.
-Evidence: `app/jobs/rca_clusterer.py:228`
-Root cause: Fallback path handles query failures but omits required warning with `exc_info=True`.
-Impact: ANN/index/operator failures are invisible in logs; operators cannot distinguish healthy ANN mode from degraded fallback mode.
-Fix: Add `LOGGER.warning(..., exc_info=True)` before fallback query with safe tenant context (`tenant_id_hash`) and explicit fallback event.
-Verify: Force first query failure in test, assert warning log emitted with fallback event and traceback.
+### CODE-11 [P2] — Redis Hot-Path Keys Still Not Tenant-Namespaced
+Symptom: Dedup/approval/rate-limit Redis keys are built without `{tenant}` prefix.
+Evidence: `app/dedup.py:17`, `app/approval_store.py:25`, `app/middleware/rate_limit.py:95`
+Root cause: Key schema implementation diverges from tenant-prefixed data-map contract.
+Impact: Cross-tenant key collision risk and weaker isolation guarantees in shared Redis.
+Fix: Prefix all per-tenant keys with tenant identity (or hashed stable tenant key) and migrate readers/writers atomically.
+Verify: Add tests asserting key patterns include tenant prefix for dedup, pending, and rate-limit paths.
 Confidence: high
 
-### CODE-8 [P3] — `_fetch_embeddings` Fallback Branch Still Not Unit-Tested
-Symptom: No test exercises the exception path in `_fetch_embeddings` that executes fallback SQL.
-Evidence: `tests/test_rca_clusterer.py:1`
-Root cause: Current RCA tests monkeypatch `_fetch_embeddings` or cover other flows, but do not inject failure on primary ANN query.
-Impact: Regressions in fallback SQL can ship undetected and only appear in production under ANN failure conditions.
-Fix: Add a unit test with session stub that raises on first `execute` and succeeds on second, then assert fallback rows are returned.
-Verify: Coverage includes `app/jobs/rca_clusterer.py:228-251`.
+### CODE-5 [P2] — ANN Fallback Still Uses Silent `except Exception`
+Symptom: `_fetch_embeddings` catches broad `Exception` and silently falls back to date-order query.
+Evidence: `app/jobs/rca_clusterer.py:228`
+Root cause: Fallback path handles query failure but omits required warning context with traceback.
+Impact: ANN degradation is invisible in logs; operators cannot distinguish healthy ANN mode from fallback mode.
+Fix: Add `LOGGER.warning(..., exc_info=True)` before fallback query with safe `tenant_id_hash` context.
+Verify: Force first query failure in test and assert fallback warning log with traceback is emitted.
 Confidence: high
 
 ### CODE-9 [P2] — Blocking LLM I/O Inside Async RCA Path
-Symptom: Async `_upsert_cluster` calls sync `LLMClient.summarize_cluster()`, which uses sync Anthropic client call.
-Evidence: `app/jobs/rca_clusterer.py:297`, `app/llm_client.py:359`
-Root cause: RCA job is async, but summarize path reuses synchronous LLM transport without offloading.
-Impact: Event loop can be blocked during cluster summarization; scheduler latency and concurrent async task responsiveness degrade.
-Fix: Move summarize call to async transport (preferred) or offload with `await asyncio.to_thread(...)` and instrument timeout/retries explicitly.
-Verify: Add async test that runs concurrent task during summarize and confirms loop is not blocked beyond expected threshold.
+Symptom: Async `_upsert_cluster` calls sync `LLMClient.summarize_cluster()`, which issues sync network I/O.
+Evidence: `app/jobs/rca_clusterer.py:297`, `app/llm_client.py:274`, `app/llm_client.py:359`
+Root cause: RCA background coroutine reused synchronous LLM client method without offloading.
+Impact: Event-loop blocking can delay scheduler jobs and degrade async responsiveness under RCA load.
+Fix: Use async transport or offload summarize call with `await asyncio.to_thread(...)` + timeout.
+Verify: Add async concurrency test ensuring event loop remains responsive during summarize.
 Confidence: high
 
-### CODE-10 [P2] — `/metrics` Route Missing RBAC Dependency
-Symptom: Newly added `GET /metrics` handler has no `require_role()` dependency.
-Evidence: `app/main.py:362`
-Root cause: Prometheus scrape endpoint was added as unauthenticated route without explicit exemption update in T07 role matrix.
-Impact: Internal operational metrics become publicly accessible on app port unless external network policy strictly blocks access.
-Fix: Either enforce role/JWT on `/metrics`, or document and codify explicit exemption with infrastructure boundary requirements (private network only).
-Verify: RBAC test asserts unauthenticated `/metrics` behavior matches decided policy.
-Confidence: medium
+### CODE-10 [P2] — `/metrics` Route Missing Explicit RBAC Contract Enforcement
+Symptom: `/metrics` handler has no `require_role()` and middleware exempts it from JWT.
+Evidence: `app/main.py:362`, `app/middleware/auth.py:54`
+Root cause: Metrics endpoint shipped as public scrape target without explicit T07 exemption contract closure.
+Impact: Operational telemetry may be unintentionally exposed on the app port.
+Fix: Either enforce auth/RBAC on `/metrics` or codify explicit exemption + network boundary requirement and tests.
+Verify: Add auth policy tests for `/metrics` that match chosen contract.
+Confidence: high
+
+### CODE-12 [P2] — Import-Time Settings Gate Can Break Runtime/Test Initialization
+Symptom: `get_settings()` is executed at module import and raises if `ANTHROPIC_API_KEY` is absent.
+Evidence: `app/main.py:223`, `app/config.py:97`, `tests/conftest.py:14`
+Root cause: Middleware settings are bound at import-time rather than in startup/dependency path.
+Impact: Import side effects create brittle startup/test behavior and hidden environment coupling.
+Fix: Defer settings fetch to app factory/lifespan and avoid mandatory secret enforcement at import.
+Verify: Import `app.main` in a clean env fixture without preset API key; module import should not raise.
+Confidence: high
+
+### CODE-8 [P3] — RCA Fallback Exception Branch Still Not Directly Tested
+Symptom: No unit test drives `_fetch_embeddings` primary-query failure path through fallback SQL branch.
+Evidence: `tests/test_rca_clusterer.py:1`
+Root cause: Existing RCA tests cover cap/upsert/timeout and cross-tenant check but not ANN fallback branch.
+Impact: Fallback regression risk remains undetected until runtime ANN/operator failures.
+Fix: Add targeted unit test with first execute raising and second execute returning fallback rows.
+Verify: Coverage includes `app/jobs/rca_clusterer.py:228-251`.
+Confidence: high
 
 ---
 
@@ -65,14 +83,21 @@ Confidence: medium
 
 | ID | Sev | Status | Evidence |
 |----|-----|--------|----------|
-| CODE-3 | P2 | Closed | `app/agent.py` now uses `tenant_id_hash` in logger contexts; raw tenant UUID log extras removed |
-| CODE-4 | P2 | Closed | Secrets scan now clean (`Bearer ` literal no longer matched in `app/`) |
-| CODE-5 | P2 | Open | `app/jobs/rca_clusterer.py:228` silent broad exception remains |
-| CODE-6 | P2 | Closed | Negative cross-tenant test present: `tests/test_rca_clusterer.py:163` |
-| CODE-7 | P2 | Closed | `summarize_cluster()` no longer sends `tool_choice` with empty tools: `app/llm_client.py:288-294` |
-| CODE-8 | P3 | Open | Fallback branch still lacks direct unit coverage |
-| ARCH-6 | P2 | Open | Cluster detail still uses time-window heuristic, not persisted membership: `app/routers/clusters.py:151-177` |
+| ARCH-1 | P1 | Open (unchanged) | HS256 runtime persists, no JWKS endpoint: `app/config.py:49`, `app/routers/auth.py:94`, `app/middleware/auth.py:75` |
+| CODE-5 | P2 | Open (unchanged) | Silent broad fallback exception remains: `app/jobs/rca_clusterer.py:228` |
+| CODE-9 | P2 | Open (unchanged) | Sync summarize in async RCA flow remains: `app/jobs/rca_clusterer.py:297`, `app/llm_client.py:274` |
+| CODE-10 | P2 | Open (unchanged) | `/metrics` remains unauthenticated/JWT-exempt: `app/main.py:362`, `app/middleware/auth.py:54` |
+| ARCH-2 | P2 | Open (unchanged) | Runtime still Voyage/1024 while ADR drift remains: `app/config.py:29` |
+| ARCH-3 | P2 | Open (unchanged) | RCA Prometheus present; OTel span topology still incomplete: `app/jobs/rca_clusterer.py:109`, `app/jobs/rca_clusterer.py:130` |
+| ARCH-4 | P2 | Open (unchanged) | RCA summarize path still bypasses CostLedger guard/accounting: `app/jobs/rca_clusterer.py:297`, `app/agent.py:678` |
+| ARCH-6 | P2 | Open (unchanged) | Cluster detail still uses time-window heuristic membership: `app/routers/clusters.py:151` |
+| ARCH-7 | P2 | Open (unchanged) | Service module still imports FastAPI HTTP exception: `app/agent.py:15` |
+| P2-1 | P2 | Open (unchanged) | Redis keys not tenant-prefixed in hot paths: `app/dedup.py:17`, `app/approval_store.py:25`, `app/middleware/rate_limit.py:95` |
+| P2-9 | P2 | Open (moved) | `_run_blocking()` duplication remains but now across modules: `app/agent.py:655`, `app/store.py:83` |
+| P2-10 | P2 | Open (unchanged) | Import-time settings/API-key coupling remains: `app/main.py:223`, `app/config.py:97`, `tests/conftest.py:14` |
+| CODE-8 | P3 | Open (unchanged) | Fallback branch still lacks direct unit test coverage |
+| ARCH-5 | P3 | Open (unchanged) | RCA timeout remains 300s without ADR rationale closure: `app/jobs/rca_clusterer.py:107` |
 
 ---
 
-CODE review done. P0: 0, P1: 0, P2: 3, P3: 1. Run PROMPT_3_CONSOLIDATED.md.
+CODE review done. P0: 0, P1: 0, P2: 5, P3: 1. Run PROMPT_3_CONSOLIDATED.md.

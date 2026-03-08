@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.4
+# Codex Implementation Agent Prompt v3.5
 
-_Owner: Architecture · Updated: 2026-03-08_
+_Owner: Architecture · Updated: 2026-03-08 (Cycle 7 consolidated)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -20,7 +20,7 @@ SESSION HANDOFF — START HERE
   File: app/config.py:49 · Change: align auth architecture (ADR amendment to HS256 or implement RS256 + `/auth/jwks.json`) · Test: auth token validation and JWKS/ADR consistency checks
 
 **Phase 5 queue:** T16 → T17 → T18 (implement sequentially)
-**After T18:** STOP — do not start T19. Review gate: user runs Cycle 7 audit.
+**After T18:** STOP — do not start T19. Review gate: user runs Cycle 8 audit.
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
@@ -32,14 +32,18 @@ SESSION HANDOFF — START HERE
 | CODE-5 | P2 | OPEN | Silent broad fallback exception remains in `_fetch_embeddings` (`app/jobs/rca_clusterer.py:228`) |
 | CODE-6 | P2 | CLOSED | Negative cross-tenant test present (`tests/test_rca_clusterer.py:163`) |
 | CODE-7 | P2 | CLOSED | Guarded `tool_choice` with empty tools fixed (`app/llm_client.py:288-294`) |
+| CODE-8 | P3 | OPEN | RCA fallback exception branch lacks direct unit coverage (`tests/test_rca_clusterer.py`) |
 | CODE-9 | P2 | OPEN | Blocking sync summarize call from async RCA path (`app/jobs/rca_clusterer.py:297`) |
 | CODE-10 | P2 | OPEN | `/metrics` route policy drift: no explicit RBAC/exemption contract (`app/main.py:362`) |
+| CODE-11 | P2 | OPEN | Redis hot-path keys remain non-tenant-prefixed (`app/dedup.py:17`, `app/approval_store.py:25`, `app/middleware/rate_limit.py:95`) |
+| CODE-12 | P2 | OPEN | Import-time `get_settings()` coupling may require API key at import (`app/main.py:223`) |
 | ARCH-2 | P2 | OPEN | ADR-002 vector stack drift (OpenAI/1536 vs Voyage/1024) |
-| ARCH-3 | P2 | PARTIAL | Prometheus added; RCA OTel root spans still missing |
-| ARCH-4 | P2 | OPEN | RCA costs not recorded via CostLedger |
-| ARCH-5 | P3 | OPEN | RCA timeout 300s vs ADR-005 120s example not clarified |
+| ARCH-3 | P2 | OPEN | RCA summarization cost path bypasses CostLedger budget/accounting |
+| ARCH-4 | P2 | PARTIAL | Prometheus present; RCA OTel span hierarchy still incomplete |
+| ARCH-5 | P2 | OPEN | `/metrics` exposure/auth contract drift vs security assumptions |
 | ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership |
 | ARCH-7 | P2 | OPEN | Service-layer import boundary violation (`app/agent.py:15`) |
+| ARCH-8 | P2 | OPEN | Router layer still carries business logic (`app/routers/auth.py`, `app/main.py`) |
 | P2-1 | P2 | OPEN | Redis keys not tenant-namespaced in hot paths |
 | P2-9 | P2 | OPEN | `_run_blocking()` duplicated across modules |
 | P2-10 | P2 | OPEN | Module-level settings access requires API key at import time |
@@ -64,7 +68,7 @@ Files modified: app/main.py, tests/test_endpoints.py
 ─── NEXT: T16 ───────────────────────────────────────────────────────
 
 FIX-6 and FIX-7 are resolved. Start Phase 5 queue: T16 → T17 → T18.
-After T18: STOP — do not start T19. Review gate: user runs Cycle 6 audit.
+After T18: STOP — do not start T19. Review gate: user runs Cycle 8 audit.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 
