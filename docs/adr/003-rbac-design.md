@@ -50,7 +50,8 @@ Requirements for the RBAC model:
 }
 ```
 
-- JWT signed with RS256 (asymmetric). Public key published at `/auth/jwks.json`.
+- JWT signed with HS256 (symmetric shared secret, v1 simplification).
+- No JWKS endpoint in v1 because HS256 does not expose a public verification key.
 - Token lifetime: 8 hours for interactive users; 30 days for service accounts (webhook callers).
 - Revocation: blocklist in Redis (`jwt:blocklist:{jti}`) checked on every request.
   Blocklist TTL = token expiry time.
@@ -122,5 +123,5 @@ Postgres (RLS)
   by the `tenant_users` table; no third-party IdP in v1.
 - Role granularity is coarse: `support_agent` cannot be scoped to specific game titles within
   a tenant. Deferred to v2.
-- RS256 key rotation requires coordinating public key update at API gateway and application.
-  Use a JWKS endpoint with 24-hour key rotation window.
+- HS256 key rotation requires coordinated `JWT_SECRET` rollout across token issuer and verifier.
+  Rotation window and emergency rotation procedure are documented in ops runbooks.

@@ -360,5 +360,5 @@ def approve(
 
 
 @app.get("/metrics")
-def metrics() -> Response:
+def metrics(_: None = require_role("tenant_admin")) -> Response:
     return Response(content=render_metrics(), media_type="text/plain; version=0.0.4")

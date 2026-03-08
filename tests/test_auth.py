@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -141,10 +142,14 @@ async def test_expired_jwt_returns_token_expired() -> None:
         "POST",
         "/approve",
         headers={"Authorization": f"Bearer {token}"},
-        app_state=SimpleNamespace(jwt_blocklist_redis=SimpleNamespace(get=AsyncMock(return_value=None))),
+        app_state=SimpleNamespace(
+            jwt_blocklist_redis=SimpleNamespace(get=AsyncMock(return_value=None))
+        ),
     )
 
-    response = await middleware.dispatch(request, lambda _: JSONResponse({"ok": True}, status_code=200))
+    response = await middleware.dispatch(
+        request, lambda _: JSONResponse({"ok": True}, status_code=200)
+    )
 
     assert response.status_code == 401
     assert b'"code":"token_expired"' in response.body
@@ -171,7 +176,9 @@ async def test_revoked_jwt_returns_401() -> None:
         app_state=SimpleNamespace(jwt_blocklist_redis=redis_stub),
     )
 
-    response = await middleware.dispatch(request, lambda _: JSONResponse({"ok": True}, status_code=200))
+    response = await middleware.dispatch(
+        request, lambda _: JSONResponse({"ok": True}, status_code=200)
+    )
 
     assert response.status_code == 401
     redis_stub.get.assert_awaited_once_with(f"jwt:blocklist:{jti}")
@@ -197,7 +204,9 @@ async def test_redis_unavailable_during_blocklist_check_returns_503() -> None:
         app_state=SimpleNamespace(jwt_blocklist_redis=redis_stub),
     )
 
-    response = await middleware.dispatch(request, lambda _: JSONResponse({"ok": True}, status_code=200))
+    response = await middleware.dispatch(
+        request, lambda _: JSONResponse({"ok": True}, status_code=200)
+    )
 
     assert response.status_code == 503
 
@@ -215,6 +224,19 @@ async def test_exempt_routes_do_not_require_jwt() -> None:
         request = _request(method, path, app_state=SimpleNamespace())
         response = await middleware.dispatch(request, _ok)
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_metrics_route_requires_jwt() -> None:
+    settings = Settings()
+    middleware = JWTMiddleware(app=None, settings=settings)
+    request = _request("GET", "/metrics", app_state=SimpleNamespace())
+
+    response = await middleware.dispatch(
+        request, lambda _: JSONResponse({"ok": True}, status_code=200)
+    )
+
+    assert response.status_code == 401
 
 
 def test_require_role_enforces_allowed_roles() -> None:
@@ -266,7 +288,9 @@ class _SessionStub:
         self._execute_calls.append((str(statement), params))
         sql = str(statement).lower()
         if "set_config(" in sql:
-            self._tenant_context_valid = params.get("tenant_slug") == self._known_tenant_slug
+            self._tenant_context_valid = (
+                params.get("tenant_slug") == self._known_tenant_slug
+            )
             return _ResultStub({"set_config": "ok"})
         if "from tenant_users" in sql and self._tenant_context_valid:
             return _ResultStub(self._row)
@@ -274,7 +298,9 @@ class _SessionStub:
 
 
 class _SessionFactoryStub:
-    def __init__(self, row: dict[str, object] | None, known_tenant_slug: str = "tenant-a") -> None:
+    def __init__(
+        self, row: dict[str, object] | None, known_tenant_slug: str = "tenant-a"
+    ) -> None:
         self._row = row
         self._known_tenant_slug = known_tenant_slug
         self.execute_calls: list[tuple[str, dict[str, object]]] = []
@@ -332,12 +358,18 @@ async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
         "role": "support_agent",
         "password_hash": "stored-hash",
     }
-    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda candidate, stored: (
-        candidate == password.encode("utf-8") and stored == b"stored-hash"
-    ))
+    monkeypatch.setattr(
+        auth_module.bcrypt,
+        "checkpw",
+        lambda candidate, stored: (
+            candidate == password.encode("utf-8") and stored == b"stored-hash"
+        ),
+    )
     request = _auth_request(row, settings=settings, known_tenant_slug="tenant-a")
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(tenant_slug="tenant-a", email="agent@example.com", password=password),
+        AuthTokenRequest(
+            tenant_slug="tenant-a", email="agent@example.com", password=password
+        ),
         request,
     )
 
@@ -345,7 +377,9 @@ async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
     body = response.model_dump()
     assert body["token_type"] == "bearer"
     assert body["expires_in"] == 8 * 3600
-    claims = jwt.decode(body["access_token"], settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    claims = jwt.decode(
+        body["access_token"], settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+    )
     assert claims["sub"] == user_id
     assert claims["tenant_id"] == tenant_id
     assert claims["role"] == "support_agent"
@@ -356,7 +390,9 @@ async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(monkeypatch) -> None:
+async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(
+    monkeypatch,
+) -> None:
     from unittest.mock import Mock
 
     warning = Mock()
@@ -382,16 +418,19 @@ async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(monke
     assert b'"code":"invalid_credentials"' in response.body
     warning.assert_called_once()
     context = warning.call_args.kwargs["extra"]["context"]
-    assert context["email_hash"] == auth_module.hashlib.sha256(
-        b"viewer@example.com"
-    ).hexdigest()
+    assert (
+        context["email_hash"]
+        == auth_module.hashlib.sha256(b"viewer@example.com").hexdigest()
+    )
 
 
 @pytest.mark.asyncio
 async def test_auth_token_unknown_email_returns_same_401_shape(monkeypatch) -> None:
     monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(tenant_slug="tenant-a", email="missing@example.com", password="pw"),
+        AuthTokenRequest(
+            tenant_slug="tenant-a", email="missing@example.com", password="pw"
+        ),
         _auth_request(None, known_tenant_slug="tenant-a"),
     )
 
@@ -413,7 +452,12 @@ async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
 
     async def unauthorized(_request):
         return JSONResponse(
-            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
             status_code=401,
         )
 
@@ -454,7 +498,9 @@ async def test_auth_token_uses_bcrypt_checkpw(monkeypatch) -> None:
         "password_hash": "stored-hash",
     }
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(tenant_slug="tenant-a", email="user@example.com", password="pw"),
+        AuthTokenRequest(
+            tenant_slug="tenant-a", email="user@example.com", password="pw"
+        ),
         _auth_request(row, known_tenant_slug="tenant-a"),
     )
 
@@ -472,7 +518,9 @@ async def test_auth_token_unknown_tenant_slug_returns_401(monkeypatch) -> None:
         "password_hash": "stored-hash",
     }
     response = await auth_module.create_auth_token(
-        AuthTokenRequest(tenant_slug="tenant-x", email="user@example.com", password="pw"),
+        AuthTokenRequest(
+            tenant_slug="tenant-x", email="user@example.com", password="pw"
+        ),
         _auth_request(row, known_tenant_slug="tenant-a"),
     )
 
@@ -491,7 +539,12 @@ async def test_auth_rate_limit_uses_hashed_email_key() -> None:
 
     async def unauthorized(_request):
         return JSONResponse(
-            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
             status_code=401,
         )
 
@@ -519,7 +572,12 @@ async def test_auth_rate_limit_attempts_uses_settings_value() -> None:
 
     async def unauthorized(_request):
         return JSONResponse(
-            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
             status_code=401,
         )
 
@@ -540,3 +598,12 @@ async def test_auth_rate_limit_attempts_uses_settings_value() -> None:
 
     assert first.status_code == 401
     assert second.status_code == 429
+
+
+def test_adr_decision_matches_runtime_hs256_contract() -> None:
+    settings = Settings()
+    adr_text = Path("docs/adr/003-rbac-design.md").read_text(encoding="utf-8")
+
+    assert settings.jwt_algorithm == "HS256"
+    assert "JWT signed with HS256" in adr_text
+    assert "No JWKS endpoint in v1" in adr_text
