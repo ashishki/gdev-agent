@@ -97,7 +97,7 @@
       "id": 3,
       "targets": [
         {
-          "expr": "sum by (tenant_hash) (gdev_llm_cost_usd_total)",
+          "expr": "sum by (tenant_hash) (increase(gdev_llm_cost_usd_total[1d]))",
           "legendFormat": "{{tenant_hash}}",
           "refId": "A"
         }
@@ -210,7 +210,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT NOW() AS time, tenant_id::text AS tenant_hash, CASE WHEN COUNT(*) = 0 THEN 0 ELSE SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::float / COUNT(*) END AS override_rate FROM approval_events WHERE created_at > NOW() - INTERVAL '1 day' GROUP BY tenant_id",
+          "rawSql": "SELECT NOW() AS time, tenant_id::text AS tenant_hash, CASE WHEN COUNT(*) = 0 THEN 0 ELSE SUM(CASE WHEN decision = 'rejected' THEN 1 ELSE 0 END)::float / COUNT(*) END AS override_rate FROM approval_events WHERE created_at > NOW() - INTERVAL '1 day' GROUP BY tenant_id",
           "refId": "A"
         }
       ],
@@ -253,7 +253,7 @@
       "id": 9,
       "targets": [
         {
-          "expr": "sum(rate(gdev_requests_total{status=~\"5..\"}[5m]))",
+          "expr": "sum(rate(gdev_llm_requests_total{status=\"error\"}[5m]))",
           "legendFormat": "5xx",
           "refId": "A"
         }

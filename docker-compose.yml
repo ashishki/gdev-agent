@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: gdev
+      POSTGRES_USER: gdev_app
+      POSTGRES_PASSWORD: gdev-app-pass
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gdev_app -d gdev"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - gdev
+
   agent:
     build:
       context: .
@@ -8,6 +24,8 @@ services:
     env_file:
       - .env
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -27,6 +45,34 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - gdev
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+    networks:
+      - gdev
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     networks:
       - gdev
 

@@ -215,7 +215,12 @@ async def test_redis_unavailable_during_blocklist_check_returns_503() -> None:
 async def test_exempt_routes_do_not_require_jwt() -> None:
     settings = Settings()
     middleware = JWTMiddleware(app=None, settings=settings)
-    routes = [("GET", "/health"), ("POST", "/webhook"), ("POST", "/auth/token")]
+    routes = [
+        ("GET", "/health"),
+        ("GET", "/metrics"),
+        ("POST", "/webhook"),
+        ("POST", "/auth/token"),
+    ]
 
     async def _ok(_: Request):
         return JSONResponse({"ok": True}, status_code=200)
@@ -224,19 +229,6 @@ async def test_exempt_routes_do_not_require_jwt() -> None:
         request = _request(method, path, app_state=SimpleNamespace())
         response = await middleware.dispatch(request, _ok)
         assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_metrics_route_requires_jwt() -> None:
-    settings = Settings()
-    middleware = JWTMiddleware(app=None, settings=settings)
-    request = _request("GET", "/metrics", app_state=SimpleNamespace())
-
-    response = await middleware.dispatch(
-        request, lambda _: JSONResponse({"ok": True}, status_code=200)
-    )
-
-    assert response.status_code == 401
 
 
 def test_require_role_enforces_allowed_roles() -> None:

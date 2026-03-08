@@ -51,6 +51,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
             span.set_attribute("http.route", request.url.path)
             if (request.method, request.url.path) in {
                 ("GET", "/health"),
+                ("GET", "/metrics"),
                 ("POST", "/webhook"),
                 ("POST", "/auth/token"),
             }:
