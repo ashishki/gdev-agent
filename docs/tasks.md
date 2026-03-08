@@ -13,8 +13,8 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 4)
 
 | ID | Severity | Summary | Fix In |
 |----|----------|---------|--------|
-| FIX-6 | P1 | `assert` used as cross-tenant guard in `rca_clusterer.py` — disabled under `-O`; complete PII leak path | pending |
-| FIX-7 | P1 | RCAClusterer 3 session blocks missing `SET LOCAL` — job is silent no-op in production | pending |
+| FIX-6 | P1 | `assert` used as cross-tenant guard in `rca_clusterer.py` — disabled under `-O`; complete PII leak path | ✅ DONE (Cycle 5 verified 2026-03-08) |
+| FIX-7 | P1 | RCAClusterer 3 session blocks missing `SET LOCAL` — job is silent no-op in production | ✅ DONE (Cycle 5 verified 2026-03-08) |
 
 ---
 
@@ -841,7 +841,7 @@ and `?severity=high`.
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T14
-**Status:** pending
+**Status:** done _(Cycle 5 verified: `raise ValueError` at rca_clusterer.py:400–411; no assert present)_
 
 **Scope:**
 Replace Python `assert` used as a cross-tenant security boundary in `_fetch_raw_texts_admin` with an explicit conditional check and `ValueError`. Python `assert` statements are disabled when the interpreter runs with `-O` (optimizations), which is common in production distroless images.
@@ -880,7 +880,7 @@ if cluster_tenant_id != tenant_id:
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T14
-**Status:** pending
+**Status:** done _(Cycle 5 verified: SET LOCAL in all 4 session contexts)_
 
 **Scope:**
 Three session blocks in `rca_clusterer.py` open sessions via `_db_session_factory` without executing `SET LOCAL app.current_tenant_id = :tid`. In production, RLS on `ticket_embeddings` and `cluster_summaries` blocks all `gdev_app` queries that lack this context — making the entire RCA job a silent no-op.
@@ -902,6 +902,45 @@ async with self._db_session_factory() as session:
 1. Integration test (testcontainers Postgres + RLS enabled): `run_tenant(tenant_id)` writes at least one cluster row to `cluster_summaries`.
 2. All three session blocks confirmed to have `SET LOCAL` before their first tenant-scoped query.
 3. Existing unit tests still pass (stub sessions are unaffected).
+
+---
+
+## Cycle 5 Architecture Issues (2026-03-08) — Resolve before Phase 6 auth work
+
+> **Review gate:** Phase 4 fixes (FIX-6/FIX-7) verified done. Cycle 5 audit complete. T16 may proceed.
+> ARCH-1 (P1) carries forward — architecture decision required before any Phase 6 auth changes.
+
+| ID | Severity | Summary | Decision By |
+|----|----------|---------|-------------|
+| ARCH-1 | P1 | ADR-003 mandates RS256; HS256 implemented; no JWKS endpoint | Human (architecture) |
+
+---
+
+### ARCH-1 · Resolve RS256 vs HS256 Architecture Decision (ADR-003)
+
+**Owner:** Human (architecture decision) — Codex implements after decision
+**Priority:** P1
+**Depends-on:** none
+**Status:** pending
+
+**Scope:**
+ADR-003 §Decision mandates RS256 (asymmetric) JWT signing with public key published at `/auth/jwks.json`. The implementation uses HS256 (symmetric, `jwt_algorithm = "HS256"` in `app/config.py:49`). This is an open architectural decision, not a Codex code task — it requires a human decision on which path to take.
+
+**Options:**
+- (a) Accept HS256: amend ADR-003 with rationale (key rotation requires redeploy; no external IdP); close finding.
+- (b) Implement RS256: add RSA key pair management, JWKS endpoint at `/auth/jwks.json`, update `JWTMiddleware` to use RS256. Requires new ADR-003 amendment + implementation task.
+
+**Files to MODIFY (after decision):**
+- `docs/adr/003-rbac-design.md` — amend §Decision to match implementation (both options)
+- `app/config.py` — if option (b): add `jwt_private_key_path`, `jwt_public_key_path`; remove `jwt_secret`
+- `app/middleware/auth.py` — if option (b): switch to RS256 verification, add JWKS discovery
+
+**Acceptance Criteria:**
+1. ADR-003 §Decision reflects actual implementation algorithm (HS256 or RS256).
+2. If RS256: `/auth/jwks.json` endpoint returns valid JWKS; middleware verifies RS256 tokens.
+3. All existing auth tests pass.
+
+**Phase 5 impact:** T16–T18 do not touch auth paths. This task is NOT a blocker for Phase 5.
 
 ---
 

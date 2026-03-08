@@ -1,54 +1,73 @@
 ---
-# META_ANALYSIS — Cycle 4
-_Date: 2026-03-08 · Type: full_
+# META_ANALYSIS — Cycle 5
+_Date: 2026-03-08 · Type: targeted_
 
 ## Project State
+Phase 4 (T13–T15) complete. Next: FIX-6 → FIX-7 (cross-tenant guard + SET LOCAL in rca_clusterer.py), then Phase 5 queue T16 → T17 → T18.
+Baseline: 111 pass, 12 skip — unchanged from Cycle 4. No regressions.
 
-Phase 4 (T13–T15) complete. Next: STOP — user runs Cycle 4 review before T16.
-Baseline: 111 pass, 12 skip (unchanged from Cycle 3; integration tests skip without Docker/TEST_DATABASE_URL).
+Recent commits since Cycle 4 review:
+- `feat(metrics)` — OTel tracing/metrics integration (may partially address ARCH-3)
+- `feat(embedding)` — embedding service resize (may touch CODE-4 area)
+- `refactor(docs)` — documentation updates
+
+---
 
 ## Open Findings
 
 | ID | Sev | Description | Files | Status |
 |----|-----|-------------|-------|--------|
-| P1-1 | P1 | ADR-003 mandates RS256; HS256 implemented — no key rotation without redeploy, no JWKS | `app/config.py:45-46`, `app/middleware/auth.py`, `app/routers/auth.py`, `docs/adr/003-rbac-design.md` | Open — architecture decision required |
-| P2-1 | P2 | Redis keys not tenant-namespaced (doc vs code drift) | `docs/data-map.md §3`, `app/dedup.py`, `app/approval_store.py` | Open — deferred to Phase 5 |
-| P2-6 | P2 | `agent.py` imports `HTTPException` from fastapi (layer violation) | `app/agent.py` | Open — deferred |
-| P2-9 | P2 | `_run_blocking()` duplicated in `store.py` and `agent.py` | `app/approval_store.py`, `app/agent.py` | Open — deferred |
-| P2-10 | P2 | `get_settings()` requires `ANTHROPIC_API_KEY` at import time; workaround in conftest | `app/main.py`, `tests/conftest.py` | Open — documented |
+| FIX-6 | P1 | `assert` as cross-tenant guard — silently disabled under `-O`; complete raw_text PII leak | `app/jobs/rca_clusterer.py:400-411` | **CLOSED — Cycle 5 verified: `raise ValueError` present, no assert** |
+| FIX-7 | P1 | 3 RCAClusterer session blocks missing `SET LOCAL` — job is silent no-op in production | `app/jobs/rca_clusterer.py:215,242,271,330` | **CLOSED — Cycle 5 verified: SET LOCAL in all 4 session contexts** |
+| P1-1 | P1 | ADR-003 mandates RS256; HS256 implemented; no JWKS endpoint | `app/config.py:49`, `app/middleware/auth.py`, `docs/adr/003-rbac-design.md` | Open — architecture decision required |
+| CODE-3 | P2 | Raw `tenant_id` UUID in log extra; must use `sha256[:16]` | `app/agent.py:578,602` | Open |
+| CODE-4 | P2 | `Bearer ` literal fails mandatory secrets scan | `app/embedding_service.py:146` | Open |
+| CODE-5 | P2 | Silent bare `except Exception` without LOGGER.warning in ANN fallback | `app/jobs/rca_clusterer.py:236` | Open |
+| CODE-6 | P2 | No negative unit test for cross-tenant guard (depends on FIX-6) | `tests/test_rca_clusterer.py` | Open — fix after FIX-6 |
+| CODE-7 | P2 | `summarize_cluster()` passes `tool_choice=auto` with `tools=[]` — invalid API combination | `app/llm_client.py:252-259` | Open |
+| CODE-8 | P3 | `_fetch_embeddings` ANN fallback path has no unit test | `app/jobs/rca_clusterer.py`, `tests/test_rca_clusterer.py` | Open |
+| ARCH-2 | P2 | ADR-002 stale: documents OpenAI/VECTOR(1536); actual Voyage AI/VECTOR(1024) | `docs/adr/002-vector-database.md` | Open — doc fix only |
+| ARCH-3 | P2 | RCAClusterer missing OTel trace spans — ADR-004 violation | `app/jobs/rca_clusterer.py` | PARTIAL — Prometheus ✅ (`feat(metrics)` commit); OTel root trace spans still absent (observability.md §3.2) |
+| ARCH-4 | P2 | RCA budget approximation bypasses CostLedger; costs not recorded per tenant | `app/jobs/rca_clusterer.py:164-180` | Open |
+| ARCH-5 | P3 | RCA job timeout 300s vs ADR-005 example 120s; not documented | `app/jobs/rca_clusterer.py:120`, `docs/adr/005-orchestration-model.md` | Open |
+| ARCH-6 | P2 | `GET /clusters/{id}` ticket_ids by timestamp heuristic, not membership | `app/routers/clusters.py:152-175` | Open |
+| P2-1 | P2 | Redis keys not tenant-namespaced | `app/dedup.py`, `app/approval_store.py` | Deferred — Phase 5 |
+| P2-6 | P2 | `agent.py:15` imports `HTTPException` from fastapi (layer violation) | `app/agent.py` | Deferred |
+| P2-9 | P2 | `_run_blocking()` duplicated in agent.py and approval_store.py | `app/agent.py:495`, `app/approval_store.py` | Deferred |
+| P2-10 | P2 | `get_settings()` at module level requires `ANTHROPIC_API_KEY` at import time | `app/main.py:179` | Open — documented |
+
+---
 
 ## PROMPT_1 Scope (architecture)
 
-- **EmbeddingService** (`app/embedding_service.py`): new component — Voyage AI voyage-3-lite integration, SHA-256 mock in dev/test, fire-and-forget asyncio.create_task() pattern, VECTOR(1024) upsert. Verify isolation: failure must not affect /webhook response path.
-- **RCA Clusterer** (`app/jobs/rca_clusterer.py`): new background job — APScheduler every 15 min, pgvector ANN + DBSCAN(eps=0.15, min_samples=3), gdev_admin role for raw_text fetch, asyncio.wait_for timeout=300. Security-critical: admin role bypass must include WHERE tenant_id=$1 and cluster_tenant_id assertion.
-- **Cluster API** (`app/routers/clusters.py`): new router — GET /clusters, GET /clusters/{id}. Security-critical: RLS scope, viewer+ role, cross-tenant 404, no cost/audit data to viewer.
-- **Migration 0004** (`alembic/versions/0004_resize_ticket_embeddings_vector_to_1024.py`): vector column resize — verify upgrade/downgrade correctness, conditional pgvector check retained.
-- **Modified core** (`app/agent.py`, `app/config.py`, `app/llm_client.py`, `app/main.py`, `app/schemas.py`): verify T13/T14 integration hooks don't introduce regressions in existing agent pipeline.
+- **OTel integration**: verify recent `feat(metrics)` commit satisfies ADR-004 §Instrumentation Scope for RCAClusterer (ARCH-3); confirm span hierarchy matches `docs/observability.md`
+- **RCAClusterer budget path**: assess whether ARCH-4 (CostLedger bypass) is acceptable for Phase 5 or must be fixed; check if cluster cap approximation is documented in any ADR
+- **ARCH-6 cluster membership**: evaluate whether timestamp heuristic is an acceptable interim contract or breaks API guarantees in spec.md
+- **P1-1 carry-forward**: confirm Phase 5 (T16–T18) does not touch auth paths; if it does, RS256 decision must be made first
+
+---
 
 ## PROMPT_2 Scope (code, priority order)
 
-1. `app/jobs/rca_clusterer.py` (new — admin role, cross-tenant assertion, timeout, budget check)
-2. `app/embedding_service.py` (new — fire-and-forget isolation, mock correctness, upsert SQL)
-3. `app/routers/clusters.py` (new — auth, RLS, cross-tenant 404, viewer data exposure)
-4. `alembic/versions/0004_resize_ticket_embeddings_vector_to_1024.py` (new migration — upgrade/downgrade)
-5. `app/agent.py` (changed — T13 hook, open P2-6 carry-forward)
-6. `app/config.py` (changed — new config fields: embedding_model, rca_lookback_hours, rca_budget_per_run_usd; open P1-1 carry-forward)
-7. `app/llm_client.py` (changed — summarize_cluster() single-call path, no tool_use loop)
-8. `app/main.py` (changed — APScheduler registration, open P2-10 carry-forward)
-9. `app/schemas.py` (changed — new cluster/embedding schemas)
-10. `tests/test_embedding_service.py` (new — coverage of mock path and upsert)
-11. `tests/test_rca_clusterer.py` (new — cross-tenant assertion, timeout, cluster label fallback)
-12. `tests/test_endpoints.py` (changed — regression check on /clusters endpoints)
-13. `tests/test_main.py` (changed — regression check for APScheduler registration)
+1. `app/jobs/rca_clusterer.py` (P1 fix targets FIX-6, FIX-7; also CODE-5, ARCH-3, ARCH-4)
+2. `app/embedding_service.py` (CODE-4: `Bearer ` literal; verify if OTel commit touched this file)
+3. `app/llm_client.py` (CODE-7: invalid tool_choice/tools combination in summarize_cluster)
+4. `app/routers/clusters.py` (ARCH-6: ticket_ids heuristic)
+5. `app/agent.py` (CODE-3: raw tenant_id in log; P2-6: fastapi import; P2-9: _run_blocking dup)
+6. `tests/test_rca_clusterer.py` (CODE-6: missing negative test; CODE-8: ANN fallback path)
+7. `docs/adr/002-vector-database.md` (ARCH-2: stale doc — Voyage AI/1024-dim)
+
+---
 
 ## Cycle Type
+Targeted — no new phase shipped; cycle covers FIX-6/FIX-7 fix verification plus review of OTel integration commit and carry-forward P2 findings before Phase 5 gate opens.
 
-Full — Phase 4 (T13–T15) implemented in full. All three tasks have new files on disk. Baseline unchanged. Review gate required before T16.
+---
 
 ## Notes for PROMPT_3
 
-- **Priority consolidation focus**: gdev_admin role misuse in rca_clusterer (WHERE tenant_id check + pre-LLM assertion), fire-and-forget exception isolation in EmbeddingService, viewer data exposure in cluster endpoints.
-- Carry P1-1 (RS256 decision) forward; escalate if Phase 5 touches auth.
-- Verify baseline is still 111 pass / 12 skip after Phase 4 changes — if delta, investigate before closing cycle.
-- Check that `app/jobs/` uses only `redis.asyncio` (no sync Redis in async context per P2-pattern).
+- **Primary consolidation focus**: FIX-6 and FIX-7 must each have a concrete fix recommendation with exact line-level diff and test requirement. These are the hard gate for T16.
+- **Secondary**: confirm ARCH-3 status after OTel commit — if already resolved, close it; if partial, describe what's missing.
+- **Stop-ship condition**: if FIX-6 or FIX-7 are found unresolved (or partially resolved), PROMPT_3 must flag Stop-Ship: Yes for Phase 5.
+- Archive Cycle 4 report to `docs/archive/PHASE4_REVIEW.md` as part of Cycle 5 consolidation (REVIEW_REPORT.md noted this requirement).
 ---

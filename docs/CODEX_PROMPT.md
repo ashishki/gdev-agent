@@ -1,4 +1,4 @@
-# Codex Implementation Agent Prompt v3.2
+# Codex Implementation Agent Prompt v3.3
 
 _Owner: Architecture · Updated: 2026-03-08_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
@@ -10,37 +10,33 @@ SESSION HANDOFF — START HERE
 **Completed:** T01 ✅ T02 ✅ T03 ✅ T04 ✅ T00A ✅ T00B ✅ T05 ✅ T06 ✅ T06B ✅ T07 ✅
               T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅ T13 ✅ T14 ✅ T15 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
-              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅
+              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅
 
-**Fix queue:** FIX-6 → FIX-7 (resolve before Phase 5 queue)
-**Phase 5 queue:** T16 → T17 → T18 (implement sequentially after fixes, do not skip)
-**After T18:** STOP — do not start T19. Review gate: user runs Cycle 5 audit.
+**Fix queue:** (empty — FIX-6 ✅ FIX-7 ✅ resolved; Cycle 5 verified 2026-03-08)
+**Phase 5 queue:** T16 → T17 → T18 (implement sequentially)
+**After T18:** STOP — do not start T19. Review gate: user runs Cycle 6 audit.
 **Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
 
-─── Fix Queue (resolve before Phase 5 queue) ────────────────────────
-🔴 FIX-6 [P1] — Replace `assert` with explicit ValueError for cross-tenant guard
-  File: app/jobs/rca_clusterer.py:382-383
-  Change: replace `assert cluster_tenant_id == tenant_id` with `if` + `ValueError` + `LOGGER.error`
-  Test: unit test — admin stub returns wrong-tenant row; call raises ValueError; confirm with python -O
+─── Fix Queue (Cycle 5 — empty) ─────────────────────────────────────
+(empty — FIX-6 ✅ FIX-7 ✅ resolved; proceed to Phase 5 queue)
 
-🔴 FIX-7 [P1] — Add SET LOCAL to all 3 RCAClusterer session blocks
-  File: app/jobs/rca_clusterer.py:212, 258, 314
-  Change: add `SET LOCAL app.current_tenant_id = :tid` at start of each session block
-  Test: integration test (real Postgres + RLS) — run_tenant() writes cluster rows to cluster_summaries
+⚠ ARCH-1 [P1] — ADR-003 mandates RS256; HS256 implemented (HUMAN decision, not Codex)
+  Architecture decision required before Phase 6 auth work. T16–T18 are observability — no blocker now.
+  Files: app/config.py:49, app/middleware/auth.py, docs/adr/003-rbac-design.md
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
-🔴 P1-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
-  Decision required (architecture, not Codex). Escalate if Phase 5 touches auth.
-  Files: app/config.py:49, app/middleware/auth.py, app/routers/auth.py, docs/adr/003-rbac-design.md
+🔴 ARCH-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
+  HUMAN decision required before Phase 6. T16–T18 do not touch auth — no current blocker.
+  Files: app/config.py:49, app/middleware/auth.py, docs/adr/003-rbac-design.md
 
 🟡 CODE-3 OPEN — Raw tenant_id UUID in log extra (app/agent.py:578,602) — use sha256[:16]
 🟡 CODE-4 OPEN — `Bearer ` literal in embedding_service.py:146 fails mandatory secrets scan
 🟡 CODE-5 OPEN — Silent except Exception without LOGGER.warning in rca_clusterer.py:236
-🟡 CODE-6 OPEN — No negative test for cross-tenant guard (fix after FIX-6)
+🟡 CODE-6 OPEN — No negative test for cross-tenant guard (FIX-6 resolved; test now unblocked)
 🟡 CODE-7 OPEN — summarize_cluster() sends tool_choice=auto with tools=[] (app/llm_client.py:252-259)
 🟡 ARCH-2 OPEN — ADR-002 stale: documents OpenAI/1536-dim; actual is Voyage AI/1024-dim (doc fix)
-🟡 ARCH-3 OPEN — RCAClusterer missing OTel trace spans (ADR-004 violation)
+🟡 ARCH-3 PARTIAL — RCAClusterer: Prometheus ✅; OTel root trace spans still absent (observability.md §3.2)
 🟡 ARCH-4 OPEN — RCAClusterer budget bypasses CostLedger; RCA costs not recorded per tenant
 🟡 ARCH-6 OPEN — GET /clusters/{id} ticket_ids by timestamp heuristic, not membership
 🟡 P2-1 OPEN — Redis keys not tenant-namespaced (Phase 5 hardening)
@@ -58,17 +54,17 @@ Files modified: app/agent.py, app/config.py
 Files created: app/jobs/__init__.py, app/jobs/rca_clusterer.py, tests/test_rca_clusterer.py
 Files modified: app/main.py, app/config.py
 
-⚠ OPEN DEFECTS: FIX-6 (assert cross-tenant guard), FIX-7 (missing SET LOCAL) — resolve before T16.
+✅ FIX-6 and FIX-7 verified resolved (Cycle 5, 2026-03-08).
 
 ─── T15 ✅ · Cluster API Endpoints — DONE ───────────────────────────
 
 Files created: app/routers/clusters.py
 Files modified: app/main.py, tests/test_endpoints.py
 
-─── NEXT: FIX-6 → FIX-7 → T16 ─────────────────────────────────────
+─── NEXT: T16 ───────────────────────────────────────────────────────
 
-Resolve FIX-6 and FIX-7 first (see Fix Queue above). Then start Phase 5 queue: T16 → T17 → T18.
-After T18: STOP — do not start T19. Review gate: user runs Cycle 5 audit.
+FIX-6 and FIX-7 are resolved. Start Phase 5 queue: T16 → T17 → T18.
+After T18: STOP — do not start T19. Review gate: user runs Cycle 6 audit.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 
