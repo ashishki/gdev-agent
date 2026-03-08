@@ -1,6 +1,6 @@
 # gdev-agent — Implementation TaskGraph v1.0
 
-_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Phase 4 review; FIX-6/FIX-7 added)_
+_Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Cycle 6 review blockers)_
 _This document is the authoritative task contract for Codex and human reviewers._
 _All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
@@ -15,6 +15,16 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 4)
 |----|----------|---------|--------|
 | FIX-6 | P1 | `assert` used as cross-tenant guard in `rca_clusterer.py` — disabled under `-O`; complete PII leak path | ✅ DONE (Cycle 5 verified 2026-03-08) |
 | FIX-7 | P1 | RCAClusterer 3 session blocks missing `SET LOCAL` — job is silent no-op in production | ✅ DONE (Cycle 5 verified 2026-03-08) |
+
+---
+
+## Cycle 6 Review Blockers (2026-03-08) — MUST RESOLVE BEFORE PHASE 6 AUTH WORK
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 6)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| FIX-8 (ARCH-1) | P1 | ADR-003 requires RS256 + JWKS, but runtime remains HS256 and no JWKS endpoint exists | OPEN — architecture decision + implementation/doc alignment required before auth-phase tasks |
 
 ---
 

@@ -23,7 +23,26 @@ secrets/
 
 # Coverage / test artifacts
 .coverage
+.coverage.*
 htmlcov/
+.hypothesis/
+.nox/
+.tox/
+
+# Lint/type/tool caches
+.ruff_cache/
+.pyre/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+*.log
 
 # AI-generated documentation
 docs/spec.md

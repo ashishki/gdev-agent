@@ -1,4 +1,4 @@
-# Codex Implementation Agent Prompt v3.3
+# Codex Implementation Agent Prompt v3.4
 
 _Owner: Architecture · Updated: 2026-03-08_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
@@ -12,37 +12,37 @@ SESSION HANDOFF — START HERE
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅
 
-**Fix queue:** (empty — FIX-6 ✅ FIX-7 ✅ resolved; Cycle 5 verified 2026-03-08)
-**Phase 5 queue:** T16 → T17 → T18 (implement sequentially)
-**After T18:** STOP — do not start T19. Review gate: user runs Cycle 6 audit.
 **Baseline:** 111 pass, 12 skipped (integration tests skip without Docker/TEST_DATABASE_URL)
+**Next task:** T16
 
-─── Fix Queue (Cycle 5 — empty) ─────────────────────────────────────
-(empty — FIX-6 ✅ FIX-7 ✅ resolved; proceed to Phase 5 queue)
+─── Fix Queue (resolve before Phase 6 queue) ────────────────────────
+🟡 FIX-8 [P1] — ADR-003 RS256/JWKS drift (HS256 still active)
+  File: app/config.py:49 · Change: align auth architecture (ADR amendment to HS256 or implement RS256 + `/auth/jwks.json`) · Test: auth token validation and JWKS/ADR consistency checks
 
-⚠ ARCH-1 [P1] — ADR-003 mandates RS256; HS256 implemented (HUMAN decision, not Codex)
-  Architecture decision required before Phase 6 auth work. T16–T18 are observability — no blocker now.
-  Files: app/config.py:49, app/middleware/auth.py, docs/adr/003-rbac-design.md
+**Phase 5 queue:** T16 → T17 → T18 (implement sequentially)
+**After T18:** STOP — do not start T19. Review gate: user runs Cycle 7 audit.
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
-🔴 ARCH-1 OPEN — ADR-003 mandates RS256; implementation uses HS256
-  HUMAN decision required before Phase 6. T16–T18 do not touch auth — no current blocker.
-  Files: app/config.py:49, app/middleware/auth.py, docs/adr/003-rbac-design.md
-
-🟡 CODE-3 OPEN — Raw tenant_id UUID in log extra (app/agent.py:578,602) — use sha256[:16]
-🟡 CODE-4 OPEN — `Bearer ` literal in embedding_service.py:146 fails mandatory secrets scan
-🟡 CODE-5 OPEN — Silent except Exception without LOGGER.warning in rca_clusterer.py:236
-🟡 CODE-6 OPEN — No negative test for cross-tenant guard (FIX-6 resolved; test now unblocked)
-🟡 CODE-7 OPEN — summarize_cluster() sends tool_choice=auto with tools=[] (app/llm_client.py:252-259)
-🟡 ARCH-2 OPEN — ADR-002 stale: documents OpenAI/1536-dim; actual is Voyage AI/1024-dim (doc fix)
-🟡 ARCH-3 PARTIAL — RCAClusterer: Prometheus ✅; OTel root trace spans still absent (observability.md §3.2)
-🟡 ARCH-4 OPEN — RCAClusterer budget bypasses CostLedger; RCA costs not recorded per tenant
-🟡 ARCH-6 OPEN — GET /clusters/{id} ticket_ids by timestamp heuristic, not membership
-🟡 P2-1 OPEN — Redis keys not tenant-namespaced (Phase 5 hardening)
-🟡 P2-6 OPEN — app/agent.py:15 imports HTTPException from fastapi (layer violation, deferred)
-🟡 P2-9 OPEN — _run_blocking() duplicated in agent.py and approval_store.py (deferred)
-🟡 P2-10 OPEN — get_settings() at module level requires ANTHROPIC_API_KEY at import time
+| ID | Sev | Status | Evidence / Note |
+|----|-----|--------|-----------------|
+| ARCH-1 | P1 | OPEN | HS256 configured, ADR-003 still mandates RS256/JWKS (`app/config.py:49`, `docs/adr/003-rbac-design.md`) |
+| CODE-3 | P2 | CLOSED | `tenant_id_hash` logging verified in `app/agent.py` |
+| CODE-4 | P2 | CLOSED | Secrets scan clean; `Bearer ` literal removed from `app/` scope |
+| CODE-5 | P2 | OPEN | Silent broad fallback exception remains in `_fetch_embeddings` (`app/jobs/rca_clusterer.py:228`) |
+| CODE-6 | P2 | CLOSED | Negative cross-tenant test present (`tests/test_rca_clusterer.py:163`) |
+| CODE-7 | P2 | CLOSED | Guarded `tool_choice` with empty tools fixed (`app/llm_client.py:288-294`) |
+| CODE-9 | P2 | OPEN | Blocking sync summarize call from async RCA path (`app/jobs/rca_clusterer.py:297`) |
+| CODE-10 | P2 | OPEN | `/metrics` route policy drift: no explicit RBAC/exemption contract (`app/main.py:362`) |
+| ARCH-2 | P2 | OPEN | ADR-002 vector stack drift (OpenAI/1536 vs Voyage/1024) |
+| ARCH-3 | P2 | PARTIAL | Prometheus added; RCA OTel root spans still missing |
+| ARCH-4 | P2 | OPEN | RCA costs not recorded via CostLedger |
+| ARCH-5 | P3 | OPEN | RCA timeout 300s vs ADR-005 120s example not clarified |
+| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership |
+| ARCH-7 | P2 | OPEN | Service-layer import boundary violation (`app/agent.py:15`) |
+| P2-1 | P2 | OPEN | Redis keys not tenant-namespaced in hot paths |
+| P2-9 | P2 | OPEN | `_run_blocking()` duplicated across modules |
+| P2-10 | P2 | OPEN | Module-level settings access requires API key at import time |
 
 ─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 
