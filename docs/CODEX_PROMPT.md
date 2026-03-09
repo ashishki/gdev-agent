@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.8
+# Codex Implementation Agent Prompt v3.9
 
-_Owner: Architecture · Updated: 2026-03-09 (Cycle 8)_
+_Owner: Architecture · Updated: 2026-03-09 (Cycle 8, post-T22 verification)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -9,22 +9,22 @@ SESSION HANDOFF — START HERE
 
 **Completed:** T01 ✅ T02 ✅ T03 ✅ T04 ✅ T00A ✅ T00B ✅ T05 ✅ T06 ✅ T06B ✅ T07 ✅
               T08 ✅ T09 ✅ T10 ✅ T11 ✅ T12 ✅ T13 ✅ T14 ✅ T15 ✅ T16 ✅ T17 ✅ T18 ✅
-              T19 ✅ T20 ✅ T21 ✅ T23 ✅ T24 ✅
+              T19 ✅ T20 ✅ T21 ✅ T22 ✅ T23 ✅ T24 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
-              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅
+              FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
 
-**Baseline:** 142 pass, 14 fail, 1 error — 14 regressions active (FIX-9); fix before T22 merge
-**Next task:** FIX-9 (resolve regressions), then T22
+**Baseline:** 144 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
+**Next task:** address remaining open P2 review findings or package for external demo / customer feedback
 
-─── Fix Queue (resolve before T22 merge) ────────────────────────────
-🔴 FIX-9 [P1] — 14 test regressions block T22 merge
-  File: tests/test_cost_ledger.py, tests/test_isolation.py, tests/test_llm_client.py, tests/test_store.py
-  Change: root-cause each failure group; test_store.py ProgrammingError likely from T22 parameterized query regression
-  Test: pytest tests/ -x -q returns 0 failures
+─── Validation Snapshot ──────────────────────────────────────────────
+✅ `pytest tests/ -q` → 144 passed, 13 skipped
+✅ `ruff check app/ tests/`
+✅ `ruff format --check app/ tests/`
+✅ `mypy app/`
 
 **Phase 5 queue:** T16 ✅ → T17 ✅ → T18 ✅
 **Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
-**Phase 7 queue:** T22 (in-progress, needs FIX-9 first) → T23 ✅ → T24 ✅
+**Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
@@ -51,8 +51,8 @@ SESSION HANDOFF — START HERE
 | P2-1 | P2 | OPEN | Redis keys not tenant-namespaced in hot paths |
 | P2-9 | P2 | OPEN | `_run_blocking()` duplicated across modules |
 | P2-10 | P2 | OPEN | Module-level settings access requires API key at import time |
-| ARCH-9 | P2 | OPEN | `GET /eval/runs` absent from `app/routers/eval.py` — spec §8 AC-2 unimplemented (part of T22) |
-| REG-1 | P1 | OPEN | 14 test failures since Cycle 7: test_cost_ledger (3), test_isolation (5), test_llm_client (3), test_store (3+1 error) — FIX-9 |
+| ARCH-9 | P2 | CLOSED | `GET /eval/runs` implemented in `app/routers/eval.py` and covered by tests |
+| REG-1 | P1 | CLOSED | Cycle 8 regressions resolved; full test suite green |
 
 ─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 
@@ -71,10 +71,11 @@ Files modified: app/main.py, app/config.py
 Files created: app/routers/clusters.py
 Files modified: app/main.py, tests/test_endpoints.py
 
-─── NEXT: T22 ───────────────────────────────────────────────────────
+─── NEXT ─────────────────────────────────────────────────────────────
 
-Phase 6 queue is complete (T19–T21).
-Start Phase 7 queue: T22 → T23 → T24.
+Core roadmap is complete through T24.
+Recommended next work: close remaining review findings, reduce architecture drift,
+and package the system for external demos or pilot customers.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
 
@@ -106,7 +107,7 @@ Before writing a single line of code for any task, you must:
 
 3. READ docs/dev-standards.md completely (once per session).
 
-4. READ the sections of docs/spec.md and docs/architecture.md relevant to the task.
+4. READ the sections of docs/spec.md and docs/ARCHITECTURE.md relevant to the task.
 
 5. READ docs/data-map.md if the task touches the database, Redis, or schema.
 

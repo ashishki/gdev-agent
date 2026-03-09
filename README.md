@@ -4,6 +4,33 @@
 > Classifies free-form requests, extracts structured entities, proposes actions,
 > and routes high-risk cases through a human approval step — all via a single HTTP webhook.
 
+`gdev-agent` has evolved into a multi-tenant AI operations layer for player support:
+it combines triage automation, approval workflows, tenant isolation, cost controls,
+auditability, and root-cause analytics in one service.
+
+---
+
+## Current status
+
+The roadmap through **Phase 7** is implemented.
+
+Delivered phases:
+
+- **Phase 1 — Storage foundation:** Alembic, PostgreSQL schema, Row-Level Security, async DB sessions.
+- **Phase 2 — Tenant and security boundary:** tenant registry, per-tenant webhook secrets, JWT auth, RBAC.
+- **Phase 3 — Governance and reliability:** approval hardening, cost ledger, cross-tenant isolation tests.
+- **Phase 4 — Read APIs and observability:** ticket, audit, analytics, and agent registry endpoints.
+- **Phase 5 — Embeddings and RCA:** embedding persistence, RCA background clustering, cluster APIs.
+- **Phase 6 — Security hardening:** protected endpoint flow and auth safeguards across the API.
+- **Phase 7 — Eval and scale readiness:** eval REST API, per-tenant eval baseline, load-test harness, Docker updates.
+
+Current engineering baseline:
+
+- `pytest tests/ -q` → `144 passed, 13 skipped`
+- `ruff check app/ tests/` → passing
+- `ruff format --check app/ tests/` → passing
+- `mypy app/` → passing
+
 ---
 
 ## What it does
@@ -19,6 +46,22 @@ Manual sorting is slow and misses SLA targets.
 3. **Guard** — length limits and injection-pattern checks run *before* the LLM call; no prompt reaches Claude without passing the gate.
 4. **Propose** — an action is built with `risky=True / False` and a human-readable `risk_reason`.
 5. **Route** — low-risk requests are auto-executed (ticket created + reply queued); high-risk requests enter a pending approval state and wait for a human decision via `POST /approve`.
+
+---
+
+## Why it matters
+
+For a live-service game, support traffic is more than an inbox. It is also an early-warning stream for:
+
+- payment failures,
+- account-access incidents,
+- moderation and abuse spikes,
+- regressions after patches or releases,
+- recurring gameplay friction.
+
+`gdev-agent` turns that stream into a controlled decision pipeline. It reduces manual triage load,
+keeps risky actions behind human approval, and exposes repeated issues through RCA clustering and
+eval history.
 
 ---
 
@@ -102,8 +145,42 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · n8n integration:
 | n8n workflows — triage + approval callback | ✅ |
 | Docker Compose — agent + Redis + n8n | ✅ |
 | Eval harness — 25 labelled cases, per-label accuracy | ✅ |
-| JWT middleware + tenant context injection | 🔜 T05 |
-| Per-tenant RBAC (`require_role()`) | 🔜 T06 |
+| JWT middleware + tenant context injection | ✅ |
+| Per-tenant RBAC (`require_role()`) | ✅ |
+| Embedding service + pgvector persistence | ✅ |
+| RCA clusterer background job | ✅ |
+| Cluster read APIs | ✅ |
+| Eval REST API (`POST /eval/run`, `GET /eval/runs`) | ✅ |
+| Per-tenant eval baseline + regression alerting | ✅ |
+| Locust load-test harness | ✅ |
+
+---
+
+## Potential customer fit
+
+This project is relevant for teams that want support automation without losing control.
+
+Best fit:
+
+- live-service game studios with large ticket volume,
+- publishers operating multiple titles or regions,
+- outsourced player-support teams,
+- trust-and-safety or moderation operations,
+- B2B support platforms that need a governed AI workflow layer.
+
+Positioning:
+
+- not a generic chatbot,
+- not a helpdesk replacement,
+- not just a no-code workflow,
+- but a governed AI orchestration layer for support and player operations.
+
+What it can replace or reduce:
+
+- manual first-line triage,
+- rule-spaghetti in n8n / Make / Zapier,
+- unsafe “just call the LLM” prototypes,
+- fragmented approval and audit handling across chat tools and spreadsheets.
 
 ---
 
@@ -370,16 +447,25 @@ GOOGLE_SHEETS_ID=
 ## Tests
 
 ```bash
-# Unit tests (fast, no DB or API required)
-.venv/bin/pytest tests/ -q --ignore=tests/test_migrations.py
-# Expected: 67 pass, 0 fail
+# Full local baseline
+.venv/bin/pytest tests/ -q
 
-# Migration tests (requires Docker or local Postgres)
-.venv/bin/pytest tests/test_migrations.py -v
+# Static checks
+.venv/bin/ruff check app/ tests/
+.venv/bin/ruff format --check app/ tests/
+.venv/bin/mypy app/
 ```
 
-Tests run offline — no API keys required. Mocks used: `FakeLLMClient` for Claude,
-`AsyncMock` for async Redis, `httpx` mocks for Linear / Telegram / Sheets.
+Current repository baseline:
+
+- `144 passed, 13 skipped` on `pytest tests/ -q`
+- `ruff check` passing
+- `ruff format --check` passing
+- `mypy app/` passing
+
+Tests run offline — no live Anthropic, Linear, Telegram, or Sheets calls are required.
+Mocks and stubs are used for external integrations, while DB-backed integration paths can run
+against Docker or a local test database when configured.
 
 | Module | What it verifies |
 |--------|-----------------|
@@ -474,35 +560,31 @@ Patterns checked (case-insensitive):
 
 ```
 ignore previous instructions · system: · [inst] · [/inst]
-act as · you are now · forget all · disregard
+act as if you · you are now · forget all · disregard
 developer mode · jailbreak · bypass · pretend you
 <|system|> · [system] · ###instruction
 ```
 
 ---
 
-## Known gaps & what's next
+## Delivery summary
 
-Current open items (as of 2026-03-03 Phase 1 review):
+What is already implemented:
 
-| ID | Severity | Gap | Task |
-|----|----------|-----|------|
-| **P1-03** | High | `gdev_admin` role created without `BYPASSRLS` — admin queries subject to RLS | T00B |
-| **P1-06** | Low | `ticket_classifications.agent_config_id` missing FK constraint in migration | deferred |
+- governed support triage with approval routing,
+- multi-tenant storage and RLS isolation,
+- JWT auth and role-based access control,
+- cost tracking and budget enforcement,
+- audit, analytics, and agent registry APIs,
+- embedding storage and RCA clustering,
+- eval runs with per-tenant baseline tracking,
+- load-test assets and full-stack Docker setup.
 
-Upcoming features:
+Primary remaining work is no longer “build core features,” but productization choices:
 
-| Task | Description |
-|------|-------------|
-| T00B | Migration: `ALTER ROLE gdev_admin BYPASSRLS` |
-| T05  | JWT middleware + tenant context injection |
-| T06  | RBAC — `require_role()` on all endpoints |
-| T07  | CostLedger service + budget enforcement |
-| T08  | EmbeddingService + pgvector upsert |
-| T09  | Cross-tenant RLS isolation integration tests |
-
-Full review findings: [`docs/PHASE1_REVIEW.md`](docs/PHASE1_REVIEW.md).
-Implementation guidance for Codex: [`docs/CODEX_PROMPT.md`](docs/CODEX_PROMPT.md).
+- which buyer profile to target first,
+- which workflow to package first,
+- and whether to keep this as an internal platform or turn it into a customer-facing SaaS.
 
 ---
 
@@ -561,11 +643,21 @@ gdev-agent/
 │   │   └── output_guard.py  # Secret scan, URL allowlist, confidence floor
 │   ├── middleware/
 │   │   ├── signature.py     # Per-tenant HMAC-SHA256 verification
-│   │   └── rate_limit.py    # Per-user Redis sliding window
+│   │   ├── rate_limit.py    # Per-user Redis sliding window
+│   │   └── auth.py          # JWT auth + role context injection
 │   ├── integrations/
 │   │   ├── linear.py
 │   │   ├── telegram.py
 │   │   └── sheets.py
+│   ├── routers/
+│   │   ├── tickets.py
+│   │   ├── analytics.py
+│   │   ├── agents.py
+│   │   ├── clusters.py
+│   │   ├── auth.py
+│   │   └── eval.py
+│   ├── jobs/
+│   │   └── rca_clusterer.py
 │   └── tools/
 │       ├── __init__.py
 │       ├── ticketing.py
@@ -573,18 +665,16 @@ gdev-agent/
 ├── eval/
 │   ├── runner.py
 │   └── cases.jsonl
-├── tests/                   # 67 tests; migration tests require Docker or local Postgres
+├── tests/                   # current local baseline: 144 pass / 13 skip
 ├── n8n/
 │   ├── workflow_triage.json
 │   ├── workflow_approval_callback.json
 │   └── README.md
 ├── docs/
-│   ├── ARCHITECTURE.md      # Full system design, security model, ADRs
-│   ├── architecture.md      # New enterprise architecture spec (v1.0)
+│   ├── ARCHITECTURE.md      # Full system design and runtime contract
 │   ├── data-map.md          # Entity schemas, Redis keys, PII classification
-│   ├── tasks.md             # Task graph (Codex work queue)
-│   ├── CODEX_PROMPT.md      # Implementation agent prompt (v2.5)
-│   ├── PHASE1_REVIEW.md     # Phase 1 code review findings
+│   ├── tasks.md             # Task graph (historical work queue)
+│   ├── CODEX_PROMPT.md      # Implementation agent prompt / current handoff
 │   ├── dev-standards.md     # Code style, test strategy, observability hooks
 │   ├── N8N.md               # n8n workflow blueprint
 │   └── devlog/              # Implementation session logs

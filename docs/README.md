@@ -2,6 +2,10 @@
 
 Multi-tenant AI triage service · FastAPI + Claude tool_use + Redis + PostgreSQL + n8n
 
+This documentation set describes a delivered Phase 1-7 implementation:
+multi-tenant support automation, approval workflows, analytics APIs, RCA clustering,
+eval endpoints, load-test assets, and full-stack deployment support.
+
 ## Navigation
 
 | Need | Start here |
@@ -11,6 +15,7 @@ Multi-tenant AI triage service · FastAPI + Claude tool_use + Redis + PostgreSQL
 | Latest review findings | `audit/REVIEW_REPORT.md` |
 | Run a review cycle | `audit/review_pipeline.md` |
 | AI agent roles & process | `AI_FRAMEWORK.md` |
+| Show the project to a potential customer | `../README.md` |
 
 ## File Map
 
@@ -37,4 +42,21 @@ docs/
 └── devlog/
 ```
 
-**Phase 3 complete** (T01–T12) · Next: **T13 EmbeddingService** · Baseline: 111 pass, 12 skip
+## Current implementation status
+
+Completed phases:
+
+- **Phase 1:** schema, migrations, async DB, RLS
+- **Phase 2:** tenant registry, per-tenant webhook secrets, auth boundary
+- **Phase 3:** approval hardening, cost ledger, isolation coverage
+- **Phase 4:** read APIs, analytics, agent registry
+- **Phase 5:** embeddings, RCA background job, cluster APIs
+- **Phase 6:** security hardening and protected endpoint flow
+- **Phase 7:** eval REST endpoints, per-tenant baselines, load testing, Docker updates
+
+Current local baseline:
+
+- `pytest tests/ -q` → `144 passed, 13 skipped`
+- `ruff check app/ tests/` → passing
+- `ruff format --check app/ tests/` → passing
+- `mypy app/` → passing
