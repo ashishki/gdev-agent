@@ -9,7 +9,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry.trace import format_span_id, format_trace_id, get_current_span
+    from opentelemetry.trace import (  # type: ignore[import-not-found]
+        format_span_id,
+        format_trace_id,
+        get_current_span,
+    )
 except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
 
     def get_current_span():  # type: ignore[no-redef]
@@ -20,6 +24,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
 
     def format_span_id(value: int) -> str:  # type: ignore[no-redef]
         return f"{value:016x}"
+
 
 REQUEST_ID: ContextVar[str | None] = ContextVar("request_id", default=None)
 

@@ -87,7 +87,9 @@ async def _seed_tenant(database_url: str, tenant_id: UUID, slug: str) -> None:
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text("INSERT INTO tenants (tenant_id, name, slug) VALUES (:tenant_id, :name, :slug)"),
+                text(
+                    "INSERT INTO tenants (tenant_id, name, slug) VALUES (:tenant_id, :name, :slug)"
+                ),
                 {"tenant_id": str(tenant_id), "name": f"Tenant {slug}", "slug": slug},
             )
     finally:
@@ -126,7 +128,9 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
             )
             await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
             await conn.execute(
-                text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}")
+                text(
+                    f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+                )
             )
     finally:
         await engine.dispose()
@@ -134,7 +138,9 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
     return str(make_url(database_url).set(username=role, password=password))
 
 
-async def _count_rows_for_tenant(database_url: str, table_name: str, tenant_id: UUID) -> int:
+async def _count_rows_for_tenant(
+    database_url: str, table_name: str, tenant_id: UUID
+) -> int:
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as conn:
@@ -149,7 +155,9 @@ async def _count_rows_for_tenant(database_url: str, table_name: str, tenant_id: 
 
 def _event_store_payloads(
     tenant_id: UUID,
-) -> tuple[WebhookRequest, ClassificationResult, ExtractedFields, ProposedAction, AuditLogEntry]:
+) -> tuple[
+    WebhookRequest, ClassificationResult, ExtractedFields, ProposedAction, AuditLogEntry
+]:
     payload = WebhookRequest(
         tenant_id=str(tenant_id),
         request_id="iso-req-1",
@@ -157,7 +165,9 @@ def _event_store_payloads(
         user_id="iso-user",
         text="Billing charge issue",
     )
-    classification = ClassificationResult(category="billing", urgency="high", confidence=0.92)
+    classification = ClassificationResult(
+        category="billing", urgency="high", confidence=0.92
+    )
     extracted = ExtractedFields(platform="telegram", transaction_id="tx-iso")
     action = ProposedAction(
         tool="create_ticket_and_reply",
@@ -189,7 +199,9 @@ def test_db_rls_read_isolation_for_gdev_app(migrated_postgres: str) -> None:
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "iso-b"))
     asyncio.run(_seed_ticket(migrated_postgres, tenant_a, "a-msg"))
     asyncio.run(_seed_ticket(migrated_postgres, tenant_b, "b-msg"))
-    app_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass"))
+    app_url = asyncio.run(
+        _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
+    )
 
     engine = create_async_engine(app_url)
     session_factory = make_session_factory(engine)
@@ -221,7 +233,9 @@ def test_db_rls_write_isolation_for_gdev_app(migrated_postgres: str) -> None:
     tenant_b = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "iso-c"))
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "iso-d"))
-    app_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass"))
+    app_url = asyncio.run(
+        _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
+    )
 
     engine = create_async_engine(app_url)
     session_factory = make_session_factory(engine)
@@ -261,11 +275,17 @@ def test_event_store_binds_all_rows_to_payload_tenant(migrated_postgres: str) ->
     tenant_b = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "iso-e"))
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "iso-f"))
-    app_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass"))
+    app_url = asyncio.run(
+        _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
+    )
 
     engine = create_async_engine(app_url)
-    store = EventStore(sqlite_path=None, db_session_factory=make_session_factory(engine))
-    payload, classification, extracted, action, audit_entry = _event_store_payloads(tenant_a)
+    store = EventStore(
+        sqlite_path=None, db_session_factory=make_session_factory(engine)
+    )
+    payload, classification, extracted, action, audit_entry = _event_store_payloads(
+        tenant_a
+    )
     try:
         store.persist_pipeline_run(
             payload,
@@ -286,24 +306,36 @@ def test_event_store_binds_all_rows_to_payload_tenant(migrated_postgres: str) ->
         "proposed_actions",
         "audit_log",
     ):
-        assert asyncio.run(_count_rows_for_tenant(migrated_postgres, table_name, tenant_a)) == 1
-        assert asyncio.run(_count_rows_for_tenant(migrated_postgres, table_name, tenant_b)) == 0
+        assert (
+            asyncio.run(_count_rows_for_tenant(migrated_postgres, table_name, tenant_a))
+            == 1
+        )
+        assert (
+            asyncio.run(_count_rows_for_tenant(migrated_postgres, table_name, tenant_b))
+            == 0
+        )
 
 
 @pytest.mark.integration
-def test_approve_cross_tenant_is_forbidden_and_pending_remains(migrated_postgres: str) -> None:
+def test_approve_cross_tenant_is_forbidden_and_pending_remains(
+    migrated_postgres: str,
+) -> None:
     tenant_a = uuid4()
     tenant_b = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "iso-g"))
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "iso-h"))
-    app_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass"))
+    app_url = asyncio.run(
+        _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
+    )
 
     settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
     approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
     engine = create_async_engine(app_url)
     agent = AgentService(
         settings=settings,
-        store=EventStore(sqlite_path=None, db_session_factory=make_session_factory(engine)),
+        store=EventStore(
+            sqlite_path=None, db_session_factory=make_session_factory(engine)
+        ),
         approval_store=approval_store,
     )
 
@@ -313,7 +345,9 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(migrated_postgres
         reason="manual approval required",
         user_id="user-1",
         expires_at=datetime.now(UTC) + timedelta(seconds=600),
-        action=ProposedAction(tool="create_ticket_and_reply", payload={"x": 1}, risky=True),
+        action=ProposedAction(
+            tool="create_ticket_and_reply", payload={"x": 1}, risky=True
+        ),
         draft_response="pending response",
     )
     approval_store.put_pending(pending)
@@ -321,7 +355,9 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(migrated_postgres
     try:
         with pytest.raises(HTTPException) as exc:
             agent.approve(
-                ApproveRequest(pending_id=pending.pending_id, approved=True, reviewer="reviewer-1"),
+                ApproveRequest(
+                    pending_id=pending.pending_id, approved=True, reviewer="reviewer-1"
+                ),
                 jwt_tenant_id=str(tenant_b),
             )
     finally:
@@ -339,7 +375,9 @@ def test_gdev_admin_has_bypassrls_and_sees_both_tenants(migrated_postgres: str) 
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "iso-j"))
     asyncio.run(_seed_ticket(migrated_postgres, tenant_a, "admin-a"))
     asyncio.run(_seed_ticket(migrated_postgres, tenant_b, "admin-b"))
-    admin_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_admin", "gdev-admin-pass"))
+    admin_url = asyncio.run(
+        _enable_role_login(migrated_postgres, "gdev_admin", "gdev-admin-pass")
+    )
 
     engine = create_async_engine(admin_url)
 
@@ -356,10 +394,16 @@ def test_gdev_admin_has_bypassrls_and_sees_both_tenants(migrated_postgres: str) 
             role_result = await conn.execute(
                 text("SELECT rolbypassrls FROM pg_roles WHERE rolname = 'gdev_admin'")
             )
-            return int(count_a.scalar_one()), int(count_b.scalar_one()), bool(role_result.scalar_one())
+            return (
+                int(count_a.scalar_one()),
+                int(count_b.scalar_one()),
+                bool(role_result.scalar_one()),
+            )
 
     try:
-        tenant_a_count, tenant_b_count, rolbypassrls = asyncio.run(_query_admin_visibility())
+        tenant_a_count, tenant_b_count, rolbypassrls = asyncio.run(
+            _query_admin_visibility()
+        )
     finally:
         asyncio.run(engine.dispose())
 

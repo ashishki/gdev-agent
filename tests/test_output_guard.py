@@ -25,7 +25,11 @@ def test_secret_pattern_blocks_linear_key() -> None:
 
 def test_url_strip_behavior() -> None:
     guard = OutputGuard(
-        Settings(output_guard_enabled=True, output_url_behavior="strip", url_allowlist=["kb.example.com"])
+        Settings(
+            output_guard_enabled=True,
+            output_url_behavior="strip",
+            url_allowlist=["kb.example.com"],
+        )
     )
     result = guard.scan("Read https://evil.example.com/link now", 0.9, _action())
     assert result.blocked is False
@@ -34,7 +38,11 @@ def test_url_strip_behavior() -> None:
 
 def test_url_allowlisted_passes() -> None:
     guard = OutputGuard(
-        Settings(output_guard_enabled=True, output_url_behavior="strip", url_allowlist=["kb.example.com"])
+        Settings(
+            output_guard_enabled=True,
+            output_url_behavior="strip",
+            url_allowlist=["kb.example.com"],
+        )
     )
     draft = "See https://kb.example.com/tips"
     result = guard.scan(draft, 0.9, _action())

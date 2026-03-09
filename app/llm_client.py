@@ -8,7 +8,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 from tenacity import (
@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
         def __enter__(self) -> "_NoopSpan":
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
             return False
 
         def set_attribute(self, _name: str, _value: object) -> None:
@@ -372,7 +372,8 @@ class LLMClient:
                             "input_tokens", int(getattr(usage, "input_tokens", 0) or 0)
                         )
                         span.set_attribute(
-                            "output_tokens", int(getattr(usage, "output_tokens", 0) or 0)
+                            "output_tokens",
+                            int(getattr(usage, "output_tokens", 0) or 0),
                         )
                         span.set_attribute("status", "ok")
                         LLM_REQUESTS_TOTAL.labels(
@@ -432,7 +433,9 @@ class LLMClient:
                     },
                     exc_info=True,
                 )
-                return ClassificationResult(category="other", urgency="low", confidence=0.0).model_dump()
+                return ClassificationResult(
+                    category="other", urgency="low", confidence=0.0
+                ).model_dump()
 
         if name == "extract_entities":
             merged_input = dict(tool_input)

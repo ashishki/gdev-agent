@@ -62,7 +62,10 @@ class RedisApprovalStore:
         if decision.expires_at < datetime.now(UTC):
             LOGGER.info(
                 "pending expired",
-                extra={"event": "pending_expired", "context": {"pending_id": pending_id}},
+                extra={
+                    "event": "pending_expired",
+                    "context": {"pending_id": pending_id},
+                },
             )
             return None
         return decision
@@ -77,10 +80,15 @@ class RedisApprovalStore:
         decision = PendingDecision.model_validate_json(text)
         if decision.expires_at < datetime.now(UTC):
             self.redis.delete(key)
-            APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).dec()
+            APPROVAL_QUEUE_DEPTH.labels(
+                tenant_hash=_sha256_short(decision.tenant_id)
+            ).dec()
             LOGGER.info(
                 "pending expired",
-                extra={"event": "pending_expired", "context": {"pending_id": pending_id}},
+                extra={
+                    "event": "pending_expired",
+                    "context": {"pending_id": pending_id},
+                },
             )
             return None
         return decision
@@ -133,7 +141,9 @@ class RedisApprovalStore:
                     {
                         "pending_id": str(pending_uuid),
                         "tenant_id": str(tenant_uuid),
-                        "payload": PendingDecision(**decision.model_dump(mode="json")).model_dump_json(),
+                        "payload": PendingDecision(
+                            **decision.model_dump(mode="json")
+                        ).model_dump_json(),
                         "expires_at": decision.expires_at,
                     },
                 )

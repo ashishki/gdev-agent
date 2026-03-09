@@ -16,6 +16,7 @@ from app.schemas import (
     AuditListResponse,
     CostMetricItem,
     CostMetricResponse,
+    ErrorDetail,
     ErrorResponse,
 )
 
@@ -31,7 +32,10 @@ def _parse_cursor(cursor: str | None):
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
-                error={"code": "invalid_cursor", "message": "cursor must be a valid ISO timestamp"}
+                error=ErrorDetail(
+                    code="invalid_cursor",
+                    message="cursor must be a valid ISO timestamp",
+                )
             ).model_dump(mode="json"),
         )
 

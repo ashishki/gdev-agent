@@ -19,9 +19,14 @@ class TelegramClient:
     def send_message(self, chat_id: str, text: str) -> dict[str, Any]:
         """Send plain Telegram message."""
         with httpx.Client(timeout=10.0) as client:
-            response = client.post(f"{self.base_url}/sendMessage", json={"chat_id": chat_id, "text": text})
+            response = client.post(
+                f"{self.base_url}/sendMessage", json={"chat_id": chat_id, "text": text}
+            )
         if response.status_code == 429:
-            LOGGER.warning("telegram throttled", extra={"event": "telegram_throttled", "context": {}})
+            LOGGER.warning(
+                "telegram throttled",
+                extra={"event": "telegram_throttled", "context": {}},
+            )
             return {"delivery": "queued"}
         response.raise_for_status()
         data = response.json().get("result", {})
@@ -58,9 +63,11 @@ class TelegramClient:
                 json={"chat_id": chat_id, "text": text, "reply_markup": markup},
             )
         if response.status_code == 429:
-            LOGGER.warning("telegram throttled", extra={"event": "telegram_throttled", "context": {}})
+            LOGGER.warning(
+                "telegram throttled",
+                extra={"event": "telegram_throttled", "context": {}},
+            )
             return ""
         response.raise_for_status()
         data = response.json().get("result", {})
         return str(data.get("message_id", ""))
-

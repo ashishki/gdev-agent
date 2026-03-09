@@ -17,7 +17,10 @@ def test_create_issue_success(mock_client_cls) -> None:
     mock_response.json.return_value = {
         "data": {
             "issueCreate": {
-                "issue": {"identifier": "ENG-42", "url": "https://linear.app/acme/issue/ENG-42"}
+                "issue": {
+                    "identifier": "ENG-42",
+                    "url": "https://linear.app/acme/issue/ENG-42",
+                }
             }
         }
     }

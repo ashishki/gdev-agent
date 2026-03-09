@@ -33,7 +33,9 @@ def _agent() -> AgentService:
 
 def test_known_tool_dispatches() -> None:
     agent = _agent()
-    action = ProposedAction(tool="create_ticket_and_reply", payload={"title": "t", "reply_to": "u1"})
+    action = ProposedAction(
+        tool="create_ticket_and_reply", payload={"title": "t", "reply_to": "u1"}
+    )
 
     result = agent.execute_action(action, "u1", "hello")
 
@@ -56,7 +58,13 @@ def test_registry_annotation() -> None:
 
 
 def test_llm_tools_and_registry_stay_in_sync() -> None:
-    local_only_tools = {"classify_request", "extract_entities", "lookup_faq", "draft_reply", "flag_for_human"}
+    local_only_tools = {
+        "classify_request",
+        "extract_entities",
+        "lookup_faq",
+        "draft_reply",
+        "flag_for_human",
+    }
     tool_names = {tool["name"] for tool in TOOLS}
     assert local_only_tools <= tool_names
     assert local_only_tools.isdisjoint(set(TOOL_REGISTRY))

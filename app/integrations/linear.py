@@ -47,28 +47,34 @@ class LinearClient:
             },
         }
         with httpx.Client(timeout=10.0) as client:
-            response = client.post("https://api.linear.app/graphql", json=body, headers=headers)
+            response = client.post(
+                "https://api.linear.app/graphql", json=body, headers=headers
+            )
 
         if response.status_code == 429:
-            LOGGER.warning("linear throttled", extra={"event": "linear_throttled", "context": {}})
-            raise HTTPException(status_code=503, detail="Linear temporarily unavailable")
+            LOGGER.warning(
+                "linear throttled", extra={"event": "linear_throttled", "context": {}}
+            )
+            raise HTTPException(
+                status_code=503, detail="Linear temporarily unavailable"
+            )
         if 400 <= response.status_code < 500:
             LOGGER.error(
                 "linear client error",
-                extra={"event": "linear_client_error", "context": {"status_code": response.status_code}},
+                extra={
+                    "event": "linear_client_error",
+                    "context": {"status_code": response.status_code},
+                },
             )
-            raise HTTPException(status_code=500, detail="Internal: ticketing provider rejected request")
+            raise HTTPException(
+                status_code=500, detail="Internal: ticketing provider rejected request"
+            )
         response.raise_for_status()
 
         payload = response.json()
-        issue = (
-            payload.get("data", {})
-            .get("issueCreate", {})
-            .get("issue", {})
-        )
+        issue = payload.get("data", {}).get("issueCreate", {}).get("issue", {})
         return {
             "ticket_id": issue.get("identifier"),
             "url": issue.get("url"),
             "status": "created",
         }
-

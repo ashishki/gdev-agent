@@ -32,9 +32,10 @@ class AgentRegistryService:
     ) -> AgentConfigItem:
         """Version-bump and replace an agent config for a tenant."""
         current_row = (
-            await db.execute(
-                text(
-                    """
+            (
+                await db.execute(
+                    text(
+                        """
                     SELECT agent_config_id, version
                     FROM agent_configs
                     WHERE agent_config_id = :agent_config_id
@@ -42,10 +43,16 @@ class AgentRegistryService:
                       AND is_current = TRUE
                     LIMIT 1
                     """
-                ),
-                {"agent_config_id": str(agent_config_id), "tenant_id": str(tenant_id)},
+                    ),
+                    {
+                        "agent_config_id": str(agent_config_id),
+                        "tenant_id": str(tenant_id),
+                    },
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if current_row is None:
             raise AgentConfigNotFoundError(f"Agent config {agent_config_id} not found")
 
@@ -65,9 +72,10 @@ class AgentRegistryService:
         )
 
         inserted_row = (
-            await db.execute(
-                text(
-                    """
+            (
+                await db.execute(
+                    text(
+                        """
                     INSERT INTO agent_configs (
                         tenant_id,
                         agent_name,
@@ -102,19 +110,24 @@ class AgentRegistryService:
                         is_current,
                         created_at
                     """
-                ),
-                {
-                    "tenant_id": str(tenant_id),
-                    "agent_name": payload.agent_name,
-                    "version": new_version,
-                    "model_id": payload.model_id,
-                    "max_turns": payload.max_turns,
-                    "tools_enabled": payload.tools_enabled,
-                    "guardrails": json.dumps(payload.guardrails, ensure_ascii=False),
-                    "prompt_version": payload.prompt_version,
-                },
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "agent_name": payload.agent_name,
+                        "version": new_version,
+                        "model_id": payload.model_id,
+                        "max_turns": payload.max_turns,
+                        "tools_enabled": payload.tools_enabled,
+                        "guardrails": json.dumps(
+                            payload.guardrails, ensure_ascii=False
+                        ),
+                        "prompt_version": payload.prompt_version,
+                    },
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
         tenant_id_hash = hashlib.sha256(str(tenant_id).encode("utf-8")).hexdigest()[:16]
         LOGGER.info(

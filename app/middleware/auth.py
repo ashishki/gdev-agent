@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from typing import Literal
 from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTError
+from jose import jwt  # type: ignore[import-untyped]
+from jose.exceptions import ExpiredSignatureError, JWTError  # type: ignore[import-untyped]
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
@@ -25,7 +26,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
         def __enter__(self) -> "_NoopSpan":
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
             return False
 
         def set_attribute(self, _name: str, _value: object) -> None:

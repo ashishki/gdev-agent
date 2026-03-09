@@ -55,7 +55,11 @@ def _role_dependency_for_put_agents():
         and "PUT" in getattr(route, "methods", set())
     )
     role_dependency = next(
-        (dependency.call for dependency in route.dependant.dependencies if dependency.call.__name__ == "dependency"),
+        (
+            dependency.call
+            for dependency in route.dependant.dependencies
+            if dependency.call.__name__ == "dependency"
+        ),
         None,
     )
     assert role_dependency is not None
@@ -134,7 +138,9 @@ async def test_update_config_cross_tenant_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_put_agents_route_returns_404_for_missing_or_cross_tenant(monkeypatch) -> None:
+async def test_put_agents_route_returns_404_for_missing_or_cross_tenant(
+    monkeypatch,
+) -> None:
     class _ServiceStub:
         async def update_config(self, **_kwargs):  # noqa: ANN003
             raise AgentConfigNotFoundError("missing")
@@ -147,7 +153,11 @@ async def test_put_agents_route_returns_404_for_missing_or_cross_tenant(monkeypa
 
     request = SimpleNamespace(
         state=SimpleNamespace(tenant_id=uuid4()),
-        app=SimpleNamespace(state=SimpleNamespace(tenant_registry=SimpleNamespace(invalidate=_invalidate))),
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                tenant_registry=SimpleNamespace(invalidate=_invalidate)
+            )
+        ),
     )
 
     response = await agents_router.update_agent(

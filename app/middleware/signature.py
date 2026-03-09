@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import Any
+from typing import Any, Literal
 
 from fastapi.responses import JSONResponse
 
@@ -22,7 +22,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
         def __enter__(self) -> "_NoopSpan":
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
             return False
 
         def set_attribute(self, _name: str, _value: object) -> None:

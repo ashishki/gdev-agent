@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_registry import AgentConfigNotFoundError, AgentRegistryService
 from app.db import get_db_session
 from app.dependencies import require_role
-from app.schemas import AgentConfigItem, AgentConfigUpdate, AgentListResponse, ErrorResponse
+from app.schemas import (
+    AgentConfigItem,
+    AgentConfigUpdate,
+    AgentListResponse,
+    ErrorDetail,
+    ErrorResponse,
+)
 
 router = APIRouter()
 _agent_registry_service = AgentRegistryService()
@@ -28,7 +34,10 @@ def _parse_cursor(cursor: str | None):
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
-                error={"code": "invalid_cursor", "message": "cursor must be a valid ISO timestamp"}
+                error=ErrorDetail(
+                    code="invalid_cursor",
+                    message="cursor must be a valid ISO timestamp",
+                )
             ).model_dump(mode="json"),
         )
 
@@ -120,7 +129,10 @@ async def update_agent(
         return JSONResponse(
             status_code=404,
             content=ErrorResponse(
-                error={"code": "agent_config_not_found", "message": "Agent config not found"}
+                error=ErrorDetail(
+                    code="agent_config_not_found",
+                    message="Agent config not found",
+                )
             ).model_dump(mode="json"),
         )
 

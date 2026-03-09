@@ -18,11 +18,17 @@ def send_reply(user_id: str | None, text: str) -> dict[str, str | None | int]:
         try:
             return client.send_message(user_id, text)
         except Exception:
-            LOGGER.warning("telegram send failed", extra={"event": "telegram_send_failed", "context": {}})
+            LOGGER.warning(
+                "telegram send failed",
+                extra={"event": "telegram_send_failed", "context": {}},
+            )
             return {"delivery": "queued", "user_id": user_id}
 
     if not settings.telegram_bot_token:
-        LOGGER.warning("telegram disabled, using stub", extra={"event": "telegram_stub_fallback", "context": {}})
+        LOGGER.warning(
+            "telegram disabled, using stub",
+            extra={"event": "telegram_stub_fallback", "context": {}},
+        )
     return {
         "delivery": "queued",
         "user_id": user_id,

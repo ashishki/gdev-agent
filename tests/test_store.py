@@ -18,7 +18,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
 from app.db import make_session_factory
-from app.schemas import AuditLogEntry, ClassificationResult, ExtractedFields, ProposedAction, WebhookRequest
+from app.schemas import (
+    AuditLogEntry,
+    ClassificationResult,
+    ExtractedFields,
+    ProposedAction,
+    WebhookRequest,
+)
 from app.store import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,7 +81,9 @@ async def _seed_tenant(database_url: str, tenant_id: UUID, slug: str) -> None:
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text("INSERT INTO tenants (tenant_id, name, slug) VALUES (:tenant_id, :name, :slug)"),
+                text(
+                    "INSERT INTO tenants (tenant_id, name, slug) VALUES (:tenant_id, :name, :slug)"
+                ),
                 {"tenant_id": str(tenant_id), "name": "Tenant", "slug": slug},
             )
     finally:
@@ -95,7 +103,9 @@ async def _counts_for_tenant(database_url: str, tenant_id: UUID) -> dict[str, in
                 "audit_log",
             ):
                 result = await conn.execute(
-                    text(f"SELECT COUNT(*) FROM {table_name} WHERE tenant_id = :tenant_id"),
+                    text(
+                        f"SELECT COUNT(*) FROM {table_name} WHERE tenant_id = :tenant_id"
+                    ),
                     {"tenant_id": str(tenant_id)},
                 )
                 counts[table_name] = int(result.scalar_one())
@@ -138,10 +148,15 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("ALTER ROLE gdev_app LOGIN PASSWORD :password"), {"password": password})
+            await conn.execute(
+                text("ALTER ROLE gdev_app LOGIN PASSWORD :password"),
+                {"password": password},
+            )
             await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
             await conn.execute(
-                text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app")
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app"
+                )
             )
     finally:
         await engine.dispose()
@@ -149,7 +164,11 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     return str(make_url(database_url).set(username="gdev_app", password=password))
 
 
-def _build_event_inputs(tenant_id: UUID) -> tuple[WebhookRequest, ClassificationResult, ExtractedFields, ProposedAction, AuditLogEntry]:
+def _build_event_inputs(
+    tenant_id: UUID,
+) -> tuple[
+    WebhookRequest, ClassificationResult, ExtractedFields, ProposedAction, AuditLogEntry
+]:
     payload = WebhookRequest(
         tenant_id=str(tenant_id),
         request_id="req-1",
@@ -158,7 +177,9 @@ def _build_event_inputs(tenant_id: UUID) -> tuple[WebhookRequest, Classification
         text="Payment failed after purchase",
         metadata={"chat_id": "chat-1"},
     )
-    classification = ClassificationResult(category="billing", urgency="high", confidence=0.93)
+    classification = ClassificationResult(
+        category="billing", urgency="high", confidence=0.93
+    )
     extracted = ExtractedFields(platform="telegram", transaction_id="tx-1")
     action = ProposedAction(
         tool="create_ticket_and_reply",
@@ -188,12 +209,16 @@ def _make_store(database_url: str) -> tuple[EventStore, object]:
     return EventStore(sqlite_path=None, db_session_factory=session_factory), engine
 
 
-def test_persist_pipeline_run_writes_all_rows_and_hashes_user_id(migrated_postgres: str) -> None:
+def test_persist_pipeline_run_writes_all_rows_and_hashes_user_id(
+    migrated_postgres: str,
+) -> None:
     tenant_id = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_id, "tenant-a"))
 
     store, engine = _make_store(migrated_postgres)
-    payload, classification, extracted, action, audit_entry = _build_event_inputs(tenant_id)
+    payload, classification, extracted, action, audit_entry = _build_event_inputs(
+        tenant_id
+    )
 
     try:
         store.persist_pipeline_run(
@@ -221,16 +246,27 @@ def test_persist_pipeline_run_writes_all_rows_and_hashes_user_id(migrated_postgr
     assert asyncio.run(_ticket_user_hash(migrated_postgres, tenant_id)) == expected_hash
 
 
-def test_persist_pipeline_run_rolls_back_on_write_failure(migrated_postgres: str) -> None:
+def test_persist_pipeline_run_rolls_back_on_write_failure(
+    migrated_postgres: str,
+) -> None:
     tenant_id = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_id, "tenant-b"))
     asyncio.run(_drop_audit_log(migrated_postgres))
 
     store, engine = _make_store(migrated_postgres)
-    payload = WebhookRequest(tenant_id=str(tenant_id), message_id="msg-2", user_id="user-99", text="Bug report")
-    classification = ClassificationResult(category="bug_report", urgency="low", confidence=0.91)
+    payload = WebhookRequest(
+        tenant_id=str(tenant_id),
+        message_id="msg-2",
+        user_id="user-99",
+        text="Bug report",
+    )
+    classification = ClassificationResult(
+        category="bug_report", urgency="low", confidence=0.91
+    )
     extracted = ExtractedFields(platform="discord")
-    action = ProposedAction(tool="create_ticket_and_reply", payload={"tenant_id": str(tenant_id)})
+    action = ProposedAction(
+        tool="create_ticket_and_reply", payload={"tenant_id": str(tenant_id)}
+    )
     audit_entry = AuditLogEntry(
         timestamp="2026-03-04T10:00:00Z",
         request_id="req-2",
@@ -247,12 +283,15 @@ def test_persist_pipeline_run_rolls_back_on_write_failure(migrated_postgres: str
 
     try:
         with pytest.raises(Exception):
-            store.persist_pipeline_run(payload, classification, extracted, action, audit_entry)
+            store.persist_pipeline_run(
+                payload, classification, extracted, action, audit_entry
+            )
     finally:
         asyncio.run(engine.dispose())
 
     engine_verify = create_async_engine(migrated_postgres)
     try:
+
         async def _verify_no_partial_rows() -> dict[str, int]:
             async with engine_verify.connect() as conn:
                 counts: dict[str, int] = {}
@@ -263,7 +302,9 @@ def test_persist_pipeline_run_rolls_back_on_write_failure(migrated_postgres: str
                     "proposed_actions",
                 ):
                     result = await conn.execute(
-                        text(f"SELECT COUNT(*) FROM {table_name} WHERE tenant_id = :tenant_id"),
+                        text(
+                            f"SELECT COUNT(*) FROM {table_name} WHERE tenant_id = :tenant_id"
+                        ),
                         {"tenant_id": str(tenant_id)},
                     )
                     counts[table_name] = int(result.scalar_one())
@@ -281,13 +322,17 @@ def test_persist_pipeline_run_rolls_back_on_write_failure(migrated_postgres: str
     }
 
 
-def test_persist_pipeline_run_succeeds_as_gdev_app_with_rls(migrated_postgres: str) -> None:
+def test_persist_pipeline_run_succeeds_as_gdev_app_with_rls(
+    migrated_postgres: str,
+) -> None:
     tenant_id = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_id, "tenant-c"))
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
     store, engine = _make_store(app_url)
-    payload, classification, extracted, action, audit_entry = _build_event_inputs(tenant_id)
+    payload, classification, extracted, action, audit_entry = _build_event_inputs(
+        tenant_id
+    )
     try:
         store.persist_pipeline_run(
             payload,
@@ -311,7 +356,9 @@ def test_persist_pipeline_run_succeeds_as_gdev_app_with_rls(migrated_postgres: s
     }
 
 
-def test_cross_tenant_insert_blocked_by_rls_for_gdev_app(migrated_postgres: str) -> None:
+def test_cross_tenant_insert_blocked_by_rls_for_gdev_app(
+    migrated_postgres: str,
+) -> None:
     tenant_a = uuid4()
     tenant_b = uuid4()
     asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "tenant-d"))

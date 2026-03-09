@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.dependencies import require_role
-from app.schemas import ErrorResponse, EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
+from app.schemas import (
+    ErrorDetail,
+    ErrorResponse,
+    EvalRunItem,
+    EvalRunListResponse,
+    EvalRunTriggerResponse,
+)
 from eval.runner import run_eval_job
 
 LOGGER = logging.getLogger(__name__)
@@ -31,7 +37,10 @@ def _parse_cursor(cursor: str | None):
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
-                error={"code": "invalid_cursor", "message": "cursor must be a valid ISO timestamp"}
+                error=ErrorDetail(
+                    code="invalid_cursor",
+                    message="cursor must be a valid ISO timestamp",
+                )
             ).model_dump(mode="json"),
         )
 
@@ -58,7 +67,10 @@ async def _run_eval_background(
             "eval run failed",
             extra={
                 "event": "eval_run_failed",
-                "context": {"tenant_id": str(tenant_id), "eval_run_id": str(eval_run_id)},
+                "context": {
+                    "tenant_id": str(tenant_id),
+                    "eval_run_id": str(eval_run_id),
+                },
             },
             exc_info=True,
         )

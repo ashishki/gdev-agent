@@ -40,6 +40,7 @@ EXPECTED_TABLES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _root_dir() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -107,6 +108,7 @@ def _docker_available() -> bool:
     """Return True if Docker daemon is reachable."""
     try:
         import docker  # type: ignore[import-untyped]
+
         docker.from_env(timeout=2)
         return True
     except Exception:
@@ -129,7 +131,9 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
 
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
-    assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
+    assert EXPECTED_TABLES.issubset(upgraded), (
+        f"Missing tables: {EXPECTED_TABLES - upgraded}"
+    )
     gdev_admin_bypassrls = asyncio.run(_role_bypassrls(async_url, "gdev_admin"))
     assert gdev_admin_bypassrls is True
     tenant_users_has_password_hash = asyncio.run(
@@ -139,7 +143,9 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
 
     command.downgrade(cfg, "base")
     downgraded = asyncio.run(_public_tables(async_url))
-    assert EXPECTED_TABLES.isdisjoint(downgraded), f"Tables not dropped: {EXPECTED_TABLES & downgraded}"
+    assert EXPECTED_TABLES.isdisjoint(downgraded), (
+        f"Tables not dropped: {EXPECTED_TABLES & downgraded}"
+    )
 
     get_settings.cache_clear()
 
@@ -148,7 +154,10 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_initial_migration_upgrade_and_downgrade(monkeypatch: pytest.MonkeyPatch) -> None:
+
+def test_initial_migration_upgrade_and_downgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pytest.importorskip("alembic")
     pytest.importorskip("sqlalchemy")
 
@@ -160,7 +169,10 @@ def test_initial_migration_upgrade_and_downgrade(monkeypatch: pytest.MonkeyPatch
         with PostgresContainer("pgvector/pgvector:pg16") as container:
             sync_url = container.get_connection_url()
             import re
-            async_url = re.sub(r"^postgresql(\+\w+)?://", "postgresql+asyncpg://", sync_url)
+
+            async_url = re.sub(
+                r"^postgresql(\+\w+)?://", "postgresql+asyncpg://", sync_url
+            )
             _run_migration_test(async_url, monkeypatch)
         return
 
@@ -176,7 +188,10 @@ def test_initial_migration_upgrade_and_downgrade(monkeypatch: pytest.MonkeyPatch
     # TEST_DATABASE_URL and bypass validation for the migration test only.
     try:
         import psycopg2  # type: ignore[import-untyped]
-        conn = psycopg2.connect("dbname=postgres user=postgres host=/var/run/postgresql")
+
+        conn = psycopg2.connect(
+            "dbname=postgres user=postgres host=/var/run/postgresql"
+        )
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute("DROP DATABASE IF EXISTS gdev_test")
@@ -194,7 +209,9 @@ def test_initial_migration_upgrade_and_downgrade(monkeypatch: pytest.MonkeyPatch
 
 
 def test_get_settings_accepts_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/db")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/db"
+    )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     get_settings.cache_clear()
 

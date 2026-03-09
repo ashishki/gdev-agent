@@ -15,7 +15,11 @@ from eval import runner as eval_runner
 
 
 class _ResultStub:
-    def __init__(self, row: dict[str, object] | None = None, rows: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self,
+        row: dict[str, object] | None = None,
+        rows: list[dict[str, object]] | None = None,
+    ) -> None:
         self._row = row
         self._rows = rows or []
 
@@ -133,7 +137,9 @@ async def test_start_eval_run_returns_id_and_inserts_row(monkeypatch) -> None:
     response = await eval_router.start_eval_run(request=request)
 
     UUID(str(response.eval_run_id))
-    insert_rows = [params for sql, params in session.calls if "INSERT INTO eval_runs" in sql]
+    insert_rows = [
+        params for sql, params in session.calls if "INSERT INTO eval_runs" in sql
+    ]
     assert insert_rows
     assert insert_rows[0]["status"] == "queued"
     assert created_tasks
@@ -179,7 +185,9 @@ async def test_list_eval_runs_returns_newest_first_page() -> None:
     assert response.cursor is not None
 
 
-def test_run_eval_default_agent_uses_non_persistent_store(monkeypatch, tmp_path: Path) -> None:
+def test_run_eval_default_agent_uses_non_persistent_store(
+    monkeypatch, tmp_path: Path
+) -> None:
     created: dict[str, object] = {}
 
     class _CapturedAgent:

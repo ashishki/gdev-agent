@@ -15,19 +15,26 @@ LOGGER = logging.getLogger(__name__)
 class SheetsClient:
     """Append-only Sheets client."""
 
-    def __init__(self, credentials_json: str | None, spreadsheet_id: str | None) -> None:
+    def __init__(
+        self, credentials_json: str | None, spreadsheet_id: str | None
+    ) -> None:
         self.enabled = bool(credentials_json and spreadsheet_id)
         self.spreadsheet_id = spreadsheet_id
         self._service: Any | None = None
         if not self.enabled:
-            LOGGER.warning("sheets disabled", extra={"event": "sheets_disabled", "context": {}})
+            LOGGER.warning(
+                "sheets disabled", extra={"event": "sheets_disabled", "context": {}}
+            )
             return
         try:
             from google.oauth2.service_account import Credentials  # type: ignore
             from googleapiclient.discovery import build  # type: ignore
         except Exception:
             self.enabled = False
-            LOGGER.warning("sheets dependencies missing", extra={"event": "sheets_disabled", "context": {}})
+            LOGGER.warning(
+                "sheets dependencies missing",
+                extra={"event": "sheets_disabled", "context": {}},
+            )
             return
 
         creds_info = json.loads(credentials_json or "{}")
@@ -41,21 +48,23 @@ class SheetsClient:
         """Append one audit row. Retries 429 twice with 60s delay."""
         if not self.enabled or not self._service or not self.spreadsheet_id:
             return
-        values = [[
-            entry.timestamp,
-            entry.request_id,
-            entry.message_id,
-            entry.user_id,
-            entry.category,
-            entry.urgency,
-            entry.confidence,
-            entry.action,
-            entry.status,
-            entry.approved_by,
-            entry.ticket_id,
-            entry.latency_ms,
-            entry.cost_usd,
-        ]]
+        values = [
+            [
+                entry.timestamp,
+                entry.request_id,
+                entry.message_id,
+                entry.user_id,
+                entry.category,
+                entry.urgency,
+                entry.confidence,
+                entry.action,
+                entry.status,
+                entry.approved_by,
+                entry.ticket_id,
+                entry.latency_ms,
+                entry.cost_usd,
+            ]
+        ]
 
         for attempt in range(3):
             try:
@@ -73,7 +82,9 @@ class SheetsClient:
                     continue
                 LOGGER.warning(
                     "sheets append failed",
-                    extra={"event": "sheets_append_failed", "context": {"attempt": attempt + 1}},
+                    extra={
+                        "event": "sheets_append_failed",
+                        "context": {"attempt": attempt + 1},
+                    },
                 )
                 return
-

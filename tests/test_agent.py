@@ -13,15 +13,24 @@ from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.llm_client import TriageResult
-from app.schemas import ApproveRequest, ClassificationResult, ExtractedFields, WebhookRequest
+from app.schemas import (
+    ApproveRequest,
+    ClassificationResult,
+    ExtractedFields,
+    WebhookRequest,
+)
 from app.store import EventStore
 
 
 class FakeLLMClient:
-    def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
+    def run_agent(
+        self, text: str, user_id: str | None = None, max_turns: int = 5
+    ) -> TriageResult:
         _ = (text, max_turns)
         return TriageResult(
-            classification=ClassificationResult(category="other", urgency="low", confidence=0.95),
+            classification=ClassificationResult(
+                category="other", urgency="low", confidence=0.95
+            ),
             extracted=ExtractedFields(user_id=user_id),
             draft_text="LLM draft response",
             input_tokens=100,
@@ -77,7 +86,9 @@ class _FailingCostLedger:
     async def check_budget(self, _tenant_id, _db) -> None:
         return None
 
-    async def record(self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db) -> None:
+    async def record(
+        self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db
+    ) -> None:
         _ = (tenant_id, day, input_tokens, output_tokens, cost_usd, db)
         self.record_calls += 1
         raise RuntimeError("db down")
@@ -87,7 +98,9 @@ class _NoopCostLedger:
     async def check_budget(self, _tenant_id, _db) -> None:
         return None
 
-    async def record(self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db) -> None:
+    async def record(
+        self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db
+    ) -> None:
         _ = (tenant_id, day, input_tokens, output_tokens, cost_usd, db)
         return None
 
@@ -141,7 +154,9 @@ def test_webhook_uses_llm_draft_and_tracks_cost() -> None:
     )
     assert round(audit_entries[0].cost_usd, 6) == round(expected_cost, 6)
 
-    event_payload = [payload for event, payload in store.events if event == "action_executed"][-1]
+    event_payload = [
+        payload for event, payload in store.events if event == "action_executed"
+    ][-1]
     assert event_payload["input_tokens"] == 100
     assert event_payload["output_tokens"] == 50
 
@@ -167,7 +182,9 @@ def test_approval_notification_failure_logs_exc_info(caplog) -> None:
         response = agent.process_webhook(WebhookRequest(text="hello", user_id="u1"))
 
     assert response.status == "pending"
-    record = next(r for r in caplog.records if r.msg == "failed sending approval notification")
+    record = next(
+        r for r in caplog.records if r.msg == "failed sending approval notification"
+    )
     assert record.exc_info is not None
 
 
@@ -187,7 +204,9 @@ def test_cost_ledger_record_failure_is_logged_and_non_fatal(caplog) -> None:
     )
 
     with caplog.at_level(logging.WARNING):
-        response = agent.process_webhook(WebhookRequest(text="hello", user_id="u1", tenant_id=str(uuid4())))
+        response = agent.process_webhook(
+            WebhookRequest(text="hello", user_id="u1", tenant_id=str(uuid4()))
+        )
 
     assert response.status == "executed"
     assert failing_ledger.record_calls == 1
@@ -213,7 +232,9 @@ def test_approve_hashes_reviewer_in_logs_and_audit() -> None:
     agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
 
     response = agent.process_webhook(
-        WebhookRequest(text="hello", user_id="u1", tenant_id="11111111-1111-1111-1111-111111111111")
+        WebhookRequest(
+            text="hello", user_id="u1", tenant_id="11111111-1111-1111-1111-111111111111"
+        )
     )
     assert response.pending is not None
 
@@ -229,7 +250,9 @@ def test_approve_hashes_reviewer_in_logs_and_audit() -> None:
     )
     assert approve_response.status == "approved"
 
-    approved_payload = [payload for event, payload in store.events if event == "pending_approved"][-1]
+    approved_payload = [
+        payload for event, payload in store.events if event == "pending_approved"
+    ][-1]
     assert approved_payload["reviewer"] == expected_hash
     assert raw_reviewer not in str(approved_payload)
 
@@ -255,7 +278,9 @@ def test_approve_keeps_approved_by_none_when_reviewer_missing() -> None:
     agent._append_audit_async = lambda entry: audit_entries.append(entry)  # type: ignore[method-assign]
 
     response = agent.process_webhook(
-        WebhookRequest(text="hello", user_id="u1", tenant_id="22222222-2222-2222-2222-222222222222")
+        WebhookRequest(
+            text="hello", user_id="u1", tenant_id="22222222-2222-2222-2222-222222222222"
+        )
     )
     assert response.pending is not None
 

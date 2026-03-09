@@ -10,7 +10,7 @@ from uuid import uuid4
 import bcrypt
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from jose import jwt
+from jose import jwt  # type: ignore[import-untyped]
 from sqlalchemy import text
 
 from app.schemas import AuthTokenRequest, AuthTokenResponse
@@ -62,10 +62,18 @@ async def create_auth_token(payload: AuthTokenRequest, request: Request):
         bcrypt.checkpw(candidate_password, _DUMMY_PASSWORD_HASH)
         LOGGER.warning(
             "invalid auth credentials",
-            extra={"event": "auth_invalid_credentials", "context": {"email_hash": email_hash}},
+            extra={
+                "event": "auth_invalid_credentials",
+                "context": {"email_hash": email_hash},
+            },
         )
         return JSONResponse(
-            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
             status_code=401,
         )
 
@@ -73,10 +81,18 @@ async def create_auth_token(payload: AuthTokenRequest, request: Request):
     if not bcrypt.checkpw(candidate_password, stored_hash):
         LOGGER.warning(
             "invalid auth credentials",
-            extra={"event": "auth_invalid_credentials", "context": {"email_hash": email_hash}},
+            extra={
+                "event": "auth_invalid_credentials",
+                "context": {"email_hash": email_hash},
+            },
         )
         return JSONResponse(
-            {"error": {"code": "invalid_credentials", "message": "Invalid email or password"}},
+            {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
             status_code=401,
         )
 

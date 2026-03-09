@@ -10,6 +10,7 @@ from queue import Queue
 import threading
 import time
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -65,7 +66,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
         def __enter__(self) -> "_NoopSpan":
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
             return False
 
         def set_attribute(self, _name: str, _value: object) -> None:
@@ -387,7 +388,7 @@ class AgentService:
             action=action.tool,
             status="executed",
             approved_by="auto",
-            ticket_id=str(action_result.get("ticket", {}).get("ticket_id", "")),
+            ticket_id=self._ticket_id_from_result(action_result),
             latency_ms=latency_ms,
             cost_usd=cost_usd,
         )
@@ -495,7 +496,7 @@ class AgentService:
                 action=pending.action.tool,
                 status="approved",
                 approved_by=reviewer_hash,
-                ticket_id=str(result.get("ticket", {}).get("ticket_id", "")),
+                ticket_id=self._ticket_id_from_result(result),
                 latency_ms=latency_ms,
                 cost_usd=0.0,
             )
@@ -582,6 +583,13 @@ class AgentService:
         event_payload["tenant_id"] = tenant_id
         self.store.log_event("action_executed", event_payload)
         return result
+
+    def _ticket_id_from_result(self, result: dict[str, object]) -> str:
+        ticket = result.get("ticket")
+        if not isinstance(ticket, dict):
+            return ""
+        ticket_id = ticket.get("ticket_id", "")
+        return str(ticket_id)
 
     def _guard_input(self, text: str) -> None:
         """Validate incoming text and raise ValueError on guardrail hit."""
@@ -780,10 +788,10 @@ class AgentService:
                 "failed recording llm cost",
                 extra={
                     "event": "cost_ledger_record_failed",
-                "context": {"tenant_id_hash": _sha256_short(str(tenant_uuid))},
-            },
-            exc_info=True,
-        )
+                    "context": {"tenant_id_hash": _sha256_short(str(tenant_uuid))},
+                },
+                exc_info=True,
+            )
 
     def _record_approval_event(
         self,

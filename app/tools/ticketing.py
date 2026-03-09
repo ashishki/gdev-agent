@@ -25,7 +25,10 @@ def create_ticket(payload: dict[str, Any]) -> dict[str, Any]:
             team_id=settings.linear_team_id,
         )
 
-    LOGGER.warning("linear disabled, using stub", extra={"event": "linear_stub_fallback", "context": {}})
+    LOGGER.warning(
+        "linear disabled, using stub",
+        extra={"event": "linear_stub_fallback", "context": {}},
+    )
     ticket_id = f"TKT-{uuid4().hex[:8].upper()}"
     return {
         "ticket_id": ticket_id,

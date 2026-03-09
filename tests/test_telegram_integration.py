@@ -40,8 +40,8 @@ def test_send_approval_request_callback_data(mock_client_cls) -> None:
     assert message_id == "321"
     payload = mock_client.post.call_args.kwargs["json"]
     buttons = payload["reply_markup"]["inline_keyboard"][0]
-    assert buttons[0]["callback_data"] == f"approve:{'a'*32}"
-    assert buttons[1]["callback_data"] == f"reject:{'a'*32}"
+    assert buttons[0]["callback_data"] == f"approve:{'a' * 32}"
+    assert buttons[1]["callback_data"] == f"reject:{'a' * 32}"
 
 
 @patch("app.integrations.telegram.httpx.Client")

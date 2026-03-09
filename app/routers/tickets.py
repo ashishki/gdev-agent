@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.dependencies import require_role
-from app.schemas import ErrorResponse, TicketDetailResponse, TicketListItem, TicketListResponse
+from app.schemas import (
+    ErrorDetail,
+    ErrorResponse,
+    TicketDetailItem,
+    TicketDetailResponse,
+    TicketListItem,
+    TicketListResponse,
+)
 
 router = APIRouter()
 
@@ -26,7 +33,10 @@ def _parse_cursor(cursor: str | None):
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
-                error={"code": "invalid_cursor", "message": "cursor must be a valid ISO timestamp"}
+                error=ErrorDetail(
+                    code="invalid_cursor",
+                    message="cursor must be a valid ISO timestamp",
+                )
             ).model_dump(mode="json"),
         )
 
@@ -87,9 +97,10 @@ async def get_ticket(
 ) -> TicketDetailResponse | JSONResponse:
     """Fetch a single tenant ticket by id."""
     row = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT
                     t.ticket_id,
                     t.message_id,
@@ -120,17 +131,30 @@ async def get_ticket(
                 WHERE t.ticket_id = :ticket_id AND t.tenant_id = :tenant_id
                 LIMIT 1
                 """
-            ),
-            {"ticket_id": str(ticket_id), "tenant_id": str(request.state.tenant_id)},
+                ),
+                {
+                    "ticket_id": str(ticket_id),
+                    "tenant_id": str(request.state.tenant_id),
+                },
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
 
     if row is None:
         return JSONResponse(
             status_code=404,
             content=ErrorResponse(
-                error={"code": "ticket_not_found", "message": "Ticket not found"}
+                error=ErrorDetail(
+                    code="ticket_not_found",
+                    message="Ticket not found",
+                )
             ).model_dump(mode="json"),
         )
 
-    return TicketDetailResponse(data=[dict(row)], cursor=None, total=None)
+    return TicketDetailResponse(
+        data=[TicketDetailItem.model_validate(dict(row))],
+        cursor=None,
+        total=None,
+    )

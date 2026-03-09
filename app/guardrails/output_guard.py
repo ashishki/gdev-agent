@@ -33,14 +33,18 @@ class OutputGuard:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def scan(self, draft: str, confidence: float, action: ProposedAction) -> GuardResult:
+    def scan(
+        self, draft: str, confidence: float, action: ProposedAction
+    ) -> GuardResult:
         """Scan draft output and return optional action override."""
         if not self.settings.output_guard_enabled:
             return GuardResult(blocked=False, redacted_draft=draft, reason=None)
 
         for pattern in _SECRET_PATTERNS:
             if pattern.search(draft):
-                return GuardResult(blocked=True, redacted_draft="", reason="secret pattern matched")
+                return GuardResult(
+                    blocked=True, redacted_draft="", reason="secret pattern matched"
+                )
 
         redacted = draft
         for url in _URL_PATTERN.findall(draft):
@@ -48,7 +52,9 @@ class OutputGuard:
             if host in self.settings.url_allowlist:
                 continue
             if self.settings.output_url_behavior == "reject":
-                return GuardResult(blocked=True, redacted_draft="", reason="disallowed url")
+                return GuardResult(
+                    blocked=True, redacted_draft="", reason="disallowed url"
+                )
             redacted = redacted.replace(url, "").strip()
 
         action_override: ProposedAction | None = None
@@ -61,4 +67,9 @@ class OutputGuard:
                 }
             )
 
-        return GuardResult(blocked=False, redacted_draft=redacted, reason=None, action_override=action_override)
+        return GuardResult(
+            blocked=False,
+            redacted_draft=redacted,
+            reason=None,
+            action_override=action_override,
+        )

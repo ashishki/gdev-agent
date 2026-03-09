@@ -86,7 +86,9 @@ def test_get_db_session_sets_local_tenant_id() -> None:
     session = _SessionContext()
     request = SimpleNamespace(
         state=SimpleNamespace(tenant_id="tenant-1"),
-        app=SimpleNamespace(state=SimpleNamespace(db_session_factory=_SessionFactory(session))),
+        app=SimpleNamespace(
+            state=SimpleNamespace(db_session_factory=_SessionFactory(session))
+        ),
     )
 
     async def _run() -> _SessionContext:
@@ -108,7 +110,9 @@ def test_get_db_session_skips_set_local_without_tenant_id() -> None:
     session = _SessionContext()
     request = SimpleNamespace(
         state=SimpleNamespace(tenant_id=None),
-        app=SimpleNamespace(state=SimpleNamespace(db_session_factory=_SessionFactory(session))),
+        app=SimpleNamespace(
+            state=SimpleNamespace(db_session_factory=_SessionFactory(session))
+        ),
     )
 
     async def _run() -> None:

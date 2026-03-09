@@ -77,7 +77,9 @@ def migrated_postgres(postgres_url: str, monkeypatch: pytest.MonkeyPatch) -> str
     get_settings.cache_clear()
 
 
-async def _seed_tenant(database_url: str, tenant_id: UUID, slug: str, daily_budget_usd: Decimal) -> None:
+async def _seed_tenant(
+    database_url: str, tenant_id: UUID, slug: str, daily_budget_usd: Decimal
+) -> None:
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -99,7 +101,9 @@ async def _seed_tenant(database_url: str, tenant_id: UUID, slug: str, daily_budg
         await engine.dispose()
 
 
-async def _seed_cost(database_url: str, tenant_id: UUID, day: date, cost_usd: Decimal) -> None:
+async def _seed_cost(
+    database_url: str, tenant_id: UUID, day: date, cost_usd: Decimal
+) -> None:
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -122,10 +126,15 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("ALTER ROLE gdev_app LOGIN PASSWORD :password"), {"password": password})
+            await conn.execute(
+                text("ALTER ROLE gdev_app LOGIN PASSWORD :password"),
+                {"password": password},
+            )
             await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
             await conn.execute(
-                text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app")
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app"
+                )
             )
     finally:
         await engine.dispose()
@@ -136,11 +145,15 @@ class _TrackingLLM:
     def __init__(self) -> None:
         self.calls = 0
 
-    def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
+    def run_agent(
+        self, text: str, user_id: str | None = None, max_turns: int = 5
+    ) -> TriageResult:
         self.calls += 1
         _ = (text, user_id, max_turns)
         return TriageResult(
-            classification=ClassificationResult(category="other", urgency="low", confidence=0.99),
+            classification=ClassificationResult(
+                category="other", urgency="low", confidence=0.99
+            ),
             extracted=ExtractedFields(platform="unknown"),
             draft_text="ok",
             input_tokens=10,
@@ -151,13 +164,17 @@ class _TrackingLLM:
 def test_budget_exhausted_returns_429_before_llm_call(migrated_postgres: str) -> None:
     tenant_id = uuid4()
     today = datetime.now(UTC).date()
-    asyncio.run(_seed_tenant(migrated_postgres, tenant_id, "budget-a", Decimal("0.0100")))
+    asyncio.run(
+        _seed_tenant(migrated_postgres, tenant_id, "budget-a", Decimal("0.0100"))
+    )
     asyncio.run(_seed_cost(migrated_postgres, tenant_id, today, Decimal("0.0100")))
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
     llm = _TrackingLLM()
     engine = create_async_engine(app_url)
-    store = EventStore(sqlite_path=None, db_session_factory=make_session_factory(engine))
+    store = EventStore(
+        sqlite_path=None, db_session_factory=make_session_factory(engine)
+    )
     agent = AgentService(
         settings=Settings(approval_categories=[]),
         store=store,
@@ -185,7 +202,9 @@ def test_budget_exhausted_returns_429_before_llm_call(migrated_postgres: str) ->
 def test_record_uses_upsert_and_accumulates_daily_usage(migrated_postgres: str) -> None:
     tenant_id = uuid4()
     today = datetime.now(UTC).date()
-    asyncio.run(_seed_tenant(migrated_postgres, tenant_id, "budget-b", Decimal("10.0000")))
+    asyncio.run(
+        _seed_tenant(migrated_postgres, tenant_id, "budget-b", Decimal("10.0000"))
+    )
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
     engine = create_async_engine(app_url)
@@ -199,8 +218,12 @@ def test_record_uses_upsert_and_accumulates_daily_usage(migrated_postgres: str) 
                     text("SET LOCAL app.current_tenant_id = :tenant_id"),
                     {"tenant_id": str(tenant_id)},
                 )
-                await ledger.record(tenant_id, today, 100, 20, Decimal("0.1000"), session)
-                await ledger.record(tenant_id, today, 100, 20, Decimal("0.1000"), session)
+                await ledger.record(
+                    tenant_id, today, 100, 20, Decimal("0.1000"), session
+                )
+                await ledger.record(
+                    tenant_id, today, 100, 20, Decimal("0.1000"), session
+                )
 
     async def _fetch_row() -> tuple[int, int, Decimal, int]:
         admin_engine = create_async_engine(migrated_postgres)
@@ -242,8 +265,12 @@ def test_check_budget_isolated_per_tenant(migrated_postgres: str) -> None:
     tenant_a = uuid4()
     tenant_b = uuid4()
     today = datetime.now(UTC).date()
-    asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "budget-c", Decimal("1.0000")))
-    asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "budget-d", Decimal("1.0000")))
+    asyncio.run(
+        _seed_tenant(migrated_postgres, tenant_a, "budget-c", Decimal("1.0000"))
+    )
+    asyncio.run(
+        _seed_tenant(migrated_postgres, tenant_b, "budget-d", Decimal("1.0000"))
+    )
     asyncio.run(_seed_cost(migrated_postgres, tenant_a, today, Decimal("1.0000")))
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
