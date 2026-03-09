@@ -1,0 +1,50 @@
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-01","user_id":"user-01","text":"Gameplay issue report #1","metadata":{"chat_id":"chat-01"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-02","user_id":"user-02","text":"Gameplay issue report #2","metadata":{"chat_id":"chat-02"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-03","user_id":"user-03","text":"Gameplay issue report #3","metadata":{"chat_id":"chat-03"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-04","user_id":"user-04","text":"Gameplay issue report #4","metadata":{"chat_id":"chat-04"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-05","user_id":"user-05","text":"Billing issue report #5 charged twice","metadata":{"chat_id":"chat-05"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-06","user_id":"user-06","text":"Gameplay issue report #6","metadata":{"chat_id":"chat-06"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-07","user_id":"user-07","text":"Account access issue #7 cannot login","metadata":{"chat_id":"chat-07"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-08","user_id":"user-08","text":"Gameplay issue report #8","metadata":{"chat_id":"chat-08"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-09","user_id":"user-09","text":"Gameplay issue report #9","metadata":{"chat_id":"chat-09"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-10","user_id":"user-10","text":"Billing issue report #10 charged twice","metadata":{"chat_id":"chat-10"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-11","user_id":"user-11","text":"Gameplay issue report #11","metadata":{"chat_id":"chat-11"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-12","user_id":"user-12","text":"Gameplay issue report #12","metadata":{"chat_id":"chat-12"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-13","user_id":"user-13","text":"Gameplay issue report #13","metadata":{"chat_id":"chat-13"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-14","user_id":"user-14","text":"Account access issue #14 cannot login","metadata":{"chat_id":"chat-14"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-15","user_id":"user-15","text":"Billing issue report #15 charged twice","metadata":{"chat_id":"chat-15"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-16","user_id":"user-16","text":"Gameplay issue report #16","metadata":{"chat_id":"chat-16"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-17","user_id":"user-17","text":"Gameplay issue report #17","metadata":{"chat_id":"chat-17"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-18","user_id":"user-18","text":"Gameplay issue report #18","metadata":{"chat_id":"chat-18"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-19","user_id":"user-19","text":"Gameplay issue report #19","metadata":{"chat_id":"chat-19"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-20","user_id":"user-20","text":"Billing issue report #20 charged twice","metadata":{"chat_id":"chat-20"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-21","user_id":"user-21","text":"Account access issue #21 cannot login","metadata":{"chat_id":"chat-21"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-22","user_id":"user-22","text":"Gameplay issue report #22","metadata":{"chat_id":"chat-22"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-23","user_id":"user-23","text":"Gameplay issue report #23","metadata":{"chat_id":"chat-23"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-24","user_id":"user-24","text":"Gameplay issue report #24","metadata":{"chat_id":"chat-24"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-25","user_id":"user-25","text":"Billing issue report #25 charged twice","metadata":{"chat_id":"chat-25"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-26","user_id":"user-26","text":"Gameplay issue report #26","metadata":{"chat_id":"chat-26"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-27","user_id":"user-27","text":"Gameplay issue report #27","metadata":{"chat_id":"chat-27"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-28","user_id":"user-28","text":"Account access issue #28 cannot login","metadata":{"chat_id":"chat-28"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-29","user_id":"user-29","text":"Gameplay issue report #29","metadata":{"chat_id":"chat-29"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-30","user_id":"user-30","text":"Billing issue report #30 charged twice","metadata":{"chat_id":"chat-30"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-31","user_id":"user-31","text":"Gameplay issue report #31","metadata":{"chat_id":"chat-31"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-32","user_id":"user-32","text":"Gameplay issue report #32","metadata":{"chat_id":"chat-32"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-33","user_id":"user-33","text":"Gameplay issue report #33","metadata":{"chat_id":"chat-33"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-34","user_id":"user-34","text":"Gameplay issue report #34","metadata":{"chat_id":"chat-34"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-35","user_id":"user-35","text":"Account access issue #35 cannot login","metadata":{"chat_id":"chat-35"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-36","user_id":"user-36","text":"Gameplay issue report #36","metadata":{"chat_id":"chat-36"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-37","user_id":"user-37","text":"Gameplay issue report #37","metadata":{"chat_id":"chat-37"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-38","user_id":"user-38","text":"Gameplay issue report #38","metadata":{"chat_id":"chat-38"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-39","user_id":"user-39","text":"Gameplay issue report #39","metadata":{"chat_id":"chat-39"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-40","user_id":"user-40","text":"Billing issue report #40 charged twice","metadata":{"chat_id":"chat-40"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-41","user_id":"user-41","text":"Gameplay issue report #41","metadata":{"chat_id":"chat-41"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-42","user_id":"user-42","text":"Account access issue #42 cannot login","metadata":{"chat_id":"chat-42"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-43","user_id":"user-43","text":"Gameplay issue report #43","metadata":{"chat_id":"chat-43"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-44","user_id":"user-44","text":"Gameplay issue report #44","metadata":{"chat_id":"chat-44"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-45","user_id":"user-45","text":"Billing issue report #45 charged twice","metadata":{"chat_id":"chat-45"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-46","user_id":"user-46","text":"Gameplay issue report #46","metadata":{"chat_id":"chat-46"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-47","user_id":"user-47","text":"Gameplay issue report #47","metadata":{"chat_id":"chat-47"}}
+{"tenant_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","message_id":"sample-48","user_id":"user-48","text":"Gameplay issue report #48","metadata":{"chat_id":"chat-48"}}
+{"tenant_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","message_id":"sample-49","user_id":"user-49","text":"Account access issue #49 cannot login","metadata":{"chat_id":"chat-49"}}
+{"tenant_id":"cccccccc-cccc-cccc-cccc-cccccccccccc","message_id":"sample-50","user_id":"user-50","text":"Billing issue report #50 charged twice","metadata":{"chat_id":"chat-50"}}

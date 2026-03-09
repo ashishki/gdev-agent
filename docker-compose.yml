@@ -15,6 +15,22 @@ services:
     networks:
       - gdev
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - /bin/bash
+      - -lc
+      - alembic upgrade head && python scripts/seed_db.py
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gdev
+
   agent:
     build:
       context: .
@@ -23,7 +39,17 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      ANTHROPIC_API_KEY: test-key
+      DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
+      REDIS_URL: redis://redis:6379
+      WEBHOOK_SECRET_ENCRYPTION_KEY: kL6h3kArf9nUP9QufR2gY6eebjY5J5A95fYYxRcbk3s=
+      JWT_SECRET: dev-jwt-secret-must-be-at-least-32b
+      APPROVE_SECRET: approve-secret
+      OTLP_ENDPOINT: http://tempo:4318/v1/traces
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -49,7 +75,7 @@ services:
       - gdev
 
   prometheus:
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus:v2.50.0
     command:
       - --config.file=/etc/prometheus/prometheus.yml
     ports:
@@ -63,7 +89,7 @@ services:
       - gdev
 
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:10.3.0
     ports:
       - "3000:3000"
     volumes:
@@ -73,6 +99,43 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    networks:
+      - gdev
+
+  tempo:
+    image: grafana/tempo:2.4.0
+    command:
+      - -config.file=/etc/tempo.yaml
+    ports:
+      - "3200:3200"
+      - "4318:4318"
+    volumes:
+      - ./docker/tempo/tempo.yaml:/etc/tempo.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    networks:
+      - gdev
+
+  loki:
+    image: grafana/loki:2.9.0
+    command:
+      - -config.file=/etc/loki/loki.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./docker/loki/loki.yaml:/etc/loki/loki.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
     networks:
       - gdev
 

@@ -1,52 +1,55 @@
 ---
-# META_ANALYSIS — Cycle 7
-_Date: 2026-03-08 · Type: targeted_
+# META_ANALYSIS — Cycle 8
+_Date: 2026-03-09 · Type: full_
 
 ## Project State
-Phase 4 (T13–T15) is complete and Phase 5 is in progress; next: T16 — OpenTelemetry Trace Instrumentation (then T17 → T18).
-Baseline: 111 pass, 12 skip, 0 fail — unchanged vs Cycle 6.
+Phase 6 (T19–T21) complete. Next: T22 — Eval REST Endpoint + Per-Tenant Baseline (Phase 7 start).
+Baseline: 138 pass, 13 skip (up from 111 pass / 12 skip in Cycle 7 — Phase 6 added 27 tests).
 
 ## Open Findings
 | ID | Sev | Description | Files | Status |
 |----|-----|-------------|-------|--------|
-| ARCH-1 | P1 | ADR-003 requires RS256 + JWKS, but runtime is HS256 and no JWKS endpoint exists | `app/config.py`, `app/middleware/auth.py`, `app/routers/auth.py`, `docs/adr/003-rbac-design.md` | Open (auth-phase gate) |
-| CODE-5 | P2 | ANN fallback keeps broad exception path without required warning/trace context | `app/jobs/rca_clusterer.py` | Open |
-| CODE-9 | P2 | Async RCA flow calls sync `summarize_cluster()`, risking event-loop blocking | `app/jobs/rca_clusterer.py`, `app/llm_client.py` | Open |
-| CODE-10 | P2 | `/metrics` route lacks explicit RBAC/exemption contract alignment | `app/main.py` | Open |
-| ARCH-2 | P2 | ADR-002 vector stack drift (docs say OpenAI/1536, runtime uses Voyage/1024) | `docs/adr/002-vector-database.md`, `app/config.py` | Open |
-| ARCH-3 | P2 | RCA observability remains partial; background OTel span hierarchy incomplete | `app/jobs/rca_clusterer.py`, `docs/observability.md` | Partial |
-| ARCH-4 | P2 | RCA cost path bypasses tenant CostLedger accounting | `app/jobs/rca_clusterer.py` | Open |
-| ARCH-6 | P2 | Cluster details endpoint uses time-window heuristic instead of persisted membership | `app/routers/clusters.py` | Open |
-| ARCH-7 | P2 | Service-layer boundary violation (`HTTPException` import in service module) | `app/agent.py` | Open |
-| P2-1 | P2 | Redis keys in hot paths are not tenant-namespaced | `app/dedup.py`, `app/approval_store.py`, `app/middleware/rate_limit.py` | Open (deferred) |
-| P2-9 | P2 | `_run_blocking()` helper duplicated across modules | `app/agent.py`, `app/approval_store.py` | Open (deferred) |
-| P2-10 | P2 | Module-level settings path can require API key at import time | `app/main.py`, `tests/conftest.py` | Open |
-| CODE-8 | P3 | ANN fallback exception path still lacks direct unit coverage | `app/jobs/rca_clusterer.py`, `tests/test_rca_clusterer.py` | Open |
-| ARCH-5 | P3 | RCA timeout (300s) diverges from ADR-005 example (120s) without explicit rationale | `app/jobs/rca_clusterer.py`, `docs/adr/005-orchestration-model.md` | Open |
+| CODE-5 | P2 | Silent broad exception in `_fetch_embeddings` — no warning/traceback on ANN fallback | `app/jobs/rca_clusterer.py:228` | Open |
+| CODE-8 | P3 | ANN fallback exception branch lacks direct unit test | `tests/test_rca_clusterer.py` | Open |
+| CODE-9 | P2 | Blocking sync `summarize` call in async RCA path — risks event-loop stall | `app/jobs/rca_clusterer.py:297`, `app/llm_client.py:274` | Open |
+| CODE-10 | P2 | `/metrics` route has no explicit RBAC/exemption contract | `app/main.py:362`, `app/middleware/auth.py:54` | Open |
+| CODE-11 | P2 | Redis hot-path keys not tenant-namespaced | `app/dedup.py:17`, `app/approval_store.py:25`, `app/middleware/rate_limit.py:95` | Open |
+| CODE-12 | P2 | Import-time `get_settings()` coupling requires API key at module load | `app/main.py:223` | Open |
+| ARCH-2 | P2 | ADR-002 vector stack drift: docs say OpenAI/1536, runtime uses Voyage/1024 | `docs/adr/002-vector-database.md:32`, `app/config.py:29` | Open |
+| ARCH-3 | P2 | RCA summarization LLM cost path bypasses `CostLedger` budget/accounting | `app/jobs/rca_clusterer.py:297`, `app/agent.py:151` | Open |
+| ARCH-4 | P2 | RCA OTel background span hierarchy incomplete | `app/jobs/rca_clusterer.py:177`, `app/jobs/rca_clusterer.py:191` | Partial |
+| ARCH-5 | P2 | `/metrics` exposure/auth contract not reconciled with spec security assumptions | `app/main.py:362`, `docs/spec.md:91` | Open |
+| ARCH-6 | P2 | Cluster detail endpoint uses time-window heuristic, not persisted membership | `app/routers/clusters.py:151` | Open |
+| ARCH-7 | P2 | `app/agent.py` imports `HTTPException` (transport type) — service/transport boundary violation | `app/agent.py:15` | Open |
+| ARCH-8 | P2 | Router layer carries business logic that belongs in service layer | `app/routers/auth.py:26`, `app/main.py:275` | Open |
+| P2-9 | P2 | `_run_blocking()` helper duplicated across `app/agent.py` and `app/store.py` | `app/agent.py`, `app/store.py` | Open |
+
+_Closed this cycle: ARCH-1 (ADR-003 HS256 contract — aligned and verified)._
+_P2-1 and P2-10 consolidated under CODE-11 and CODE-12 respectively._
 
 ## PROMPT_1 Scope (architecture)
-- Auth architecture decision path: resolve ADR-003 contract (RS256+JWKS vs HS256 amendment) and define required runtime/doc/test alignment.
-- Observability architecture completeness for Phase 5: verify trace topology for RCA background flows and `/metrics` exposure policy contract.
-- RCA contract integrity: reconcile CostLedger integration, timeout rationale, and cluster membership semantics with ADR/spec docs.
-- Architecture drift cleanup set: ADR-002 vector model mismatch and service-boundary contract (ARCH-7).
+- **eval subsystem (T22 new)**: `POST /eval/run` + `GET /eval/runs`; eval isolation flag (suppresses ticket writes, skips Linear/Telegram); regression detection via `eval_runs` table (F1 delta > 0.02); cost tracked under `category="eval"` in `cost_ledger` — verify ARCH-3 intersection (eval LLM calls must flow through CostLedger)
+- **load test harness (T23 new)**: Locust `load_tests/` directory; `check_kpis.py` KPI assertions (p50 < 2 s, p99 < 8 s, 5xx < 1%); HMAC signing utility in fixture loader
+- **docker compose full stack (T24 changed)**: adds Postgres (pgvector), Prometheus, Grafana, Loki, Tempo with health checks and startup ordering
+- **carry-forward risk in Phase 7**: CODE-9 (blocking sync summarize) and CODE-11 (Redis namespace) are highest-risk for new eval/load-test paths — eval path may trigger the same async blocking pattern; load test stresses the un-namespaced Redis keys
 
 ## PROMPT_2 Scope (code, priority order)
-1. `app/jobs/rca_clusterer.py` (changed + highest finding density: CODE-5/CODE-8/CODE-9/ARCH-3/ARCH-4/ARCH-5)
-2. `app/main.py` (changed; CODE-10 and settings-init path P2-10)
-3. `app/llm_client.py` (changed dependency for CODE-9)
-4. `app/middleware/auth.py` (security-critical; ARCH-1 validation)
-5. `app/routers/auth.py` (security-critical; JWKS/algorithm contract)
-6. `app/config.py` (security/architecture-critical config drift: ARCH-1, ARCH-2)
-7. `app/routers/clusters.py` (regression/contract check: ARCH-6)
-8. `app/agent.py` (service-boundary + helper duplication checks: ARCH-7, P2-9)
-9. `app/dedup.py` (tenant key namespace check: P2-1)
-10. `app/approval_store.py` (tenant key namespace + helper duplication: P2-1, P2-9)
-11. `app/middleware/rate_limit.py` (security-critical tenant namespace check: P2-1)
-12. `tests/conftest.py` and `tests/test_rca_clusterer.py` (import-time config and fallback-path coverage checks)
+1. `app/routers/eval.py` (new — T22)
+2. `eval/runner.py` (changed — T22: `db_session` param added; eval isolation flag)
+3. `app/main.py` (changed — T22: eval router included; also CODE-10/CODE-12/ARCH-5 open)
+4. `load_tests/locustfile.py`, `load_tests/scenarios/burst.py`, `load_tests/scenarios/steady.py`, `load_tests/check_kpis.py` (new — T23)
+5. `docker-compose.yml` (changed — T24)
+6. `app/jobs/rca_clusterer.py` (regression: CODE-5, CODE-9, ARCH-3, ARCH-4 all open here)
+7. `app/dedup.py`, `app/approval_store.py`, `app/middleware/rate_limit.py` (CODE-11 open)
+8. `app/middleware/auth.py` (CODE-10 / ARCH-5: /metrics auth contract)
+9. `app/agent.py` (ARCH-7: HTTPException import; P2-9: _run_blocking duplication)
 
 ## Cycle Type
-Targeted — no new phase boundary closed; this cycle focuses on carry-forward P1/P2 findings and Phase 5 observability/auth contract drift.
+Full — Phase 6 is complete (T19–T21 done, ARCH-1 closed). Phase 7 (T22–T24) is the new scope. No targeted hotfix outstanding.
 
 ## Notes for PROMPT_3
-Prioritize consolidation on: (1) explicit decision/status for ARCH-1, (2) whether CODE-9 and CODE-10 create operational risk for Phase 5 rollout, and (3) which open items remain blockers vs deferred debt before starting Phase 6 auth hardening work.
+- Several P2 findings (CODE-9, CODE-11, ARCH-3, ARCH-7, ARCH-8) have been open 3+ cycles; consolidation should recommend whether each warrants a standalone FIX task or can be bundled into the next phase gate.
+- T22 eval isolation + cost tracking is the highest-risk new feature: verify that eval LLM calls flow through `CostLedger.check_budget()` and `record()` (closes ARCH-3 intersection), and that output guard still runs (contract requires it on every LLM response).
+- Baseline jump (111 → 138 pass) is healthy; confirm no integration-test category was accidentally promoted to unit in Phase 6.
+- ARCH-1 closure: all carry-forward tables in docs should reflect CLOSED status before Cycle 9.
 ---

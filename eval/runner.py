@@ -4,20 +4,26 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
+
+import fakeredis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agent import AgentService
+from app.approval_store import RedisApprovalStore
+from app.cost_ledger import CostLedger
+from app.config import Settings
+from app.schemas import WebhookRequest
+from app.store import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-import fakeredis
-
-from app.agent import AgentService
-from app.approval_store import RedisApprovalStore
-from app.config import Settings
-from app.schemas import WebhookRequest
-from app.store import EventStore
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -91,8 +97,118 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
         "guard_blocks": guard_blocks,
         "accuracy": round(correct / total, 4) if total else 0.0,
         "guard_block_rate": guard_block_rate,
+        "cost_usd": 0.0,
         "per_label_accuracy": per_label_accuracy,
     }
+
+
+async def run_eval_job(
+    *,
+    cases_path: Path,
+    tenant_id: UUID,
+    eval_run_id: UUID,
+    db_session: AsyncSession,
+    agent: AgentService | None = None,
+) -> dict[str, Any]:
+    """Run eval for one tenant and persist eval/cost records."""
+    started_at = datetime.now(UTC)
+    async with db_session.begin():
+        await db_session.execute(
+            text("SET LOCAL app.current_tenant_id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+        await db_session.execute(
+            text(
+                """
+                UPDATE eval_runs
+                SET started_at = :started_at, status = :status
+                WHERE eval_run_id = :eval_run_id AND tenant_id = :tenant_id
+                """
+            ),
+            {
+                "started_at": started_at,
+                "status": "running",
+                "eval_run_id": str(eval_run_id),
+                "tenant_id": str(tenant_id),
+            },
+        )
+
+    async with db_session.begin():
+        await db_session.execute(
+            text("SET LOCAL app.current_tenant_id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+        prior_row = (
+            await db_session.execute(
+                text(
+                    """
+                    SELECT f1_score
+                    FROM eval_runs
+                    WHERE tenant_id = :tenant_id
+                      AND eval_run_id != :eval_run_id
+                      AND f1_score IS NOT NULL
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": str(tenant_id), "eval_run_id": str(eval_run_id)},
+            )
+        ).mappings().first()
+
+    report = run_eval(cases_path, agent)
+    current_f1 = Decimal(str(report["accuracy"]))
+    prior_f1 = (
+        Decimal(str(prior_row["f1_score"]))
+        if prior_row and prior_row["f1_score"] is not None
+        else None
+    )
+    regression_alert = bool(
+        prior_f1 is not None and current_f1 < (prior_f1 - Decimal("0.02"))
+    )
+    status = "completed_with_regression" if regression_alert else "completed"
+    completed_at = datetime.now(UTC)
+    cost_usd = Decimal(str(report.get("cost_usd", 0.0)))
+
+    async with db_session.begin():
+        await db_session.execute(
+            text("SET LOCAL app.current_tenant_id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+        await db_session.execute(
+            text(
+                """
+                UPDATE eval_runs
+                SET completed_at = :completed_at,
+                    f1_score = :f1_score,
+                    guard_block_rate = :guard_block_rate,
+                    cost_usd = :cost_usd,
+                    status = :status
+                WHERE eval_run_id = :eval_run_id AND tenant_id = :tenant_id
+                """
+            ),
+            {
+                "completed_at": completed_at,
+                "f1_score": current_f1,
+                "guard_block_rate": Decimal(str(report["guard_block_rate"])),
+                "cost_usd": cost_usd,
+                "status": status,
+                "eval_run_id": str(eval_run_id),
+                "tenant_id": str(tenant_id),
+            },
+        )
+        await CostLedger().record(
+            tenant_id=tenant_id,
+            day=date.today(),
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=cost_usd,
+            db=db_session,
+        )
+
+    report["eval_run_id"] = str(eval_run_id)
+    report["status"] = status
+    report["regression_alert"] = regression_alert
+    return report
 
 
 def main() -> None:

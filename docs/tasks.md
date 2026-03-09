@@ -1286,7 +1286,7 @@ if prior_run and current_f1 < prior_run.accuracy_f1 - 0.02:
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T11
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Implement the Locust load test harness from `docs/load-profile.md`.
@@ -1340,7 +1340,7 @@ Write a Python script `load_tests/check_kpis.py` that reads Locust CSV output an
 **Owner:** Codex
 **Priority:** P1
 **Depends-on:** T01, T16, T17, T18
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Update `docker-compose.yml` to include Postgres (pgvector), Grafana, Prometheus, Loki, Tempo.

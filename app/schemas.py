@@ -357,6 +357,12 @@ class EvalRunListResponse(BaseModel):
     total: None = None
 
 
+class EvalRunTriggerResponse(BaseModel):
+    """Response payload for POST /eval/run."""
+
+    eval_run_id: UUID
+
+
 class ClusterListResponse(BaseModel):
     """Envelope for cluster list responses."""
 

@@ -39,6 +39,7 @@ from app.routers.agents import router as agents_router
 from app.routers.analytics import router as analytics_router
 from app.routers.auth import router as auth_router
 from app.routers.clusters import router as clusters_router
+from app.routers.eval import router as eval_router
 from app.routers.tickets import router as tickets_router
 from app.schemas import (
     ApproveRequest,
@@ -236,6 +237,7 @@ app.include_router(tickets_router)
 app.include_router(clusters_router)
 app.include_router(analytics_router)
 app.include_router(agents_router)
+app.include_router(eval_router)
 
 
 @app.get("/health", response_model=HealthResponse)
