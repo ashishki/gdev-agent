@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,14 +15,18 @@ from eval import runner as eval_runner
 
 
 class _ResultStub:
-    def __init__(self, row: dict[str, object] | None = None) -> None:
+    def __init__(self, row: dict[str, object] | None = None, rows: list[dict[str, object]] | None = None) -> None:
         self._row = row
+        self._rows = rows or []
 
     def mappings(self) -> "_ResultStub":
         return self
 
     def first(self) -> dict[str, object] | None:
         return self._row
+
+    def all(self) -> list[dict[str, object]]:
+        return self._rows
 
 
 class _BeginStub:
@@ -33,9 +38,14 @@ class _BeginStub:
 
 
 class _SessionStub:
-    def __init__(self, prior_f1: str | None = None) -> None:
+    def __init__(
+        self,
+        prior_f1: str | None = None,
+        eval_rows: list[dict[str, object]] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.prior_f1 = prior_f1
+        self.eval_rows = eval_rows or []
 
     def begin(self) -> _BeginStub:
         return _BeginStub()
@@ -47,6 +57,8 @@ class _SessionStub:
             if self.prior_f1 is None:
                 return _ResultStub(None)
             return _ResultStub({"f1_score": self.prior_f1})
+        if "FROM eval_runs" in sql:
+            return _ResultStub(rows=self.eval_rows)
         return _ResultStub(None)
 
 
@@ -125,6 +137,46 @@ async def test_start_eval_run_returns_id_and_inserts_row(monkeypatch) -> None:
     assert insert_rows
     assert insert_rows[0]["status"] == "queued"
     assert created_tasks
+
+
+@pytest.mark.asyncio
+async def test_list_eval_runs_returns_newest_first_page() -> None:
+    tenant_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SessionStub(
+        eval_rows=[
+            {
+                "eval_run_id": uuid4(),
+                "started_at": now,
+                "completed_at": now,
+                "f1_score": Decimal("0.920"),
+                "guard_block_rate": Decimal("1.000"),
+                "cost_usd": Decimal("0.2000"),
+                "status": "completed",
+                "created_at": now,
+            },
+            {
+                "eval_run_id": uuid4(),
+                "started_at": now - timedelta(minutes=1),
+                "completed_at": now - timedelta(minutes=1),
+                "f1_score": Decimal("0.900"),
+                "guard_block_rate": Decimal("1.000"),
+                "cost_usd": Decimal("0.2100"),
+                "status": "completed",
+                "created_at": now - timedelta(minutes=1),
+            },
+        ]
+    )
+
+    response = await eval_router.list_eval_runs(
+        request=SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id)),
+        cursor=None,
+        limit=1,
+        db=session,  # type: ignore[arg-type]
+    )
+
+    assert response.data[0].status == "completed"
+    assert response.cursor is not None
 
 
 def test_run_eval_default_agent_uses_non_persistent_store(monkeypatch, tmp_path: Path) -> None:

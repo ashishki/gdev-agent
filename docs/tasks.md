@@ -28,6 +28,16 @@ Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 6)
 
 ---
 
+## Cycle 8 Review Blockers (2026-03-09) — MUST RESOLVE BEFORE T22 MERGE
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 8)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| FIX-9 (REG-1) | P1 | 14 test regressions since Cycle 7 — `test_cost_ledger`, `test_isolation`, `test_llm_client`, `test_store` broken by T22 schema/interface changes | pending |
+
+---
+
 ## Cycle 7 Review Blockers (2026-03-08) — CONSOLIDATED
 
 Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 7)

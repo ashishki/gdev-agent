@@ -13,8 +13,9 @@ from fastapi.responses import JSONResponse
 
 from app import main
 from app.routers.agents import list_agents
-from app.routers.analytics import list_audit, list_cost_metrics, list_eval_runs
+from app.routers.analytics import list_audit, list_cost_metrics
 from app.routers.clusters import get_cluster, list_clusters
+from app.routers.eval import list_eval_runs
 from app.routers.tickets import get_ticket, list_tickets
 
 

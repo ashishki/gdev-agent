@@ -17,8 +17,6 @@ from app.schemas import (
     CostMetricItem,
     CostMetricResponse,
     ErrorResponse,
-    EvalRunItem,
-    EvalRunListResponse,
 )
 
 router = APIRouter()
@@ -172,66 +170,3 @@ async def list_cost_metrics(
     data = [CostMetricItem.model_validate(dict(row)) for row in page_rows]
     next_cursor = data[-1].created_at.isoformat() if len(rows) > limit else None
     return CostMetricResponse(data=data, cursor=next_cursor, total=None)
-
-
-@router.get("/eval/runs", response_model=EvalRunListResponse)
-async def list_eval_runs(
-    request: Request,
-    cursor: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=100),
-    db: AsyncSession = Depends(get_db_session),
-    _: None = require_role("viewer", "support_agent", "tenant_admin"),
-) -> EvalRunListResponse | JSONResponse:
-    """List eval run history for the current tenant."""
-    parsed_cursor = _parse_cursor(cursor)
-    if isinstance(parsed_cursor, JSONResponse):
-        return parsed_cursor
-
-    if parsed_cursor is None:
-        statement = text(
-            """
-            SELECT
-                eval_run_id,
-                started_at,
-                completed_at,
-                f1_score,
-                guard_block_rate,
-                cost_usd,
-                status,
-                created_at
-            FROM eval_runs
-            WHERE tenant_id = :tenant_id
-            ORDER BY created_at DESC
-            LIMIT :limit
-            """
-        )
-        params = {"tenant_id": str(request.state.tenant_id), "limit": limit + 1}
-    else:
-        statement = text(
-            """
-            SELECT
-                eval_run_id,
-                started_at,
-                completed_at,
-                f1_score,
-                guard_block_rate,
-                cost_usd,
-                status,
-                created_at
-            FROM eval_runs
-            WHERE tenant_id = :tenant_id AND created_at < :cursor
-            ORDER BY created_at DESC
-            LIMIT :limit
-            """
-        )
-        params = {
-            "tenant_id": str(request.state.tenant_id),
-            "cursor": parsed_cursor,
-            "limit": limit + 1,
-        }
-
-    rows = (await db.execute(statement, params)).mappings().all()
-    page_rows = rows[:limit]
-    data = [EvalRunItem.model_validate(dict(row)) for row in page_rows]
-    next_cursor = data[-1].created_at.isoformat() if len(rows) > limit else None
-    return EvalRunListResponse(data=data, cursor=next_cursor, total=None)

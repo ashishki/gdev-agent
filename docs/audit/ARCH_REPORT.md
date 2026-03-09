@@ -6,21 +6,21 @@ _Date: 2026-03-09_
 
 | Component | Verdict | Note |
 |-----------|---------|------|
-| eval subsystem — `POST /eval/run` / `GET /eval/runs` (T22) | VIOLATION | `app/routers/eval.py` does not exist; T22 not implemented |
-| eval runner extension (T22) | VIOLATION | `eval/runner.py` lacks: `db_session` param, eval isolation flag, CostLedger integration, `eval_runs` persistence |
-| load test harness — `load_tests/` (T23) | VIOLATION | Directory does not exist; T23 not implemented |
-| docker-compose full stack (T24) | DRIFT | Prometheus + Grafana present; Loki and Grafana Tempo absent; OTLP Collector absent |
-| `app/agent.py` — service layer | VIOLATION | Imports `HTTPException` from `fastapi` (transport type leak, ARCH-7 open) |
-| `app/routers/auth.py` — route layer | DRIFT | Route handler contains business logic: bcrypt, JWT minting, raw DB queries (ARCH-8 open) |
-| `GET /metrics` — auth contract | DRIFT | Exempt from JWTMiddleware; unreconciled with spec §5 security assumption 2 (ARCH-5 open) |
-| `app/middleware/auth.py` — JWT validation | PASS | HS256 blocklist enforcement correct; ARCH-1 closed |
-| `app/middleware/rate_limit.py` — rate limiting | PASS | Sliding window per user; Retry-After header present |
-| `app/middleware/signature.py` — HMAC auth | PASS | Per-tenant secret with Fernet decrypt |
-| APScheduler — background jobs | DRIFT | `max_instances=1` absent from `scheduler.add_job` call (ARCH-12 new); runaway-job protection implicit only |
-| `app/jobs/rca_clusterer.py` — RCA pipeline | DRIFT | LLM summarization bypasses CostLedger (ARCH-3 open); blocking sync call in async path (CODE-9 open) |
-| Postgres + RLS | PASS | pgvector image, RLS migrations, tenant context via `SET LOCAL` |
-| Redis — key namespace | DRIFT | Actual keys lack `{tenant_id}:` prefix mandated by spec §5 item 4 and data-map §3 (CODE-11 open) |
-| pgvector — embedding model | DRIFT | ADR-002 specifies `VECTOR(1536)` / `text-embedding-3-small`; runtime is `VECTOR(1024)` / `voyage-3-lite` (ARCH-2 open) |
+| `app/agent.py` (AgentService) | VIOLATION | Imports `HTTPException` from FastAPI (transport type) at line 15 — ARCH-7 |
+| `app/routers/auth.py` | DRIFT | Route handler contains full business logic: bcrypt comparison, JWT construction, credential lookup — ARCH-8 |
+| `app/routers/eval.py` (POST /eval/run) | DRIFT | Route handler performs direct DB INSERT; `GET /eval/runs` entirely absent — ARCH-9 |
+| `app/routers/clusters.py` (cluster detail) | DRIFT | Returns tickets via time-window heuristic on `ticket_embeddings`, not persisted cluster membership — ARCH-6 |
+| `app/main.py` (/webhook) | PASS | Business logic fully delegated to `AgentService` |
+| `app/main.py` (/approve) | PASS | Delegates to `AgentService.approve()` |
+| `app/main.py` (/metrics) | DRIFT | Exempt from JWT auth; no RBAC; violates spec §5 security assumption — ARCH-5 |
+| `app/middleware/auth.py` | PASS | HS256 JWT, blocklist, fail-closed; exemption list explicit |
+| `app/middleware/rate_limit.py` | DRIFT | Redis keys not tenant-namespaced (`ratelimit:{user}` vs spec `{tenant_id}:{user}`) — CODE-11 |
+| `app/dedup.py` | DRIFT | Redis key `dedup:{message_id}` missing `{tenant_id}:` prefix — CODE-11 |
+| `app/approval_store.py` | DRIFT | Redis key `pending:{id}` missing `{tenant_id}:` prefix — CODE-11 |
+| `app/jobs/rca_clusterer.py` | DRIFT | Zero OTel span instrumentation; no trace/span imports found — ARCH-4 |
+| `eval/runner.py` | DRIFT | `CostLedger.record()` called ✅; `CostLedger.check_budget()` absent before LLM call — ARCH-3 |
+| `load_tests/` (T23) | PASS | No app-layer architectural concern; correct isolation as test harness |
+| `docker-compose.yml` (T24) | PASS | Full observability stack (Prometheus, Grafana, Loki, Tempo) consistent with ADR-004 |
 
 ---
 
@@ -28,78 +28,71 @@ _Date: 2026-03-09_
 
 | ADR | Verdict | Note |
 |-----|---------|------|
-| ADR-001 Storage: PostgreSQL + RLS + Redis | DRIFT | Storage topology correct; Redis key namespace lacks tenant prefix (CODE-11); spec §5 item 4 violated |
-| ADR-002 Vector DB: pgvector conditional | DRIFT | Decision specifies `VECTOR(1536)` + OpenAI `text-embedding-3-small`; data-map and config use `VECTOR(1024)` + `voyage-3-lite`; ADR not updated (ARCH-2) |
-| ADR-003 RBAC: JWT roles / HS256 | PASS | ADR-003 explicitly adopted HS256 v1; ARCH-1 closed Cycle 8 |
-| ADR-004 Observability: OTel + Prometheus + Loki + Grafana | DRIFT | OTel spans and Prometheus metrics implemented; docker-compose.yml missing Loki, Grafana Tempo, OTLP Collector (ARCH-11 new) |
-| ADR-005 Orchestration: APScheduler + Claude tool_use ≤5 turns | DRIFT | `max_instances=1` absent from `scheduler.add_job` at `app/main.py:181` (ARCH-12 new); ADR-005 requires it explicitly |
+| ADR-001 Storage: PostgreSQL + RLS + Redis | DRIFT | Postgres + RLS implemented ✅; Redis key namespacing violates isolation model (CODE-11) |
+| ADR-002 Vector DB: pgvector conditional | VIOLATION | ADR specifies `VECTOR(1536)` + OpenAI `text-embedding-3-small`; runtime uses `VECTOR(1024)` + Voyage AI `voyage-3-lite`; ADR not updated — ARCH-2 |
+| ADR-003 RBAC: HS256 | PASS | ADR-003 body explicitly mandates HS256 for v1; implementation matches; ARCH-1 closed in Cycle 7 |
+| ADR-004 Observability: OTel + Prometheus | DRIFT | Prometheus metrics + Docker stack ✅; RCA Clusterer has zero OTel span instrumentation — ARCH-4 |
+| ADR-005 Orchestration: Claude tool_use ≤5 turns | PASS | APScheduler in use; eval uses `asyncio.create_task` (on-demand, acceptable per ADR-005); tool_use ≤5 turns confirmed |
 
 ---
 
 ## Architecture Findings
 
-### ARCH-9 [P1] — T22 eval subsystem not implemented
-Symptom: `POST /eval/run` and `GET /eval/runs` required by spec §8 are absent.
-Evidence: `app/routers/eval.py` — file does not exist; `app/main.py:238` — no eval router registered.
-Root cause: T22 not yet started; router, service integration, and `eval_runs` persistence all missing.
-Impact: Spec §9 regression gate ("No eval run may drop F1 by > 0.02 vs. prior run without alert") is unenforceable. ARCH-3 intersection unresolved: eval LLM calls do not flow through CostLedger.
-Fix: Implement `app/routers/eval.py` with `POST /eval/run` (JWT `tenant_admin`) and `GET /eval/runs` (JWT any role); extend `eval/runner.py` with `db_session` param, eval isolation flag (`suppress_ticket_writes=True`, skip Linear/Telegram), `CostLedger.check_budget()` + `record()` under `category="eval"`, and `eval_runs` table persistence; register router in `app/main.py`.
+### ARCH-2 [P2] — ADR-002 vector stack drift: docs say OpenAI/1536, runtime uses Voyage/1024
+Symptom: ADR-002 specifies `VECTOR(1536)` + `text-embedding-3-small` (OpenAI). Runtime config and data-map use `VECTOR(1024)` + `voyage-3-lite` (Voyage AI).
+Evidence: `docs/adr/002-vector-database.md:32` vs `app/config.py:29` + `docs/data-map.md:116`
+Root cause: ADR written before embedding model was changed; data-map.md was updated but ADR was not.
+Impact: ADR is the authoritative architectural record; drift misleads reviewers and future engineers about the vector stack.
+Fix: Update `docs/adr/002-vector-database.md` — change decision section to `VECTOR(1024)`, model to `voyage-3-lite` (Voyage AI), add amendment note with date.
 
-### ARCH-10 [P2] — T23 load test harness not implemented
-Symptom: `load_tests/` directory expected by Cycle 8 scope does not exist.
-Evidence: `load_tests/` — directory not found; no `locustfile.py`, `check_kpis.py`, or HMAC signing fixture.
-Root cause: T23 not yet started.
-Impact: No automated KPI gate (p50 < 2 s, p99 < 8 s, 5xx < 1 %); CODE-9 (blocking sync summarize) and CODE-11 (un-namespaced Redis keys) carry elevated risk with no regression harness to surface them.
-Fix: Create `load_tests/locustfile.py` (steady + burst scenarios), `load_tests/check_kpis.py` (KPI assertions), HMAC signing fixture under `load_tests/fixtures/`; wire into CI.
+### ARCH-3 [P2] — Eval LLM cost path bypasses CostLedger budget check
+Symptom: `eval/runner.py` calls `CostLedger.record()` (post-call accounting) but does not call `CostLedger.check_budget()` before invoking the LLM.
+Evidence: `eval/runner.py:199` (record ✅); no `check_budget` call anywhere in `eval/runner.py` or `app/routers/eval.py`
+Root cause: Eval path added without integrating the pre-call budget guard.
+Impact: Eval runs can exhaust tenant budgets unchecked; violates spec §5 rule #6 ("quotas enforced before the API call is made").
+Fix: Call `CostLedger(db_session).check_budget(tenant_id)` at the start of `run_eval_job` before the first LLM invocation; raise `BudgetExhaustedError` if over limit.
 
-### ARCH-11 [P2] — docker-compose.yml missing Loki and Grafana Tempo (T24 partial)
-Symptom: T24 scope includes Loki and Tempo; current `docker-compose.yml` has neither.
-Evidence: `docker-compose.yml` services: postgres, agent, redis, prometheus, grafana, n8n — Loki/Promtail and Tempo absent.
-Root cause: T24 partially applied; only the Prometheus + Grafana slice landed.
-Impact: ADR-004 DRIFT confirmed. No log aggregation or distributed trace backend in the dev stack. OTel spans have no receiver locally; trace-to-log correlation not exercisable.
-Fix: Add `loki`, `promtail`, and `tempo` services to `docker-compose.yml`; add OTLP Collector service or configure direct OTLP export to Tempo (`OTLP_ENDPOINT=http://tempo:4318` in dev env). Use `--profile observability` flag to keep default compose lightweight (ADR-004 mitigation).
+### ARCH-4 [P2] — RCA OTel background span hierarchy incomplete
+Symptom: `app/jobs/rca_clusterer.py` has zero OpenTelemetry imports or span instrumentation.
+Evidence: grep for `trace|span|tracer|opentelemetry` in `app/jobs/rca_clusterer.py` returns no matches.
+Root cause: OTel instrumentation was not added when the RCA job was implemented.
+Impact: ADR-004 mandates spans per pipeline stage including background jobs (`agent.embed` linked trace per spec). RCA runs are invisible in distributed tracing; latency breakdown and error correlation are impossible.
+Fix: Add `tracer = trace.get_tracer(__name__)`; wrap `run_for_tenant`, `_fetch_embeddings`, `_upsert_cluster`, and summarize calls in named spans with `tenant_id_hash` attribute.
 
-### ARCH-12 [P2] — APScheduler `max_instances=1` not enforced (ADR-005 drift)
-Symptom: ADR-005 explicitly requires `max_instances=1` on the RCA job to prevent overlapping runs; the actual call omits it.
-Evidence: `app/main.py:181` — `scheduler.add_job(rca_clusterer.run_with_timeout, "interval", minutes=15, id="rca_clusterer")` — no `max_instances` kwarg; ADR-005 decision sample requires it.
-Root cause: Implementation omitted the guard; APScheduler `AsyncIOScheduler` defaults to `max_instances=1` implicitly but this is not documented behaviour to rely upon.
-Impact: If APScheduler version or job type changes, overlapping RCA runs could fire simultaneously, doubling LLM cost and creating DB write conflicts on `cluster_summaries`.
-Fix: Add `max_instances=1` explicitly to the `scheduler.add_job` call.
+### ARCH-5 [P2] — /metrics exposure/auth contract not reconciled with spec security assumptions
+Symptom: `GET /metrics` is exempt from JWT auth (hardcoded in `JWTMiddleware`) and has no RBAC dependency in the route.
+Evidence: `app/main.py:364-366` (no auth); `app/middleware/auth.py:55` (`GET /metrics` in exemption list)
+Root cause: Prometheus scrape requirement conflicts with JWT auth; exemption added without reconciling spec security assumptions.
+Impact: Prometheus metrics (including `gdev_llm_cost_usd_total{tenant}`, `gdev_pending_total{tenant}`) are publicly readable; violates spec §5 assumption #2 and leaks per-tenant operational data.
+Fix: Record an explicit architectural decision: (a) restrict scrape to internal network only (infra enforced, no code change) or (b) add Bearer token auth to scrape job and remove exemption. Either choice must be captured in an ADR amendment or new ADR.
 
-### ARCH-2 [P2] — ADR-002 vector stack drift: OpenAI/1536 vs Voyage/1024 (carry-forward)
-Symptom: ADR-002 specifies `VECTOR(1536)` and `text-embedding-3-small`; runtime uses `VECTOR(1024)` / `voyage-3-lite`.
-Evidence: `docs/adr/002-vector-database.md:32` (`VECTOR(1536)`, `text-embedding-3-small`); `docs/data-map.md:116` (`VECTOR(1024)`, `voyage-3-lite`); `app/config.py:29` (Voyage model).
-Root cause: Embedding model switched post-ADR; ADR not updated.
-Impact: ADR is the authoritative decision record; stale content misleads future engineers and auditors.
-Fix: Update ADR-002 Decision section: dimension → 1024, model → `voyage-3-lite`, update cost and index memory estimates. Status remains Accepted.
+### ARCH-6 [P2] — Cluster detail endpoint uses time-window heuristic, not persisted membership
+Symptom: `GET /clusters/{cluster_id}` returns ticket IDs by querying `ticket_embeddings` within `first_seen`/`last_seen` window, not from a persisted cluster membership table.
+Evidence: `app/routers/clusters.py:151-175`
+Root cause: No `cluster_memberships` join table exists; `cluster_summaries` has no ticket-to-cluster link.
+Impact: Cluster detail is approximate; tickets that arrived in the time window but are not semantic members of the cluster are returned, misleading operators during incident triage.
+Fix: Add `cluster_ticket_memberships(cluster_id, ticket_id, tenant_id)` table populated by the RCA clusterer. Update `GET /clusters/{cluster_id}` to query this table instead of the time window.
 
-### ARCH-3 [P2] — eval LLM calls bypass CostLedger (carry-forward + T22 intersection)
-Symptom: `eval/runner.py` instantiates `AgentService` with `fakeredis` and no DB session; LLM calls during eval do not pass through `CostLedger.check_budget()` or `record()`.
-Evidence: `eval/runner.py:39-40` — `AgentService(settings=settings, store=EventStore(sqlite_path=None), approval_store=...)` — no `db_session_factory`; `app/agent.py:151` — CostLedger requires DB session.
-Root cause: `eval/runner.py` is a standalone script predating the CostLedger service; never extended for budget tracking.
-Impact: Eval runs can exhaust per-tenant LLM budgets silently; no cost accounting for eval workload.
-Fix: Resolved by ARCH-9 — new `POST /eval/run` endpoint must inject `db_session_factory` and call `CostLedger.record()` under `category="eval"`.
+### ARCH-7 [P2] — agent.py imports HTTPException (service/transport boundary violation)
+Symptom: `app/agent.py` imports `HTTPException` from FastAPI at module level.
+Evidence: `app/agent.py:15` — `from fastapi import HTTPException`
+Root cause: HTTPException used directly in the service layer instead of defining domain exceptions.
+Impact: Service layer has a hard dependency on the FastAPI transport layer, preventing reuse in non-HTTP contexts (CLI, background jobs, tests) and violating layered architecture.
+Fix: Define `class AgentError(Exception)` and subclasses in `app/exceptions.py`; raise domain exceptions in `app/agent.py`; catch and convert to `HTTPException` in route handlers only.
 
-### ARCH-5 [P2] — `/metrics` auth exemption not reconciled with spec security contract (carry-forward)
-Symptom: `GET /metrics` is in `JWTMiddleware`'s exempt set; spec §5 item 2 states "All API calls require a JWT Bearer token."
-Evidence: `app/middleware/auth.py:54` — `("GET", "/metrics")` in exempt set; `docs/spec.md:91` — security assumption 2.
-Root cause: Prometheus scrape model cannot carry JWT tokens; exemption added pragmatically without updating the spec.
-Impact: Metrics endpoint publicly accessible on the service port; in production a misconfigured network boundary could expose tenant-level counters.
-Fix: Option A — add carve-out note to spec.md §5 item 2 ("Prometheus scrape path is network-protected; JWT exemption intentional"); Option B — add optional bearer-token guard via `METRICS_AUTH_TOKEN` env var. Document chosen approach in both spec and middleware.
+### ARCH-8 [P2] — Router layer carries business logic
+Symptom: `app/routers/auth.py` performs credential lookup, bcrypt comparison, and JWT construction inline. `app/routers/eval.py` performs direct DB INSERT for eval_run record creation in the route handler.
+Evidence: `app/routers/auth.py:26-96`; `app/routers/eval.py:77-95`
+Root cause: No `AuthService` or `EvalService` exists; logic written directly in route handlers.
+Impact: Business logic is untestable without HTTP context; violates layered architecture.
+Fix: Extract credential verification + JWT issuance to `app/services/auth_service.py`; extract eval run creation to `app/services/eval_service.py`. Route handlers call service methods only.
 
-### ARCH-7 [P2] — `app/agent.py` imports `HTTPException` (transport type) — service/transport boundary violation (carry-forward)
-Symptom: Service layer imports a FastAPI HTTP response type.
-Evidence: `app/agent.py:15` — `from fastapi import HTTPException`.
-Root cause: Error propagation convenience; HTTPException used to surface 400/401 errors from within the service.
-Impact: Service layer coupled to FastAPI; cannot be reused in non-HTTP contexts (CLI eval runner, background jobs).
-Fix: Define domain exceptions in `app/exceptions.py`; catch and map to HTTPException in route handlers only.
-
-### ARCH-8 [P2] — Router layer carries business logic that belongs in service layer (carry-forward)
-Symptom: `app/routers/auth.py` contains bcrypt verification, JWT minting, raw SQL, and constant-time dummy hash — all service-layer concerns.
-Evidence: `app/routers/auth.py:26-96` — entire business flow inline in route handler; `app/main.py:275` — tenant_id resolution and dedup logic inline in webhook handler.
-Root cause: Incremental additions without extracting service layers.
-Impact: Route handlers untestable without HTTP context; business logic cannot be reused; instrumentation scattered.
-Fix: Extract `AuthService.authenticate(email, password, tenant_slug, db_session) -> JWT`; call from route handler only.
+### ARCH-9 [P2] — GET /eval/runs endpoint missing (AC-2 open)
+Symptom: spec §8 mandates `GET /eval/runs` (JWT auth, list eval run history). Only `POST /eval/run` exists.
+Evidence: `app/routers/eval.py` — no `@router.get` decorator present; spec §8 API surface table row unimplemented.
+Root cause: T22 is in-progress; AC-2 was not completed before Cycle 8 snapshot.
+Impact: API surface gap; eval run history is unqueryable by clients; spec contract not fulfilled.
+Fix: Implement `GET /eval/runs` with cursor pagination, `require_role("tenant_admin", "support_agent")`, response mapped from `eval_runs` table.
 
 ---
 
@@ -107,11 +100,10 @@ Fix: Extract `AuthService.authenticate(email, password, tenant_slug, db_session)
 
 | File | Section | Change |
 |------|---------|--------|
-| `docs/ARCHITECTURE.md` | Version header | Bump v2.1 → v3.0; record Phase 6 (T19–T21) complete; add Phase 7 scope |
-| `docs/ARCHITECTURE.md` | Component Status table | Add eval subsystem (T22: unimplemented), load test harness (T23: unimplemented), docker-compose T24 (partial) rows |
-| `docs/adr/002-vector-database.md` | Decision section | Update `VECTOR(1536)` → `VECTOR(1024)`; `text-embedding-3-small` → `voyage-3-lite`; update cost/memory estimates |
-| `docs/spec.md` | §5 Security Assumptions item 2 | Add carve-out for `/metrics` Prometheus exemption with rationale |
-| `docs/data-map.md` | §3 Redis Key Schema | Mark keys as pending CODE-11 fix; confirm tenant-namespaced format once resolved |
+| `docs/adr/002-vector-database.md` | Decision | Change `VECTOR(1536)` → `VECTOR(1024)`; model from `text-embedding-3-small` (OpenAI) → `voyage-3-lite` (Voyage AI); add amendment note dated 2026-03-09 |
+| `docs/ARCHITECTURE.md` | §2.1 Component Status | Add eval subsystem row: `app/routers/eval.py` + `eval/runner.py` — status `In Progress (T22)`; note AC-2 open |
+| `docs/ARCHITECTURE.md` | §2.1 Component Status | Add load test harness row: `load_tests/` — status `Done (T23)` |
+| `docs/ARCHITECTURE.md` | §2.1 Component Status | Update docker-compose row to reflect T24 additions (pgvector, Prometheus, Grafana, Loki, Tempo) |
+| `docs/spec.md` | §5 Security Assumptions | Clarify `/metrics` exposure model (internal-only scrape or authenticated scrape) to reconcile with ARCH-5 |
 
 ---
-_ARCH_REPORT.md written. Run PROMPT_2_CODE.md._
