@@ -2,7 +2,7 @@
 
 _Owner: Architecture · Date: 2026-03-03 (updated 2026-03-08 — Cycle 7 review blockers)_
 _This document is the authoritative task contract for Codex and human reviewers._
-_All tasks reference `docs/spec.md`, `docs/architecture.md`, and `docs/data-map.md` as the governing contract._
+_All tasks reference `docs/spec.md`, `docs/ARCHITECTURE.md`, and `docs/data-map.md` as the governing contract._
 _No task is started without reading its "Depends-On" chain first._
 
 ---
@@ -1389,6 +1389,464 @@ Run via `docker compose run --rm migrate` service.
 2. `alembic upgrade head` runs successfully against the Docker Postgres.
 3. Grafana dashboard loads at `http://localhost:3000`.
 4. `POST /health` returns 200.
+
+---
+
+## Phase 8 — Technical Debt Resolution
+
+_Goal: close the 6 highest-impact open P2 findings before any new features._
+_All tasks are small, low-risk, and independent. Can be implemented in any order._
+_Deep review runs after all 6 are done (phase boundary)._
+
+---
+
+### FIX-A · Tenant-namespace Redis hot-path keys
+
+**Owner:** Codex
+**Priority:** P2 (CODE-11 / P2-1 — open 3+ cycles)
+**Depends-on:** T03, T05
+**Status:** [ ]
+
+**Scope:**
+Three Redis key prefixes are not tenant-scoped, allowing cross-tenant key collisions in shared Redis.
+
+**Files to MODIFY:**
+- `app/dedup.py` — key: `dedup:{message_id}` → `dedup:{tenant_id}:{message_id}`
+- `app/approval_store.py` — key: `pending:{pending_id}` → `pending:{tenant_id}:{pending_id}`
+- `app/middleware/rate_limit.py` — key: `ratelimit:{user_id}` → `ratelimit:{tenant_id}:{user_id}`
+
+**Acceptance Criteria:**
+1. `DedupCache` key includes tenant_id prefix; existing tests updated to match.
+2. `RedisApprovalStore` key includes tenant_id prefix; pop/put use same prefix.
+3. Rate limit key includes tenant_id; middleware passes tenant_id when building key.
+4. `pytest tests/ -q` passes with no regressions.
+5. `grep -rn "dedup:\|pending:\|ratelimit:" app/` shows tenant-prefixed patterns only.
+
+---
+
+### FIX-B · Extract `_run_blocking` to shared utility
+
+**Owner:** Codex
+**Priority:** P2 (P2-9 — open 3+ cycles)
+**Depends-on:** T02
+**Status:** [ ]
+
+**Scope:**
+`_run_blocking()` is duplicated in `app/agent.py` and `app/store.py`. Extract to `app/utils.py`.
+
+**Files to CREATE:**
+- `app/utils.py` — `run_blocking(coroutine)` function
+
+**Files to MODIFY:**
+- `app/agent.py` — remove local `_run_blocking`, import from `app.utils`
+- `app/store.py` — remove local `_run_blocking`, import from `app.utils`
+
+**Acceptance Criteria:**
+1. `app/utils.py` exists with `run_blocking()` — identical logic to current implementation.
+2. `app/agent.py` and `app/store.py` import and call `utils.run_blocking()`.
+3. No other callers of the old `_run_blocking` remain.
+4. `pytest tests/ -q` passes with no regressions.
+
+---
+
+### FIX-C · Async `summarize_cluster` call in RCA path
+
+**Owner:** Codex
+**Priority:** P2 (CODE-9 — open 3+ cycles)
+**Depends-on:** T14
+**Status:** [ ]
+
+**Scope:**
+`RCAClusterer` calls `LLMClient.summarize_cluster()` synchronously from an async context,
+risking event-loop stall under load.
+
+**Files to MODIFY:**
+- `app/llm_client.py` — add `async def summarize_cluster_async(...)` that wraps the sync call via `asyncio.to_thread()`
+- `app/jobs/rca_clusterer.py` — replace `self.llm_client.summarize_cluster(...)` with `await self.llm_client.summarize_cluster_async(...)`
+
+**Acceptance Criteria:**
+1. `summarize_cluster_async` exists in `LLMClient` and delegates to `summarize_cluster` via `asyncio.to_thread`.
+2. `RCAClusterer` awaits the async version — no blocking call in async path.
+3. Existing `test_rca_clusterer.py` tests pass; add one test that `summarize_cluster_async` is awaitable.
+4. `pytest tests/ -q` passes.
+
+---
+
+### FIX-D · OTel spans for RCA Clusterer
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-4 — zero spans confirmed)
+**Depends-on:** T14, T16
+**Status:** [ ]
+
+**Scope:**
+`app/jobs/rca_clusterer.py` has zero OpenTelemetry instrumentation. ADR-004 mandates spans per pipeline stage.
+
+**Files to MODIFY:**
+- `app/jobs/rca_clusterer.py` — add OTel spans following the same noop-fallback pattern used in `app/agent.py` and `app/llm_client.py`
+
+**Spans to add:**
+- `rca.run` — wraps the full `run()` method; attrs: `tenant_id_hash`, `ticket_count`
+- `rca.cluster` — wraps the DBSCAN step; attrs: `cluster_count`
+- `rca.summarize` — wraps each `summarize_cluster_async` call; attrs: `cluster_id`, `ticket_count`
+
+**Acceptance Criteria:**
+1. Three span names present in `rca_clusterer.py`: `rca.run`, `rca.cluster`, `rca.summarize`.
+2. OTel import uses the same try/except noop pattern as `app/agent.py:59–82`.
+3. No PII in span attributes — tenant_id as SHA-256 short hash only.
+4. `pytest tests/ -q` passes.
+
+---
+
+### FIX-E · Budget check in eval runner
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-3 — open 3+ cycles)
+**Depends-on:** T10, T22
+**Status:** [ ]
+
+**Scope:**
+`eval/runner.py` calls `CostLedger.record()` after each eval case but never calls
+`CostLedger.check_budget()` before the LLM call — violates spec §5 rule #6.
+
+**Files to MODIFY:**
+- `eval/runner.py` — call `await cost_ledger.check_budget(tenant_id, db)` before each LLM invocation in `run_eval_job()`; catch `BudgetExhaustedError` and mark the eval run as `"aborted_budget"` with explanation
+
+**Acceptance Criteria:**
+1. `run_eval_job()` calls `check_budget()` before each LLM call.
+2. If `BudgetExhaustedError` raised: eval run status = `"aborted_budget"`; no further LLM calls made.
+3. Test in `tests/test_eval_runner.py` covers the budget-exhausted path.
+4. `pytest tests/ -q` passes.
+
+---
+
+### FIX-F · Document `/metrics` auth contract
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-5, CODE-10)
+**Depends-on:** T05, T07
+**Status:** [ ]
+
+**Scope:**
+`GET /metrics` is exempt from JWT auth — this is intentional (Prometheus scrape endpoint)
+but undocumented. Two files need updating.
+
+**Files to MODIFY:**
+- `app/middleware/auth.py` — add `"/metrics"` to the exemption list with a comment: `# Prometheus scrape — auth handled at network layer`
+- `app/main.py` — add inline comment on the `/metrics` route explaining the exemption and network-layer auth assumption
+
+**Files to CREATE:**
+- None. Doc-only change to source comments, not a new doc file.
+
+**Acceptance Criteria:**
+1. `app/middleware/auth.py` exemption list includes `"/metrics"` with explanatory comment.
+2. `app/main.py` `/metrics` route has comment referencing the auth contract.
+3. `pytest tests/ -q` passes (no logic change — only comments).
+
+---
+
+## Phase 9 — Service Layer Extraction + Documentation
+
+_Goal: eliminate architecture drift (ARCH-7, ARCH-8) by pulling business logic out of routers and agent.py into a proper service layer; update architecture docs to v3.0._
+
+### SVC-1 · Extract AuthService
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-8)
+**Depends-on:** T05, T06, T06B
+**Status:** [ ]
+
+**Scope:**
+`app/routers/auth.py` contains business logic (token creation, blocklist management, rate-limit enforcement). Extract into `app/services/auth_service.py`; router becomes thin adapter.
+
+**Files to CREATE:**
+- `app/services/__init__.py` — empty
+- `app/services/auth_service.py` — `AuthService` class with methods: `login()`, `logout()`, `refresh_token()`; each accepts typed Pydantic inputs, returns typed outputs; OTel span + Prometheus counter per method
+- `tests/test_auth_service.py` — unit tests for `AuthService` (mocked Redis + DB)
+
+**Files to MODIFY:**
+- `app/routers/auth.py` — delegate to `AuthService`; no business logic remains in router handlers
+
+**Acceptance Criteria:**
+1. `AuthService` has `login()`, `logout()`, `refresh_token()` methods; each has OTel span + Prometheus counter.
+2. `app/routers/auth.py` handlers contain no business logic — only call `AuthService` and return response.
+3. No existing tests broken; `pytest tests/ -q` passes.
+4. `ruff check app/ tests/` — zero errors.
+
+---
+
+### SVC-2 · Extract EvalService
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-8)
+**Depends-on:** T22, T23, T24
+**Status:** [ ]
+
+**Scope:**
+`app/routers/eval.py` and `eval/runner.py` contain logic that should live in a service layer. Extract into `app/services/eval_service.py`.
+
+**Files to CREATE:**
+- `app/services/eval_service.py` — `EvalService` class with methods: `create_run()`, `get_runs()`, `get_run_status()`; OTel span per method
+- `tests/test_eval_service.py` — unit tests (mocked DB)
+
+**Files to MODIFY:**
+- `app/routers/eval.py` — delegate to `EvalService`; handlers become thin adapters
+
+**Acceptance Criteria:**
+1. `EvalService.create_run()`, `get_runs()`, `get_run_status()` exist with OTel spans.
+2. Router handlers contain no business logic.
+3. `pytest tests/ -q` passes; no regressions.
+
+---
+
+### SVC-3 · Fix agent.py HTTP boundary violation
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-7, P2-6)
+**Depends-on:** T03
+**Status:** [ ]
+
+**Scope:**
+`app/agent.py:15` imports `HTTPException` from fastapi — service layer must not import HTTP primitives.
+Replace with a domain exception that the router layer catches and converts.
+
+**Files to CREATE:**
+- `app/exceptions.py` — `AgentError`, `BudgetError`, `ValidationError` domain exceptions
+
+**Files to MODIFY:**
+- `app/agent.py` — replace `HTTPException` imports and raises with domain exceptions from `app/exceptions.py`
+- `app/main.py` — add exception handlers that convert domain exceptions → HTTP responses
+- `tests/test_agent.py` — update any tests that assert on HTTPException to assert on domain exceptions or HTTP status codes via TestClient
+
+**Acceptance Criteria:**
+1. `app/agent.py` has zero `from fastapi import` statements.
+2. Domain exceptions in `app/exceptions.py`; `app/main.py` converts them to HTTP.
+3. `pytest tests/ -q` passes.
+4. `ruff check app/ tests/` — zero errors.
+
+---
+
+### DOC-1 · ARCHITECTURE.md v3.0
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-2 drift, eval subsystem undocumented)
+**Depends-on:** SVC-1, SVC-2, SVC-3, T24
+**Status:** [ ]
+
+**Scope:**
+`docs/ARCHITECTURE.md` is at v2.1 and missing: eval subsystem, service layer, load test results, Phase 8 fixes, Docker stack (T24).
+
+**Files to MODIFY:**
+- `docs/ARCHITECTURE.md` — bump to v3.0; add: service layer diagram, eval subsystem component, Docker stack section, updated Redis key namespace table (from FIX-A), updated ADR cross-reference table
+
+**Acceptance Criteria:**
+1. Version header reads `v3.0`.
+2. Service layer (`app/services/`) section present with component diagram.
+3. Eval subsystem section references `app/routers/eval.py` + `eval/runner.py` + `app/services/eval_service.py`.
+4. Docker stack section references `docker-compose.yml` from T24.
+5. Redis key table matches FIX-A tenant-namespaced keys.
+
+---
+
+### DOC-2 · ADR-002 update — vector stack alignment
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-2)
+**Depends-on:** T13
+**Status:** [ ]
+
+**Scope:**
+ADR-002 documents OpenAI/1536-dim embeddings but implementation uses Voyage/1024-dim (T13). ADR must reflect actual decision.
+
+**Files to MODIFY:**
+- `docs/adr/002-vector-store-design.md` — update to document Voyage AI / 1024-dim decision; add "supersedes original OpenAI choice" note; record rationale (cost, quality)
+
+**Acceptance Criteria:**
+1. ADR-002 documents `text-embedding-3-small` → `voyage-large-2` change with rationale.
+2. Dimension updated from 1536 → 1024.
+3. No test changes needed — doc only.
+
+---
+
+### DOC-3 · EVALUATION.md
+
+**Owner:** Codex
+**Priority:** P2
+**Depends-on:** T22, T23, T24
+**Status:** [ ]
+
+**Scope:**
+No documentation exists for the eval subsystem (T22–T24).
+
+**Files to CREATE:**
+- `docs/EVALUATION.md` — documents: eval architecture, dataset format (JSONL), runner flow, metrics collected, how to run eval locally, CI integration, result interpretation
+
+**Acceptance Criteria:**
+1. `docs/EVALUATION.md` exists with sections: Overview, Dataset Format, Running Locally, CI Integration, Metrics.
+2. References correct file paths: `eval/runner.py`, `eval/datasets/`, `app/routers/eval.py`.
+
+---
+
+## Phase 10 — Admin CLI + Cluster Persistence
+
+_Goal: operational tooling for tenant admins; persist RCA cluster membership for stable cluster detail endpoints._
+
+### CLI-1 · Typer admin CLI
+
+**Owner:** Codex
+**Priority:** P2
+**Depends-on:** T10, T14, T15
+**Status:** [ ]
+
+**Scope:**
+No CLI tooling exists. Add a Typer-based admin CLI at `scripts/cli.py` covering tenant and budget operations.
+
+**Files to CREATE:**
+- `scripts/cli.py` — Typer app with commands: `tenant list`, `tenant create`, `tenant disable`, `budget check <tenant_id>`, `budget reset <tenant_id>`, `rca run <tenant_id>` (triggers background job)
+- `tests/test_cli.py` — Typer CliRunner tests for each command
+
+**Files to MODIFY:**
+- `pyproject.toml` or `setup.cfg` — register `gdev-admin = scripts.cli:app` entry point
+
+**Acceptance Criteria:**
+1. `python scripts/cli.py --help` lists all commands.
+2. Each command tested with mocked DB/Redis.
+3. `pytest tests/test_cli.py -q` passes.
+4. `ruff check scripts/ tests/test_cli.py` — zero errors.
+
+---
+
+### CLU-1 · Persist cluster membership to DB
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-6 — timestamp heuristic)
+**Depends-on:** T14, T15
+**Status:** [ ]
+
+**Scope:**
+`GET /clusters/{id}` reconstructs membership from a timestamp heuristic rather than stored data (ARCH-6). Persist cluster membership to Postgres so cluster detail is stable and auditable.
+
+**Files to CREATE:**
+- `alembic/versions/0003_cluster_membership.py` — new table `rca_cluster_members (cluster_id UUID, ticket_id UUID, created_at timestamptz)` with RLS policy; both upgrade() and downgrade()
+- `tests/test_cluster_membership_integration.py` — integration test verifying membership write + read (testcontainers)
+
+**Files to MODIFY:**
+- `app/jobs/rca_clusterer.py` — after clustering, write members to `rca_cluster_members` via admin session
+- `app/routers/clusters.py` — `GET /clusters/{id}` reads membership from DB, not timestamp heuristic
+
+**Acceptance Criteria:**
+1. Migration `0003_cluster_membership.py` exists with upgrade + downgrade.
+2. RLS policy on `rca_cluster_members` uses `current_setting('app.current_tenant_id', TRUE)`.
+3. After `rca_clusterer.run()`, cluster members are stored in `rca_cluster_members`.
+4. `GET /clusters/{id}` returns tickets from DB, not timestamp heuristic.
+5. `pytest tests/ -q` passes.
+
+---
+
+### CLU-2 · GET /clusters/{id}/tickets endpoint
+
+**Owner:** Codex
+**Priority:** P2
+**Depends-on:** CLU-1
+**Status:** [ ]
+
+**Scope:**
+No endpoint exists to list tickets in a specific cluster. Add `GET /clusters/{id}/tickets`.
+
+**Files to MODIFY:**
+- `app/routers/clusters.py` — add `GET /clusters/{id}/tickets` returning paginated list of tickets in cluster; requires `viewer` role; OTel span + Prometheus counter
+- `tests/test_endpoints.py` — tests for the new endpoint (authenticated, cross-tenant isolation)
+
+**Acceptance Criteria:**
+1. `GET /clusters/{id}/tickets` returns `{"tickets": [...], "total": N, "page": N}`.
+2. Returns 404 if cluster not found or belongs to different tenant.
+3. Requires `viewer` role (tested: 403 without role).
+4. `pytest tests/ -q` passes.
+
+---
+
+## Phase 11 — Portfolio Signal + External Readiness
+
+_Goal: make the project externally presentable for demo and portfolio purposes without changing production logic._
+
+### PORT-1 · README redesign
+
+**Owner:** Codex
+**Priority:** P3
+**Depends-on:** DOC-1, DOC-3
+**Status:** [ ]
+
+**Scope:**
+Current README is minimal. Redesign for external audiences: architecture diagram (Mermaid), quick-start, feature list, deployment guide.
+
+**Files to MODIFY:**
+- `README.md` — rewrite with: project badge line, one-paragraph pitch, Mermaid architecture diagram, feature table, quick-start (Docker Compose), environment variable reference, API overview, links to `docs/`
+
+**Acceptance Criteria:**
+1. README has Mermaid diagram that renders on GitHub.
+2. Quick-start section works end-to-end (Docker Compose up → /health returns 200).
+3. All internal links resolve.
+
+---
+
+### PORT-2 · WORKFLOW.md
+
+**Owner:** Codex
+**Priority:** P3
+**Depends-on:** docs/DEVELOPMENT_METHOD.md (✅ exists)
+**Status:** [ ]
+
+**Scope:**
+External readers need a concise explanation of the AI-assisted development workflow used in this project.
+
+**Files to CREATE:**
+- `docs/WORKFLOW.md` — 1–2 page document: AI development loop diagram, agent roles table, tool split rationale, two-tier review system, phase cadence; aimed at external technical readers evaluating workflow maturity
+
+**Acceptance Criteria:**
+1. `docs/WORKFLOW.md` exists with loop diagram, agent roles, review tiers.
+2. Readable standalone — no assumed internal context.
+3. References `docs/DEVELOPMENT_METHOD.md` for deep detail.
+
+---
+
+### PORT-3 · Demo script
+
+**Owner:** Codex
+**Priority:** P3
+**Depends-on:** T03, T07, T14, T15
+**Status:** [ ]
+
+**Scope:**
+No runnable demo exists. Add a self-contained demo script that exercises the full happy path end-to-end.
+
+**Files to CREATE:**
+- `scripts/demo.py` — async script using `httpx`; sends webhook → waits for pending → approves → verifies audit log; prints clean timestamped output; exits 0 on success
+- `docs/DEMO.md` — one-page guide: prerequisites, env vars, run command, expected output
+
+**Acceptance Criteria:**
+1. `python scripts/demo.py` exits 0 against a local Docker Compose stack.
+2. Output shows each step with timing.
+3. `docs/DEMO.md` explains how to run it.
+
+---
+
+### PORT-4 · MCP server evaluation
+
+**Owner:** Codex
+**Priority:** P3
+**Depends-on:** PORT-1, DOC-1
+**Status:** [ ]
+
+**Scope:**
+Evaluate whether exposing gdev-agent tools as an MCP server adds value for portfolio/integration signal. Produce a brief design note; no implementation unless evaluation is positive.
+
+**Files to CREATE:**
+- `docs/adr/005-mcp-server-evaluation.md` — ADR format: context (what MCP would expose), options (implement vs skip), decision + rationale, consequences
+
+**Acceptance Criteria:**
+1. ADR-005 exists with decision: implement or skip, with rationale.
+2. If decision = implement: skeleton task added to tasks.md as PORT-5.
+3. If decision = skip: rationale documented; no further action.
 
 ---
 

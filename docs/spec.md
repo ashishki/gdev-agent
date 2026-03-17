@@ -229,5 +229,5 @@ A feature is done when:
 5. New ADR drafted if a structural decision was made.
 6. Observability: new code emits at least one trace span and one counter increment.
 7. No secrets in code or logs (verified by output guard canary test).
-8. `docs/PLAN.md` PR entry marked Delivered.
+8. Task marked `✅` in `docs/tasks.md`.
 9. `docs/devlog-template.md` entry created if a bug or architecture change occurred.

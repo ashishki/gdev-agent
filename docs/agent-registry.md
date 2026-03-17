@@ -1,8 +1,208 @@
-# Agent Registry v1.0
+# Agent Registry v2.0
 
-_Date: 2026-03-03_
-_This document defines every agent in the platform. Each agent corresponds to an `agent_configs`
-row in Postgres. Config changes require a version bump and a PR._
+_Date: 2026-03-17_
+_Merged from AGENT_SYSTEM.md (pipeline design) + agent-registry.md (agent profiles)._
+_Single source of truth for the AI pipeline. Each agent corresponds to an `agent_configs` row in Postgres. Config changes require a version bump and a PR._
+
+---
+
+## Pipeline Architecture
+
+```
+POST /webhook
+     │
+     ▼
+[Input Guard]
+  15 injection patterns + length check
+  Raises ValueError → HTTP 400 (before any LLM call)
+     │
+     ▼
+[Budget Check]
+  CostLedger.check_budget(tenant_id)
+  Raises BudgetExhaustedError → HTTP 429
+     │
+     ▼
+[LLMClient.run_agent()]  ← Claude tool_use loop (≤5 turns)
+  │
+  ├── Turn 1: classify_request → ClassificationResult
+  ├── Turn 1: extract_entities → ExtractedFields
+  ├── Turn N: lookup_faq (optional) → KB articles
+  ├── Turn N: draft_reply (optional) → draft_text
+  └── Turn N: flag_for_human (optional) → force_pending=True
+     │
+     ▼
+[Output Guard]
+  Secret scan + URL allowlist + confidence floor
+  Blocked → HTTP 500 (internal)
+  Redacted → log + continue with cleaned draft
+     │
+     ▼
+[propose_action()]
+  Builds ProposedAction with risky: bool + risk_reason
+  Risk conditions: category, urgency, confidence, legal keywords
+     │
+     ▼
+[Route Decision]
+  risky=True  → pending (RedisApprovalStore)
+  risky=False → execute (TOOL_REGISTRY)
+```
+
+---
+
+## LLM Tool Definitions
+
+### `classify_request`
+
+```json
+{
+  "category": "bug_report | billing | account_access | cheater_report | gameplay_question | other",
+  "urgency": "low | medium | high | critical",
+  "confidence": 0.0–1.0
+}
+```
+
+`confidence < AUTO_APPROVE_THRESHOLD (0.85)` sets `risky=True`. Fallback: `{category: "other", urgency: "low", confidence: 0.0}`.
+
+### `extract_entities`
+
+```json
+{
+  "user_id": "string | null",
+  "platform": "iOS | Android | PC | PS5 | Xbox | unknown",
+  "game_title": "string | null",
+  "transaction_id": "string | null",
+  "error_code": "string | null",
+  "reported_username": "string | null",
+  "keywords": ["string"]
+}
+```
+
+### `lookup_faq`
+
+Returns top-3 KB articles by keyword. URLs subject to output guard allowlist.
+
+### `draft_reply`
+
+```json
+{
+  "tone": "empathetic | informational | escalation",
+  "include_faq_links": true,
+  "draft_text": "string"
+}
+```
+
+`draft_text` passes through output guard before reaching the user.
+
+### `flag_for_human`
+
+```json
+{
+  "reason": "string",
+  "risk_level": "medium | high | critical"
+}
+```
+
+Sets `force_pending=True` → overrides confidence to `0.0` → `propose_action()` marks `risky=True`.
+
+---
+
+## System Prompt
+
+```
+You are a game support triage assistant.
+Use available tools to classify requests and extract entities.
+Always call classify_request and extract_entities before ending your turn.
+```
+
+Minimal prompt forcing two mandatory tool calls. `tool_choice: auto` — model decides when to use optional tools.
+
+---
+
+## Tool-Use Loop
+
+```python
+for turn in range(max_turns=5):
+    response = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=700,
+        tools=TOOLS,
+        tool_choice={"type": "auto"},
+        messages=messages,
+    )
+```
+
+Max turns: 5. Max tokens: 700. In practice 1–2 turns typical.
+
+---
+
+## Guardrails
+
+### Input Guard (`AgentService._guard_input`)
+
+Runs before any LLM call. Blocks text > `MAX_INPUT_LENGTH` (2000) or matching 15 injection patterns:
+`"ignore previous instructions"`, `"system:"`, `"[inst]"`, `"act as if you"`, `"you are now"`, `"forget all"`, `"disregard"`, `"developer mode"`, `"jailbreak"`, `"bypass"`, `"pretend you"`, `"<|system|>"`, `"[system]"`, `"###instruction"`.
+
+On block: raises `ValueError` → HTTP 400. Increments `INJECTION_ATTEMPTS_TOTAL`.
+
+### Output Guard (`app/guardrails/output_guard.py`)
+
+Runs after LLM loop, before routing:
+1. **Secret scan** — regex for API keys, tokens, credentials
+2. **URL allowlist** — strips/rejects URLs not in `settings.url_allowlist`
+3. **Confidence floor** — `confidence < threshold` → override action to pending
+
+### Confidence Thresholds
+
+| Threshold | Config var | Default | Effect |
+|---|---|---|---|
+| Auto-approve | `AUTO_APPROVE_THRESHOLD` | 0.85 | Below → `risky=True` |
+| Confidence floor | output guard internal | 0.5 | Below → may block |
+
+---
+
+## Human-in-the-Loop Pattern
+
+Risk conditions (any one triggers pending):
+- `category in APPROVAL_CATEGORIES` (default: `["billing", "account_access"]`)
+- `urgency in {"high", "critical"}`
+- `confidence < AUTO_APPROVE_THRESHOLD`
+- text contains legal keywords: `"lawyer"`, `"lawsuit"`, `"press"`, `"gdpr"`
+- `flag_for_human` called
+
+Pending flow: `propose_action() → risky=True → Redis store (TTL: 3600s) → Telegram notify → POST /approve → execute/reject → approval_events`.
+
+`RedisApprovalStore.pop_pending()` uses `GETDEL` — atomic, one-time consumption.
+
+---
+
+## Token Budget and Cost Control
+
+```python
+cost_usd = (input_tokens / 1000) * llm_input_rate_per_1k
+         + (output_tokens / 1000) * llm_output_rate_per_1k
+```
+
+- `CostLedger.check_budget(tenant_id)` — raises `BudgetExhaustedError` if spend ≥ `daily_budget_usd`
+- `CostLedger.record(...)` — UPSERT to `cost_ledger` after each request
+- `BUDGET_UTILIZATION_RATIO` Prometheus gauge updated after each record
+
+RCA summarization cost tracked separately (`rca_budget_per_run_usd`, default $0.15/run).
+
+---
+
+## Tool Registry (post-LLM execution)
+
+```python
+TOOL_REGISTRY = {
+    "create_ticket_and_reply": _create_ticket_and_reply,
+}
+```
+
+**Adding new tools:**
+1. Add tool schema to `TOOLS` in `app/llm_client.py`
+2. Add dispatch case in `LLMClient._dispatch_tool()`
+3. Add handler in `app/tools/` and register in `TOOL_REGISTRY`
+4. Update this file (`docs/agent-registry.md`)
 
 ---
 

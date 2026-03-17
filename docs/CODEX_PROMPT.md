@@ -14,7 +14,7 @@ SESSION HANDOFF — START HERE
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
 
 **Baseline:** 144 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
-**Next task:** address remaining open P2 review findings or package for external demo / customer feedback
+**Next task:** FIX-A — Tenant-namespace Redis hot-path keys (Phase 8 start)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
 ✅ `pytest tests/ -q` → 144 passed, 13 skipped
@@ -25,6 +25,10 @@ SESSION HANDOFF — START HERE
 **Phase 5 queue:** T16 ✅ → T17 ✅ → T18 ✅
 **Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
+**Phase 8 queue:** FIX-A [ ] → FIX-B [ ] → FIX-C [ ] → FIX-D [ ] → FIX-E [ ] → FIX-F [ ]
+**Phase 9 queue:** SVC-1 [ ] → SVC-2 [ ] → SVC-3 [ ] → DOC-1 [ ] → DOC-2 [ ] → DOC-3 [ ]
+**Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
+**Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
@@ -78,6 +82,9 @@ Recommended next work: close remaining review findings, reduce architecture drif
 and package the system for external demos or pilot customers.
 
 ─── Implementation decisions Codex MUST NOT change ──────────────────
+
+Full contract: docs/IMPLEMENTATION_CONTRACT.md (read once per session).
+Summary of immutable rules (A–I):
 
   A. alembic/env.py reads DATABASE_URL from os.environ (NOT get_settings()).
   B. create_async_engine() directly in make_engine() — NOT async_engine_from_config().
@@ -233,16 +240,23 @@ NEVER:
 GOVERNING DOCUMENTS (read these; they are the contract)
 ═══════════════════════════════════════════════════════════════════════
 
+docs/IMPLEMENTATION_CONTRACT.md — Immutable rules A–I + security + forbidden actions
 docs/spec.md           — Product scope, SLAs, security assumptions, API surface
 docs/ARCHITECTURE.md   — Component diagram, data flow, failure handling
 docs/data-map.md       — All entities, schemas, Redis keys, RLS policies, PII rules
 docs/tasks.md          — Task graph; your work queue
 docs/dev-standards.md  — Code style, test strategy, commit discipline, observability hooks
 docs/observability.md  — Metric names, span hierarchy, alerting strategy
-docs/agent-registry.md — All agents, their tools, guardrails, and failure modes
+docs/agent-registry.md — All agents, pipeline design, LLM tools, guardrails, failure modes
+docs/llm-usage.md      — Prompt versioning rules, error categories, hallucination tracking
 docs/load-profile.md   — Load scenarios and KPIs
 docs/adr/              — Architectural decisions; read before making structural choices
 docs/audit/REVIEW_REPORT.md — Current open findings (P0/P1/P2)
 
 If a task conflicts with any governing document, STOP and report the conflict.
 Do not resolve conflicts silently. Architecture decides; Codex implements.
+
+── DEVELOPMENT LOOP ─────────────────────────────────────────────────
+
+Automated: paste docs/prompts/ORCHESTRATOR.md to Claude Code.
+Manual: see docs/DEVELOPMENT_METHOD.md and docs/audit/review_pipeline.md.

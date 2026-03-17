@@ -1,20 +1,27 @@
 # Review Pipeline
 
-_v1.1 · gdev-agent_
+_v1.2 · gdev-agent_
+_For automated operation: see `docs/prompts/ORCHESTRATOR.md`._
 
-## When to Run
+## Two Tiers
 
-**Full cycle (all 4 steps):**
-- Phase gate — a logical group of tasks is complete
-- Pre-deploy / pre-release
-- After security-critical changes (auth, RLS, tenant isolation, middleware)
-- ≥3 tasks accumulated since last review
+### Light review (after each task within a phase)
+1 agent. 6 security/contract checks. No files produced. Fast.
+Issues → Codex fixes → re-check. Max 1 retry.
 
-**Targeted (PROMPT_2_CODE only):**
-- Hotfix of a specific module
-- Closing a carry-forward P1 finding
+Checks: SQL parameterization · tenant SET LOCAL · no PII in logs ·
+        no hardcoded secrets · async correctness · require_role() on new routes ·
+        Implementation Contract rules A–I.
 
-**Skip entirely:**
+### Deep review (phase boundaries and security-critical tasks)
+4 steps, sequential. Full pipeline. Produces REVIEW_REPORT + patches + archive.
+
+**Trigger deep review when:**
+- All tasks in a phase are complete (phase boundary)
+- Last task touched: auth, middleware, RLS, tenant isolation, secrets
+- 5+ P2 findings open for 3+ cycles
+
+**Skip all review for:**
 - Doc-only patches
 - Test-only changes with no logic change
 - Dependency bumps with no API change
@@ -64,9 +71,17 @@ P1 → must have entry in `tasks.md`. Does not block phase.
 
 ## How to Run
 
-Open a new Claude session in the project root. One of two approaches:
+### Automated (recommended)
 
-**Step-by-step (recommended — review output between steps):**
+Paste `docs/prompts/ORCHESTRATOR.md` to Claude Code.
+The orchestrator drives the full loop: implement → review → fix → loop.
+No manual step switching required.
+
+### Manual (for debugging or targeted review)
+
+Open a new Claude session in the project root.
+
+**Step-by-step:**
 ```
 1. "Read docs/audit/PROMPT_0_META.md and execute it."
 2. "Read docs/audit/PROMPT_1_ARCH.md and execute it."
@@ -83,12 +98,12 @@ Write each output file before proceeding to the next step."
 
 Use one session — context accumulates across steps and step 3 needs step 0–2 outputs.
 
-## Handoff to Codex After Review
+## Handoff to Codex After Manual Review
 
 After PROMPT_3 completes, send Codex this command (new session):
 
 ```
-Review complete. Read docs/CODEX_PROMPT.md.
+Review complete. Read docs/CODEX_PROMPT.md and docs/IMPLEMENTATION_CONTRACT.md.
 Implement everything in Fix Queue first (in order).
 Then proceed with the Phase queue.
 ```

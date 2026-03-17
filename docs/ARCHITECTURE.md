@@ -119,8 +119,8 @@ gdev-agent/
 ├── docs/
 │   ├── ARCHITECTURE.md      # this file
 │   ├── N8N.md               # n8n workflow blueprint and integration contract
-│   ├── PLAN.md              # delivered history + next iteration roadmap
-│   └── REVIEW_NOTES.md      # engineering review checklist and historical findings
+│   ├── tasks.md             # task graph and phase queue (active work)
+│   └── archive/PLAN_v3.md   # delivered history (archived)
 ├── Dockerfile
 ├── docker-compose.yml       # agent + redis + n8n with healthchecks
 ├── requirements.txt
