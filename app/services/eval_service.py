@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cost_ledger import BudgetExhaustedError, CostLedger
+from app.db import _set_tenant_ctx
 from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
 from eval.runner import run_eval_job
 
@@ -94,10 +95,7 @@ class EvalService:
             try:
                 async with self._db_session_factory() as session:
                     async with session.begin():
-                        await session.execute(
-                            text("SET LOCAL app.current_tenant_id = :tid"),
-                            {"tid": str(tenant_id)},
-                        )
+                        await _set_tenant_ctx(session, str(tenant_id))
                         await session.execute(
                             text(
                                 """
@@ -115,10 +113,7 @@ class EvalService:
                 try:
                     async with self._db_session_factory() as session:
                         async with session.begin():
-                            await session.execute(
-                                text("SET LOCAL app.current_tenant_id = :tid"),
-                                {"tid": str(tenant_id)},
-                            )
+                            await _set_tenant_ctx(session, str(tenant_id))
                             await self._cost_ledger.check_budget(tenant_id, session)
                 except BudgetExhaustedError:
                     async with self._db_session_factory() as session:
@@ -394,10 +389,7 @@ class EvalService:
         completed_at: datetime | None = None,
     ) -> None:
         async with session.begin():
-            await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
-                {"tid": str(tenant_id)},
-            )
+            await _set_tenant_ctx(session, str(tenant_id))
             if completed_at is None:
                 await session.execute(
                     text(

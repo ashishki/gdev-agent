@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db import _set_tenant_ctx
 from app.schemas import (
     AuditLogEntry,
     ClassificationResult,
@@ -117,10 +118,7 @@ class EventStore:
 
         async with self._db_session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": str(payload_tenant_id)},
-                )
+                await _set_tenant_ctx(session, str(payload_tenant_id))
                 ticket_row = await session.execute(
                     text(
                         """

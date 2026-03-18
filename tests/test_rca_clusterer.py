@@ -198,16 +198,17 @@ async def test_run_tenant_emits_run_and_cluster_spans(
 async def test_upsert_cluster_calls_llm_and_writes_summary() -> None:
     db_session = _SessionStub()
     llm = _LLMStub(fail=False)
+    tenant_id = str(uuid4())
     clusterer = RCAClusterer(
         settings=Settings(anthropic_api_key="k"),
         db_session_factory=_SessionFactoryStub(db_session),
         llm_client=llm,
         admin_session_factory=_SessionFactoryStub(
-            _SessionStub(rows=[{"tenant_id": "tenant-1", "raw_text": "payment failed"}])
+            _SessionStub(rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}])
         ),
     )
     await clusterer._upsert_cluster(
-        tenant_id="tenant-1",
+        tenant_id=tenant_id,
         cluster_rows=[
             {"ticket_id": str(uuid4()), "created_at": datetime.now(UTC)},
             {"ticket_id": str(uuid4()), "created_at": datetime.now(UTC)},
@@ -228,18 +229,19 @@ async def test_upsert_cluster_emits_summarize_span(
     tracer = _TracerStub()
     db_session = _SessionStub()
     llm = _LLMStub(fail=False)
+    tenant_id = str(uuid4())
     clusterer = RCAClusterer(
         settings=Settings(anthropic_api_key="k"),
         db_session_factory=_SessionFactoryStub(db_session),
         llm_client=llm,
         admin_session_factory=_SessionFactoryStub(
-            _SessionStub(rows=[{"tenant_id": "tenant-1", "raw_text": "payment failed"}])
+            _SessionStub(rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}])
         ),
     )
     monkeypatch.setattr(rca_clusterer, "TRACER", tracer)
 
     await clusterer._upsert_cluster(
-        tenant_id="tenant-1",
+        tenant_id=tenant_id,
         cluster_rows=[
             {"ticket_id": str(uuid4()), "created_at": datetime.now(UTC)},
             {"ticket_id": str(uuid4()), "created_at": datetime.now(UTC)},
@@ -259,18 +261,19 @@ async def test_upsert_cluster_emits_summarize_span(
 @pytest.mark.asyncio
 async def test_upsert_cluster_uses_generic_label_on_llm_failure() -> None:
     db_session = _SessionStub()
+    tenant_id = str(uuid4())
     clusterer = RCAClusterer(
         settings=Settings(anthropic_api_key="k"),
         db_session_factory=_SessionFactoryStub(db_session),
         llm_client=_LLMStub(fail=True),
         admin_session_factory=_SessionFactoryStub(
             _SessionStub(
-                rows=[{"tenant_id": "tenant-2", "raw_text": "checkout timeout"}]
+                rows=[{"tenant_id": tenant_id, "raw_text": "checkout timeout"}]
             )
         ),
     )
     await clusterer._upsert_cluster(
-        tenant_id="tenant-2",
+        tenant_id=tenant_id,
         cluster_rows=[{"ticket_id": str(uuid4()), "created_at": datetime.now(UTC)}],
         cluster_number=7,
     )

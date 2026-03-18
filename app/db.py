@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import text
@@ -14,6 +15,16 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import Settings
+
+
+async def _set_tenant_ctx(session: AsyncSession, tenant_id: str | None) -> None:
+    """Set transaction-local tenant context when a tenant id is present."""
+    if tenant_id is None:
+        return
+    await session.execute(
+        text(f"SET LOCAL app.current_tenant_id = '{UUID(str(tenant_id))}'"),
+        {},
+    )
 
 
 def make_engine(settings: Settings) -> AsyncEngine:
@@ -41,9 +52,5 @@ async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]
     tenant_id = getattr(request.state, "tenant_id", None)
     async with request.app.state.db_session_factory() as session:
         async with session.begin():
-            if tenant_id is not None:
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": str(tenant_id)},
-                )
+            await _set_tenant_ctx(session, tenant_id)
             yield session

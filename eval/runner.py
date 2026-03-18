@@ -18,6 +18,7 @@ from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.config import Settings
+from app.db import _set_tenant_ctx
 from app.schemas import WebhookRequest
 from app.store import EventStore
 
@@ -121,10 +122,7 @@ async def run_eval_job(
     """Run eval for one tenant and persist eval/cost records."""
     started_at = datetime.now(UTC)
     async with db_session.begin():
-        await db_session.execute(
-            text("SET LOCAL app.current_tenant_id = :tid"),
-            {"tid": str(tenant_id)},
-        )
+        await _set_tenant_ctx(db_session, str(tenant_id))
         await db_session.execute(
             text(
                 """
@@ -142,10 +140,7 @@ async def run_eval_job(
         )
 
     async with db_session.begin():
-        await db_session.execute(
-            text("SET LOCAL app.current_tenant_id = :tid"),
-            {"tid": str(tenant_id)},
-        )
+        await _set_tenant_ctx(db_session, str(tenant_id))
         prior_row = (
             await db_session.execute(
                 text(
@@ -177,10 +172,7 @@ async def run_eval_job(
     try:
         for case in load_cases(cases_path):
             async with db_session.begin():
-                await db_session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": str(tenant_id)},
-                )
+                await _set_tenant_ctx(db_session, str(tenant_id))
                 await cost_ledger.check_budget(tenant_id, db_session)
 
             expected_guard = case.get("expected_guard")
@@ -219,10 +211,7 @@ async def run_eval_job(
     except BudgetExhaustedError as exc:
         completed_at = datetime.now(UTC)
         async with db_session.begin():
-            await db_session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
-                {"tid": str(tenant_id)},
-            )
+            await _set_tenant_ctx(db_session, str(tenant_id))
             await db_session.execute(
                 text(
                     """
@@ -292,10 +281,7 @@ async def run_eval_job(
     cost_usd = Decimal(str(report.get("cost_usd", 0.0)))
 
     async with db_session.begin():
-        await db_session.execute(
-            text("SET LOCAL app.current_tenant_id = :tid"),
-            {"tid": str(tenant_id)},
-        )
+        await _set_tenant_ctx(db_session, str(tenant_id))
         await db_session.execute(
             text(
                 """

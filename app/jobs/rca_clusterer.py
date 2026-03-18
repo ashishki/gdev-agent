@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import Settings
+from app.db import _set_tenant_ctx
 from app.llm_client import LLMClient
 from app.metrics import (
     RCA_CLUSTERS_ACTIVE,
@@ -247,10 +248,7 @@ class RCAClusterer:
         async with self._db_session_factory() as session:
             try:
                 async with session.begin():
-                    await session.execute(
-                        text("SET LOCAL app.current_tenant_id = :tid"),
-                        {"tid": tenant_id},
-                    )
+                    await _set_tenant_ctx(session, tenant_id)
                     rows = (
                         (
                             await session.execute(
@@ -275,10 +273,7 @@ class RCAClusterer:
                     )
             except Exception:
                 async with session.begin():
-                    await session.execute(
-                        text("SET LOCAL app.current_tenant_id = :tid"),
-                        {"tid": tenant_id},
-                    )
+                    await _set_tenant_ctx(session, tenant_id)
                     rows = (
                         (
                             await session.execute(
@@ -302,10 +297,7 @@ class RCAClusterer:
     async def _deactivate_existing_clusters(self, tenant_id: str) -> None:
         async with self._db_session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": tenant_id},
-                )
+                await _set_tenant_ctx(session, tenant_id)
                 await session.execute(
                     text(
                         """
@@ -371,10 +363,7 @@ class RCAClusterer:
 
         async with self._db_session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": tenant_id},
-                )
+                await _set_tenant_ctx(session, tenant_id)
                 await session.execute(
                     text(
                         """

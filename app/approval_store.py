@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db import _set_tenant_ctx
 from app.metrics import APPROVAL_QUEUE_DEPTH
 from app.schemas import PendingDecision
 from app.utils import run_blocking
@@ -102,10 +103,7 @@ class RedisApprovalStore:
         pending_uuid = UUID(str(decision.pending_id))
         async with self._db_session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": str(tenant_uuid)},
-                )
+                await _set_tenant_ctx(session, str(tenant_uuid))
                 await session.execute(
                     text(
                         """

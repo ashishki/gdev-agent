@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -84,8 +85,9 @@ def test_make_engine_sqlite_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_get_db_session_sets_local_tenant_id() -> None:
     session = _SessionContext()
+    tenant_id = str(uuid4())
     request = SimpleNamespace(
-        state=SimpleNamespace(tenant_id="tenant-1"),
+        state=SimpleNamespace(tenant_id=tenant_id),
         app=SimpleNamespace(
             state=SimpleNamespace(db_session_factory=_SessionFactory(session))
         ),
@@ -102,8 +104,8 @@ def test_get_db_session_sets_local_tenant_id() -> None:
     assert yielded_session is session
     session.execute.assert_awaited_once()
     statement, params = session.execute.await_args.args
-    assert str(statement) == "SET LOCAL app.current_tenant_id = :tid"
-    assert params == {"tid": "tenant-1"}
+    assert str(statement) == f"SET LOCAL app.current_tenant_id = '{tenant_id}'"
+    assert params == {}
 
 
 def test_get_db_session_skips_set_local_without_tenant_id() -> None:
@@ -122,4 +124,15 @@ def test_get_db_session_skips_set_local_without_tenant_id() -> None:
 
     asyncio.run(_run())
 
+    session.execute.assert_not_awaited()
+
+
+def test_set_tenant_ctx_rejects_invalid_tenant_id() -> None:
+    session = _SessionContext()
+
+    async def _run() -> None:
+        await db._set_tenant_ctx(session, "not-a-uuid")
+
+    with pytest.raises(ValueError):
+        asyncio.run(_run())
     session.execute.assert_not_awaited()

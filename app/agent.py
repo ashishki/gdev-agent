@@ -17,6 +17,7 @@ from sqlalchemy import text
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
+from app.db import _set_tenant_ctx
 from app.embedding_service import EmbeddingService
 from app.exceptions import AgentError, BudgetError, ValidationError
 from app.guardrails.output_guard import OutputGuard
@@ -683,10 +684,7 @@ class AgentService:
         async def _check_budget() -> None:
             async with session_factory() as session:
                 async with session.begin():
-                    await session.execute(
-                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                        {"tenant_id": str(tenant_uuid)},
-                    )
+                    await _set_tenant_ctx(session, str(tenant_uuid))
                     await self.cost_ledger.check_budget(tenant_uuid, session)
 
         try:
@@ -713,10 +711,7 @@ class AgentService:
         async def _record() -> None:
             async with session_factory() as session:
                 async with session.begin():
-                    await session.execute(
-                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                        {"tenant_id": str(tenant_uuid)},
-                    )
+                    await _set_tenant_ctx(session, str(tenant_uuid))
                     await self.cost_ledger.record(
                         tenant_id=tenant_uuid,
                         day=date.today(),
@@ -796,10 +791,7 @@ class AgentService:
         async def _record() -> None:
             async with session_factory() as session:
                 async with session.begin():
-                    await session.execute(
-                        text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                        {"tenant_id": str(tenant_uuid)},
-                    )
+                    await _set_tenant_ctx(session, str(tenant_uuid))
                     await session.execute(
                         text(
                             """

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import Literal
 
 from app.config import Settings
+from app.db import _set_tenant_ctx
 from app.metrics import EMBEDDING_DURATION_SECONDS
 
 LOGGER = logging.getLogger(__name__)
@@ -90,10 +91,7 @@ class EmbeddingService:
 
                 async with self._db_session_factory() as session:
                     async with session.begin():
-                        await session.execute(
-                            text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                            {"tenant_id": tenant_id},
-                        )
+                        await _set_tenant_ctx(session, tenant_id)
                         await session.execute(
                             text(
                                 """
