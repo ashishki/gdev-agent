@@ -10,7 +10,7 @@ import math
 import time
 from decimal import Decimal
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID, uuid5
 
 from sqlalchemy import bindparam, text
@@ -31,6 +31,30 @@ from app.metrics import (
 )
 
 LOGGER = logging.getLogger(__name__)
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import trace  # type: ignore[import-not-found]
+
+    TRACER = trace.get_tracer(__name__)
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    class _NoopSpan:
+        def __enter__(self) -> "_NoopSpan":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
+            return False
+
+        def set_attribute(self, _name: str, _value: object) -> None:
+            return None
+
+        def record_exception(self, _exc: BaseException) -> None:
+            return None
+
+    class _NoopTracer:
+        def start_as_current_span(self, _name: str) -> _NoopSpan:
+            return _NoopSpan()
+
+    TRACER = _NoopTracer()
 
 _RCA_CLUSTER_NAMESPACE = UUID("9f0fd1bc-5310-4ae3-a721-68d1327ec244")
 
@@ -108,7 +132,9 @@ class RCAClusterer:
 
     async def run_for_all_tenants(self) -> None:
         """Run RCA for all active tenants."""
-        async with self._db_session_factory() as session:
+        if self._admin_session_factory is None:
+            return
+        async with self._admin_session_factory() as session:
             rows = (
                 (
                     await session.execute(
@@ -133,60 +159,82 @@ class RCAClusterer:
         started = time.monotonic()
 
         try:
-            rows = await self._fetch_embeddings(tenant_id=tenant_id)
-            if not rows:
-                LOGGER.info(
-                    "rca no tickets",
-                    extra={
-                        "event": "rca_no_tickets",
-                        "context": {"tenant_id_hash": tenant_hash},
-                    },
-                )
-                RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(0)
-                return
+            with TRACER.start_as_current_span("rca.run") as span:
+                try:
+                    span.set_attribute("tenant_id_hash", tenant_hash)
+                    rows = await self._fetch_embeddings(tenant_id=tenant_id)
+                    span.set_attribute("ticket_count", len(rows))
+                    if not rows:
+                        LOGGER.info(
+                            "rca no tickets",
+                            extra={
+                                "event": "rca_no_tickets",
+                                "context": {"tenant_id_hash": tenant_hash},
+                            },
+                        )
+                        RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(0)
+                        return
 
-            embeddings = [_coerce_embedding(row["embedding"]) for row in rows]
-            labels = self._dbscan(embeddings, eps=0.15, min_samples=3)
-            clusters = self._collect_clusters(rows, labels)
-            budget_cap = max(
-                1,
-                min(50, int(self._settings.rca_budget_per_run_usd / Decimal("0.003"))),
-            )
-            if len(clusters) > budget_cap:
-                LOGGER.warning(
-                    "rca cluster cap hit",
-                    extra={
-                        "event": "rca_cluster_cap_hit",
-                        "context": {
-                            "tenant_id_hash": tenant_hash,
-                            "clusters_before_cap": len(clusters),
-                            "clusters_after_cap": budget_cap,
+                    embeddings = [_coerce_embedding(row["embedding"]) for row in rows]
+                    with TRACER.start_as_current_span("rca.cluster") as cluster_span:
+                        try:
+                            labels = self._dbscan(embeddings, eps=0.15, min_samples=3)
+                            clusters = self._collect_clusters(rows, labels)
+                            cluster_span.set_attribute("cluster_count", len(clusters))
+                        except Exception as exc:
+                            cluster_span.record_exception(exc)
+                            raise
+                    budget_cap = max(
+                        1,
+                        min(
+                            50,
+                            int(
+                                self._settings.rca_budget_per_run_usd / Decimal("0.003")
+                            ),
+                        ),
+                    )
+                    if len(clusters) > budget_cap:
+                        LOGGER.warning(
+                            "rca cluster cap hit",
+                            extra={
+                                "event": "rca_cluster_cap_hit",
+                                "context": {
+                                    "tenant_id_hash": tenant_hash,
+                                    "clusters_before_cap": len(clusters),
+                                    "clusters_after_cap": budget_cap,
+                                },
+                            },
+                        )
+                        clusters = clusters[:budget_cap]
+
+                    await self._deactivate_existing_clusters(tenant_id=tenant_id)
+                    for index, cluster_rows in enumerate(clusters, start=1):
+                        await self._upsert_cluster(
+                            tenant_id=tenant_id,
+                            cluster_rows=cluster_rows,
+                            cluster_number=index,
+                        )
+
+                    RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(
+                        len(clusters)
+                    )
+                    RCA_TICKETS_SCANNED_TOTAL.labels(tenant_hash=tenant_hash).inc(
+                        len(rows)
+                    )
+                    LOGGER.info(
+                        "rca run complete",
+                        extra={
+                            "event": "rca_run_complete",
+                            "context": {
+                                "tenant_id_hash": tenant_hash,
+                                "ticket_count": len(rows),
+                                "cluster_count": len(clusters),
+                            },
                         },
-                    },
-                )
-                clusters = clusters[:budget_cap]
-
-            await self._deactivate_existing_clusters(tenant_id=tenant_id)
-            for index, cluster_rows in enumerate(clusters, start=1):
-                await self._upsert_cluster(
-                    tenant_id=tenant_id,
-                    cluster_rows=cluster_rows,
-                    cluster_number=index,
-                )
-
-            RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(len(clusters))
-            RCA_TICKETS_SCANNED_TOTAL.labels(tenant_hash=tenant_hash).inc(len(rows))
-            LOGGER.info(
-                "rca run complete",
-                extra={
-                    "event": "rca_run_complete",
-                    "context": {
-                        "tenant_id_hash": tenant_hash,
-                        "ticket_count": len(rows),
-                        "cluster_count": len(clusters),
-                    },
-                },
-            )
+                    )
+                except Exception as exc:
+                    span.record_exception(exc)
+                    raise
         finally:
             RCA_RUN_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
                 time.monotonic() - started
@@ -294,7 +342,16 @@ class RCAClusterer:
         severity = self._severity_from_size(len(cluster_rows))
         try:
             if texts:
-                summary_result = self._llm_client.summarize_cluster(texts)
+                with TRACER.start_as_current_span("rca.summarize") as span:
+                    span.set_attribute("cluster_id", cluster_id)
+                    span.set_attribute("ticket_count", len(cluster_rows))
+                    try:
+                        summary_result = await self._llm_client.summarize_cluster_async(
+                            texts
+                        )
+                    except Exception as exc:
+                        span.record_exception(exc)
+                        raise
                 label = summary_result.get("label") or label
                 summary = summary_result.get("summary") or summary
                 severity = summary_result.get("severity") or severity
@@ -394,7 +451,9 @@ class RCAClusterer:
                     },
                 )
                 raise ValueError(
-                    f"Cross-tenant isolation breach: got {cluster_tenant_id}, expected {tenant_id}"
+                    "Cross-tenant isolation breach: "
+                    f"got {_sha256_short(cluster_tenant_id)}, "
+                    f"expected {_sha256_short(tenant_id)}"
                 )
             text_value = row.get("raw_text")
             if isinstance(text_value, str):
