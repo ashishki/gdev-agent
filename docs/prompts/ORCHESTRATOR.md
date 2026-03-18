@@ -72,10 +72,13 @@ Determine:
 
 **C. Phase boundary?**
 All tasks in the current phase are `✅`/`[x]` and the next task belongs to a different phase.
-→ Deep review + Strategy before implementing first task of new phase.
+
+Check `docs/audit/AUDIT_INDEX.md` Archive table:
+- Completed phase has **no** archive entry → **true phase boundary**: run Strategy + Deep review before and after first task.
+- Completed phase **already has** an archive entry → review was done in a prior session; **not a true boundary**: skip Strategy and Deep review, treat as within-phase.
 
 **D. Review tier** — which review to run after the next implementation:
-- Phase boundary → Deep review (after implementing, if not already done this phase-end)
+- True phase boundary (C above, no archive entry) → Deep review
 - Security-critical task (auth, middleware, RLS, secrets) → Deep review
 - Otherwise → Light review
 
@@ -95,7 +98,7 @@ Action: [what happens next]
 
 ### Step 1 — Strategy Review (phase boundaries only)
 
-**Skip if not at a phase boundary.**
+**Skip if not at a true phase boundary (Step 0-C).**
 
 Use **Agent tool** (`general-purpose`):
 

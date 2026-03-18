@@ -108,9 +108,11 @@ SEC-4 No hardcoded secrets · SEC-5 Async correctness · SEC-6 Auth/RBAC on new 
 + CF: Implementation Contract rules A–I
 
 **Deep review triggers:**
-- All tasks in a phase are complete (phase boundary)
+- All tasks in a phase are complete (phase boundary) **AND** the phase has no archive entry in `docs/audit/AUDIT_INDEX.md` yet
 - Last task touched: auth, middleware, RLS, tenant isolation, secrets
 - 5+ P2 findings open for 3+ cycles
+
+**Skip deep review if:** the completed phase already has an archive entry in `docs/audit/AUDIT_INDEX.md` — review was done in a prior session; treat as within-phase and run light review only.
 
 **Skip all review:** doc-only patches, test-only changes, dependency bumps.
 
