@@ -15,7 +15,7 @@ SESSION HANDOFF — START HERE
               FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅
 
 **Baseline:** 155 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
-**Next task:** SVC-1 — Extract AuthService (Phase 9 start)
+**Next task:** FIX-G — Invert Redis key segment order to `{tenant_id}:{type}:{id}` (Phase 9 start)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
 ✅ `pytest tests/ -q` → 155 passed, 13 skipped
@@ -27,7 +27,7 @@ SESSION HANDOFF — START HERE
 **Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
 **Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
-**Phase 9 queue:** SVC-1 [ ] → SVC-2 [ ] → SVC-3 [ ] → DOC-1 [ ] → DOC-2 [ ] → DOC-3 [ ]
+**Phase 9 queue:** FIX-G [ ] → SVC-1 [ ] → SVC-2 [ ] → SVC-3 [ ] → DOC-1 [ ] → DOC-2 [ ] → DOC-3 [ ]
 **Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
 **Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
 

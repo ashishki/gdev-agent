@@ -1552,6 +1552,36 @@ but undocumented. Two files need updating.
 
 _Goal: eliminate architecture drift (ARCH-7, ARCH-8) by pulling business logic out of routers and agent.py into a proper service layer; update architecture docs to v3.0._
 
+### FIX-G · Invert Redis key segment order to `{tenant_id}:{type}:{id}`
+
+**Owner:** Codex
+**Priority:** P2 (CODE-1, CODE-2, CODE-3 — Cycle 9)
+**Depends-on:** FIX-A
+**Status:** [ ]
+
+**Scope:**
+Redis hot-path keys use `{type}:{tenant_id}:{id}` order (e.g. `dedup:{tenant_id}:{msg}`).
+`docs/data-map.md` §3 canonical form is `{tenant_id}:{type}:{id}`.
+The current order prevents per-tenant Redis ACL grants (`~{tenant_id}:*`) and
+makes full tenant key enumeration/deletion require type-specific SCAN patterns.
+
+**Files to MODIFY:**
+- `app/dedup.py` — key: `dedup:{tenant_id}:{message_id}` → `{tenant_id}:dedup:{message_id}`
+- `app/approval_store.py` — key: `pending:{tenant_id}:{pending_id}` → `{tenant_id}:pending:{pending_id}`
+- `app/middleware/rate_limit.py` — key: `ratelimit:{tenant_id}:{user_id}` → `{tenant_id}:ratelimit:{user_id}`; anonymous path: `anonymous:ratelimit:{user_id}`
+- `docs/data-map.md` — §3 Redis key table: confirm keys match new code (already canonical — verify only)
+
+**Acceptance Criteria:**
+1. `app/dedup.py` key format is `f"{tenant_id}:dedup:{message_id}"`.
+2. `app/approval_store.py` `_key()` returns `f"{tenant_id}:pending:{pending_id}"`.
+3. `app/middleware/rate_limit.py` `_webhook_key()` returns `f"{tenant_prefix}:ratelimit:{user_id}"`.
+4. Anonymous/webhook fallback: `f"anonymous:ratelimit:{user_id}"` (tenant_id=None path).
+5. All existing tests updated to assert new key format.
+6. Cross-tenant isolation tests still pass (key written under tenant-A not readable under tenant-B).
+7. `pytest tests/ -q` passes with no regressions.
+
+---
+
 ### SVC-1 · Extract AuthService
 
 **Owner:** Codex
