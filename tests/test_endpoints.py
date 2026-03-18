@@ -10,13 +10,18 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from jose import jwt
 
 from app import main
+from app.config import Settings
+from app.middleware.auth import JWTMiddleware
+from app.routers import auth as auth_module
 from app.routers.agents import list_agents
 from app.routers.analytics import list_audit, list_cost_metrics
 from app.routers.clusters import get_cluster, list_clusters
 from app.routers.eval import list_eval_runs
 from app.routers.tickets import get_ticket, list_tickets
+from app.services.auth_service import LogoutRequest, RefreshTokenRequest
 
 
 class _ResultStub:
@@ -60,6 +65,53 @@ class _SequencedSessionStub:
 
 def _request(tenant_id: UUID, role: str = "tenant_admin") -> SimpleNamespace:
     return SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id, role=role))
+
+
+class _AsyncRedisStub:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def set(self, key: str, value: str, *, ex: int) -> bool:
+        self.values[key] = value
+        return True
+
+
+def _auth_request(app_state: object) -> SimpleNamespace:
+    return SimpleNamespace(app=SimpleNamespace(state=app_state))
+
+
+def _http_request(
+    method: str,
+    path: str,
+    *,
+    headers: dict[str, str] | None = None,
+    app_state: object | None = None,
+):
+    from fastapi import Request
+
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": method,
+        "path": path,
+        "headers": [
+            (key.lower().encode("latin-1"), value.encode("latin-1"))
+            for key, value in (headers or {}).items()
+        ],
+        "query_string": b"",
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "app": SimpleNamespace(state=app_state or SimpleNamespace()),
+    }
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request(scope, receive)
 
 
 def _route_dependency(path: str) -> object:
@@ -509,3 +561,92 @@ def test_reader_roles_allowed_for_jwt_read_endpoints() -> None:
         dependency(SimpleNamespace(state=SimpleNamespace(role="viewer")))
         dependency(SimpleNamespace(state=SimpleNamespace(role="support_agent")))
         dependency(SimpleNamespace(state=SimpleNamespace(role="tenant_admin")))
+
+
+@pytest.mark.asyncio
+async def test_auth_logout_revokes_token_for_next_request() -> None:
+    settings = Settings(jwt_secret="x" * 32)
+    redis_stub = _AsyncRedisStub()
+    tenant_id = str(uuid4())
+    user_id = str(uuid4())
+    jti = str(uuid4())
+    now = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "tenant_id": tenant_id,
+            "role": "viewer",
+            "jti": jti,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    app_state = SimpleNamespace(
+        settings=settings,
+        db_session_factory=object(),
+        jwt_blocklist_redis=redis_stub,
+    )
+
+    response = await auth_module.logout(
+        LogoutRequest(access_token=token),
+        _auth_request(app_state),
+    )
+
+    assert response.status == "revoked"
+
+    middleware = JWTMiddleware(app=None, settings=settings)
+    protected_request = _http_request(
+        "GET",
+        "/tickets",
+        headers={"Authorization": f"Bearer {token}"},
+        app_state=SimpleNamespace(jwt_blocklist_redis=redis_stub, settings=settings),
+    )
+    blocked = await middleware.dispatch(
+        protected_request, lambda _: JSONResponse({"ok": True}, status_code=200)
+    )
+
+    assert blocked.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_returns_new_access_token() -> None:
+    settings = Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8)
+    redis_stub = _AsyncRedisStub()
+    tenant_id = str(uuid4())
+    user_id = str(uuid4())
+    old_jti = str(uuid4())
+    now = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "tenant_id": tenant_id,
+            "role": "tenant_admin",
+            "jti": old_jti,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp()),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    app_state = SimpleNamespace(
+        settings=settings,
+        db_session_factory=object(),
+        jwt_blocklist_redis=redis_stub,
+    )
+
+    response = await auth_module.refresh_token(
+        RefreshTokenRequest(access_token=token),
+        _auth_request(app_state),
+    )
+
+    claims = jwt.decode(
+        response.access_token,
+        settings.jwt_secret,
+        algorithms=[settings.jwt_algorithm],
+    )
+    assert claims["sub"] == user_id
+    assert claims["tenant_id"] == tenant_id
+    assert claims["role"] == "tenant_admin"
+    assert claims["jti"] != old_jti

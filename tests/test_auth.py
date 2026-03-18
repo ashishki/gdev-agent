@@ -21,7 +21,14 @@ from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import auth as auth_module
 from app.schemas import AuthTokenRequest, AuthTokenResponse
-from app.services.auth_service import LoginResult
+from app.services.auth_service import (
+    LoginResult,
+    LogoutRequest,
+    LogoutResponse,
+    LogoutResult,
+    RefreshTokenRequest,
+    RefreshTokenResult,
+)
 
 
 class _AsyncRedisStub:
@@ -481,6 +488,70 @@ async def test_auth_token_unknown_tenant_slug_returns_401(monkeypatch) -> None:
 
     assert response.status_code == 401
     assert captured == [payload]
+
+
+@pytest.mark.asyncio
+async def test_auth_logout_router_delegates_to_auth_service(monkeypatch) -> None:
+    expected = LogoutResponse(status="revoked")
+    logout = AsyncMock(return_value=LogoutResult(status_code=200, payload=expected))
+
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        async def logout(self, payload: LogoutRequest) -> LogoutResult:
+            return await logout(payload)
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    request = _request(
+        "POST",
+        "/auth/logout",
+        app_state=SimpleNamespace(
+            settings=Settings(jwt_secret="x" * 32),
+            db_session_factory=object(),
+            jwt_blocklist_redis=object(),
+        ),
+    )
+    payload = LogoutRequest(access_token="token")
+
+    response = await auth_module.logout(payload, request)
+
+    assert response == expected
+    logout.assert_awaited_once_with(payload)
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_router_delegates_to_auth_service(monkeypatch) -> None:
+    expected = AuthTokenResponse(access_token="new-token", expires_in=3600)
+    refresh = AsyncMock(
+        return_value=RefreshTokenResult(status_code=200, payload=expected)
+    )
+
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        async def refresh_token(
+            self, payload: RefreshTokenRequest
+        ) -> RefreshTokenResult:
+            return await refresh(payload)
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    request = _request(
+        "POST",
+        "/auth/refresh",
+        app_state=SimpleNamespace(
+            settings=Settings(jwt_secret="x" * 32),
+            db_session_factory=object(),
+            jwt_blocklist_redis=object(),
+        ),
+    )
+    payload = RefreshTokenRequest(access_token="token")
+
+    response = await auth_module.refresh_token(payload, request)
+
+    assert response == expected
+    refresh.assert_awaited_once_with(payload)
 
 
 @pytest.mark.asyncio

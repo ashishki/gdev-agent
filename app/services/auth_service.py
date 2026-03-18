@@ -10,7 +10,6 @@ from typing import Literal
 from uuid import uuid4
 
 import bcrypt
-from fastapi.responses import JSONResponse
 from jose import jwt  # type: ignore[import-untyped]
 from jose.exceptions import ExpiredSignatureError, JWTError  # type: ignore[import-untyped]
 from prometheus_client import Counter, Histogram
@@ -81,10 +80,8 @@ class _ServiceResult(BaseModel):
     status_code: int
     payload: BaseModel
 
-    def to_response(self) -> BaseModel | JSONResponse:
-        if self.status_code == 200:
-            return self.payload
-        return JSONResponse(self.payload.model_dump(), status_code=self.status_code)
+    def to_response_body(self) -> dict[str, object]:
+        return self.payload.model_dump(mode="json")
 
 
 class LoginResult(_ServiceResult):

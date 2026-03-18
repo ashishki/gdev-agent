@@ -314,3 +314,22 @@ async def test_refresh_token_rotates_jti_and_revokes_previous_token(
         tracer.spans[0].attributes["tenant_id_hash"]
         == hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()[:16]
     )
+
+
+def test_service_result_to_response_body_returns_plain_dict() -> None:
+    result = auth_service_module.LoginResult(
+        status_code=401,
+        payload=auth_service_module.ErrorResponse(
+            error=auth_service_module.ErrorDetail(
+                code="invalid_credentials",
+                message="Invalid email or password",
+            )
+        ),
+    )
+
+    assert result.to_response_body() == {
+        "error": {
+            "code": "invalid_credentials",
+            "message": "Invalid email or password",
+        }
+    }
