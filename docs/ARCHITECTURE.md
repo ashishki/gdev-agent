@@ -1,6 +1,6 @@
-# gdev-agent — Architecture Spec v2.1
+# gdev-agent — Architecture Spec v3.0
 
-_Last updated: 2026-02-28 · Implementation contract for Codex and human reviewers.
+_Last updated: 2026-03-18 · Implementation contract for Codex and human reviewers.
 All PRs must keep this document current. Spec version must be bumped on structural change._
 
 ---
@@ -31,7 +31,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 
 ---
 
-## 2. Current System State (2026-03-03)
+## 2. Current System State (2026-03-18)
 
 ### 2.1 Component Status
 
@@ -62,6 +62,10 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Google Sheets async audit log | `app/integrations/sheets.py` | ✅ Implemented |
 | n8n workflow artifacts | `/n8n/` | ✅ Committed |
 | Docker Compose full stack | `docker-compose.yml` | ✅ Implemented |
+| Service layer (`AuthService`, `EvalService`) | `app/services/` | ✅ Implemented |
+| Eval API endpoints | `app/routers/eval.py` | ✅ Implemented |
+| Eval runner + persistence | `eval/runner.py`, `app/services/eval_service.py` | ✅ Implemented |
+| RCA clusterer background job | `app/jobs/rca_clusterer.py` | ✅ Implemented |
 | Eval dataset (25 cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
@@ -99,6 +103,15 @@ gdev-agent/
 │   │   ├── linear.py        # LinearClient: GraphQL issue creation
 │   │   ├── telegram.py      # TelegramClient: send_message + send_approval_request
 │   │   └── sheets.py        # SheetsClient: async audit log append
+│   ├── routers/
+│   │   ├── auth.py          # Auth API handlers; delegates to AuthService
+│   │   ├── eval.py          # Eval API handlers; delegates to EvalService
+│   │   └── clusters.py      # RCA cluster read endpoints
+│   ├── services/
+│   │   ├── auth_service.py  # AuthService: login/logout/refresh token flows
+│   │   └── eval_service.py  # EvalService: queue/list/status eval runs
+│   ├── jobs/
+│   │   └── rca_clusterer.py # APScheduler job for RCA clustering
 │   └── tools/
 │       ├── __init__.py      # TOOL_REGISTRY: dict[str, ToolHandler]
 │       ├── ticketing.py     # create_ticket() — Linear or stub
@@ -122,7 +135,7 @@ gdev-agent/
 │   ├── tasks.md             # task graph and phase queue (active work)
 │   └── archive/PLAN_v3.md   # delivered history (archived)
 ├── Dockerfile
-├── docker-compose.yml       # agent + redis + n8n with healthchecks
+├── docker-compose.yml       # postgres + migrate + agent + redis + observability + n8n
 ├── requirements.txt
 ├── requirements-dev.txt     # pytest, fakeredis
 └── .env.example
@@ -151,7 +164,7 @@ gdev-agent/
 │  3. RequestIDMiddleware   reads/generates X-Request-ID ContextVar  │
 │                                                                    │
 │  Idempotency check                                                 │
-│    Redis GET dedup:{message_id}                                    │
+│    Redis GET {tenant_id}:dedup:{message_id}                        │
 │    HIT  → return cached response body → done (logs dedup_hit)      │
 │    MISS → continue processing                                      │
 └──────────────────────────────┬─────────────────────────────────────┘
@@ -192,13 +205,13 @@ gdev-agent/
 │  needs_approval? (= action.risky)                                  │
 │    YES → RedisApprovalStore.put_pending()                          │
 │          TelegramClient.send_approval_request() [fire-and-forget] │
-│          Redis SET dedup:{message_id} = response                   │
+│          Redis SET {tenant_id}:dedup:{message_id} = response       │
 │          EventStore.log_event("pending_created")                   │
 │          → HTTP 200 {status:"pending", pending_id}                 │
 │    NO  → TOOL_REGISTRY[action.tool](payload, user_id)             │
 │            LinearClient.create_issue() [or stub]                  │
 │            TelegramClient.send_message() [or stub]                │
-│          Redis SET dedup:{message_id} = response                   │
+│          Redis SET {tenant_id}:dedup:{message_id} = response       │
 │          SheetsClient.append_log() [async, background thread]     │
 │          EventStore.log_event("action_executed")                   │
 │          → HTTP 200 {status:"executed", action_result}             │
@@ -225,6 +238,63 @@ gdev-agent/
 │    → Google Sheets: update decision row                            │
 └────────────────────────────────────────────────────────────────────┘
 ```
+
+### 3.1 Service Layer
+
+Routers are thin HTTP adapters. Business logic now lives in `app/services/`, which isolates
+database access, tracing, metrics, and background scheduling from FastAPI request objects.
+
+| Component | Role | Primary callers |
+|-----------|------|-----------------|
+| `app/routers/auth.py` | Validate HTTP input and auth dependencies | Clients |
+| `app/services/auth_service.py` (`AuthService`) | Login, logout, token refresh, JWT blocklist writes | `app/routers/auth.py` |
+| `app/routers/eval.py` | Validate eval request/query params and role checks | Clients |
+| `app/services/eval_service.py` (`EvalService`) | Queue eval runs, list history, fetch status, launch background runner | `app/routers/eval.py` |
+
+```text
+HTTP request
+  -> router (`app/routers/*.py`)
+  -> service (`app/services/*.py`)
+  -> DB / Redis / background job
+  -> response model
+```
+
+### 3.2 Eval Subsystem
+
+The eval subsystem provides a tenant-scoped offline quality check for classification and guardrail
+behavior without changing production traffic flow.
+
+```text
+POST /eval/run
+  -> `app/routers/eval.py`
+  -> `app/services/eval_service.py:create_run()`
+  -> row inserted into `eval_runs`
+  -> background task calls `eval/runner.py:run_eval_job()`
+  -> metrics persisted back to `eval_runs`
+```
+
+Key modules:
+- `app/routers/eval.py` exposes `POST /eval/run` and `GET /eval/runs`.
+- `app/services/eval_service.py` owns run lifecycle, budget checks, and background dispatch.
+- `eval/runner.py` loads JSONL cases, executes the agent, computes metrics, and updates `eval_runs`.
+- `eval/cases.jsonl` is the current on-disk dataset used by the runner.
+
+### 3.3 Docker Stack
+
+`docker-compose.yml` (T24) defines the local full-stack deployment used for development, demos,
+and CI smoke flows.
+
+| Service | Purpose |
+|---------|---------|
+| `postgres` | Primary relational store with pgvector support |
+| `migrate` | Runs Alembic migrations and seed data before app start |
+| `agent` | FastAPI application |
+| `redis` | Dedup, pending approvals, rate limiting, JWT blocklist |
+| `prometheus` | Metrics scrape and storage |
+| `grafana` | Dashboards |
+| `tempo` | Trace backend |
+| `loki` | Log aggregation backend |
+| `n8n` | Workflow/orchestration boundary |
 
 ---
 
@@ -479,7 +549,7 @@ A held action waiting for human approval. Stored in Redis with a TTL equal to `A
 | `action` | `ProposedAction` | Fully serialised action to execute on approval. |
 | `draft_response` | `string` | Proposed reply text shown to approver; sent to user on approval. |
 
-**Storage:** Redis key `pending:{pending_id}` with `EX = APPROVAL_TTL_SECONDS`. The application-level
+**Storage:** Redis key `{tenant_id}:pending:{pending_id}` with `EX = APPROVAL_TTL_SECONDS`. The application-level
 `expires_at` field and the Redis TTL are set at creation time from the same value. Both checks apply:
 Redis TTL prevents key accumulation; `expires_at` handles sub-second race conditions at the boundary.
 
@@ -560,10 +630,10 @@ Every `/webhook` call is idempotent by `message_id`.
 
 **First call:**
 1. Agent processes normally.
-2. Full response body is serialised and stored in Redis: `dedup:{message_id}` with TTL = 86 400 s (24 h).
+2. Full response body is serialised and stored in Redis: `{tenant_id}:dedup:{message_id}` with TTL = 86 400 s (24 h).
 
 **Duplicate call (same `message_id` within 24 h):**
-1. Middleware reads Redis key `dedup:{message_id}`.
+1. Middleware reads Redis key `{tenant_id}:dedup:{message_id}`.
 2. Returns cached response body immediately. No LLM call. No duplicate ticket or approval entry.
 3. Event `dedup_hit` is logged.
 
@@ -580,10 +650,12 @@ from `/approve` as terminal — not retriable.
 
 | Key | TTL | Purpose |
 |-----|-----|---------|
-| `dedup:{message_id}` | 86 400 s | Idempotent response cache |
-| `pending:{pending_id}` | `APPROVAL_TTL_SECONDS` | Durable approval decision |
-| `ratelimit:{user_id}` | 60 s (sliding window) | Rate limit counter |
-| `ratelimit_burst:{user_id}` | 10 s | Burst rate limit counter |
+| `{tenant_id}:dedup:{message_id}` | 86 400 s | Idempotent response cache |
+| `{tenant_id}:pending:{pending_id}` | `APPROVAL_TTL_SECONDS` | Durable approval decision |
+| `{tenant_id}:ratelimit:{user_id}` | 60 s (sliding window) | Rate limit counter |
+| `anonymous:ratelimit:{user_id}` | 60 s (sliding window) | Fallback rate limit counter when tenant context is absent |
+| `{tenant_id}:ratelimit_burst:{user_id}` | 10 s | Burst rate limit counter |
+| `anonymous:ratelimit_burst:{user_id}` | 10 s | Fallback burst counter when tenant context is absent |
 | `tenant:{tenant_id}:config` | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
 | `jwt:blocklist:{jti}` | Token remaining lifetime | Revoked JWT flag (T05, pending) |
 
@@ -718,8 +790,8 @@ Redis sliding-window rate limiter keyed by `user_id`:
 
 | Env var | Default | Status |
 |---------|---------|--------|
-| `RATE_LIMIT_RPM` | `10` | Enforced — INCR+EXPIRE on `ratelimit:{user_id}` with 60 s TTL |
-| `RATE_LIMIT_BURST` | `3` | Enforced — INCR+EXPIRE on `ratelimit_burst:{user_id}` with 10 s TTL |
+| `RATE_LIMIT_RPM` | `10` | Enforced — INCR+EXPIRE on `{tenant_id}:ratelimit:{user_id}` with 60 s TTL |
+| `RATE_LIMIT_BURST` | `3` | Enforced — INCR+EXPIRE on `{tenant_id}:ratelimit_burst:{user_id}` with 10 s TTL |
 
 Exceeded → HTTP 429 `{"detail": "Rate limit exceeded"}` with `Retry-After: 60`.
 
@@ -993,6 +1065,16 @@ The following gaps are tracked against this spec. Each requires a PR with accept
 ---
 
 ## 13. Architectural Decisions
+
+### ADR Cross-Reference
+
+| ADR | File | Scope |
+|-----|------|-------|
+| ADR-001 | `docs/adr/001-storage-choice.md` | Postgres as primary system of record |
+| ADR-002 | `docs/adr/002-vector-database.md` | pgvector + Voyage AI embedding stack |
+| ADR-003 | `docs/adr/003-rbac-design.md` | JWT claims and tenant RBAC |
+| ADR-004 | `docs/adr/004-observability-stack.md` | Prometheus, Loki, Tempo, Grafana |
+| ADR-005 | `docs/adr/005-orchestration-model.md` | n8n as orchestration boundary |
 
 ### ADR-1: Claude `tool_use` over prompt-engineered JSON output
 

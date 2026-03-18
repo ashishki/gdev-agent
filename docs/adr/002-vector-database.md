@@ -11,7 +11,7 @@
 The Root Cause Analyzer requires semantic similarity search over recent ticket embeddings.
 Specifically, it must:
 
-1. Store a vector embedding (≈1536 dimensions) for each ingested ticket.
+1. Store a vector embedding (1024 dimensions) for each ingested ticket.
 2. Query the N most similar embeddings within a time window (approximate nearest neighbor).
 3. Feed the results into a clustering algorithm (DBSCAN) to surface emerging issue patterns.
 
@@ -29,13 +29,18 @@ database service or embed vector capability into an existing store.
 
 **Use pgvector, the Postgres extension, as the vector store.**
 
-- Embeddings stored in `ticket_embeddings.embedding VECTOR(1536)`.
+- Embeddings stored in `ticket_embeddings.embedding VECTOR(1024)` when pgvector is available,
+  with a `TEXT` fallback in environments that do not have the extension installed.
 - Index: `HNSW` (hierarchical navigable small world) for approximate nearest neighbor.
   `ivfflat` is acceptable for smaller tenants; HNSW preferred at scale.
 - Clustering logic runs in Python (scikit-learn DBSCAN) on the returned vectors.
-- Embedding model: `text-embedding-3-small` (OpenAI) via a thin client, or an equivalent
-  self-hostable model (e2b/Jina) if API cost becomes a concern. Model is configurable in
-  `agent_configs`.
+- Embedding model: Voyage AI (`voyage-3-lite` by default in config; 1024 dimensions in the
+  implemented stack) via `app/embedding_service.py`.
+
+**Supersedes original OpenAI choice:** the initial ADR draft referenced
+`text-embedding-3-small` at 1536 dimensions. T13 implemented the Voyage AI stack instead because
+it delivered the target embedding quality at lower operating cost and aligned the codepath,
+configuration, and stored vector size around a single 1024-dim contract.
 
 ---
 
@@ -77,15 +82,17 @@ database service or embed vector capability into an existing store.
 - HNSW index in pgvector achieves sub-100 ms ANN for our projected data volumes.
 - Single backup strategy covers both relational and vector data.
 - Schema simplicity: `ticket_embeddings` is a plain table with a vector column.
+- Voyage AI reduces per-embedding cost versus the superseded OpenAI option while keeping the
+  integration surface simple.
 
 **Negative / Risks:**
 - pgvector HNSW index rebuild is expensive on large tables; plan index creation with
   `CREATE INDEX CONCURRENTLY`.
-- Memory footprint: HNSW index for 3.65 M × 1536-dim vectors requires significant RAM
+- Memory footprint: HNSW index for 3.65 M × 1024-dim vectors requires significant RAM
   on the Postgres server. Mitigate with `USING hnsw (embedding vector_cosine_ops)
   WITH (m=16, ef_construction=64)` (conservative settings).
-- Embedding model API cost: 5,000 embeddings/day at text-embedding-3-small pricing ≈
-  $0.001/day. Negligible.
+- Embedding model API cost remains an external dependency and should be re-evaluated if traffic
+  or vendor pricing changes materially.
 
 **Review trigger:** If p99 ANN query latency exceeds 500 ms with real tenant data, evaluate
 migrating to Qdrant or Pinecone with a data export step.
