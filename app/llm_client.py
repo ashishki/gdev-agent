@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import logging
@@ -329,6 +330,12 @@ class LLMClient:
         if isinstance(severity, str) and severity in {"low", "medium", "high"}:
             return {"label": label, "summary": summary, "severity": severity}
         return {"label": label, "summary": summary, "severity": None}
+
+    async def summarize_cluster_async(
+        self, ticket_texts: list[str]
+    ) -> dict[str, str | None]:
+        """Run cluster summarization off the event loop."""
+        return await asyncio.to_thread(self.summarize_cluster, ticket_texts)
 
     def _create_message(self, **kwargs: Any) -> Any:
         """Call Claude messages API with retries on transient 5xx responses."""

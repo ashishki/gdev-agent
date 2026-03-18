@@ -114,3 +114,41 @@ def test_unknown_tool_sets_force_pending_marker_and_logs(caplog) -> None:
 
     assert result["__force_pending__"] is True
     assert any(getattr(r, "event", None) == "llm_unknown_tool" for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_summarize_cluster_async_uses_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = object.__new__(LLMClient)
+    client.settings = Settings(anthropic_api_key="test-key")
+    seen: dict[str, object] = {}
+
+    def fake_summarize_cluster(ticket_texts: list[str]) -> dict[str, str | None]:
+        seen["ticket_texts"] = ticket_texts
+        return {
+            "label": "Payments",
+            "summary": "Two related tickets",
+            "severity": "high",
+        }
+
+    async def fake_to_thread(func, *args, **kwargs):  # noqa: ANN001
+        seen["func"] = func
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(client, "summarize_cluster", fake_summarize_cluster)
+    monkeypatch.setattr("app.llm_client.asyncio.to_thread", fake_to_thread)
+
+    result = await client.summarize_cluster_async(["payment failed", "checkout error"])
+
+    assert seen["func"] is fake_summarize_cluster
+    assert seen["args"] == (["payment failed", "checkout error"],)
+    assert seen["kwargs"] == {}
+    assert seen["ticket_texts"] == ["payment failed", "checkout error"]
+    assert result == {
+        "label": "Payments",
+        "summary": "Two related tickets",
+        "severity": "high",
+    }
