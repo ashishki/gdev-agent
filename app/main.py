@@ -266,30 +266,6 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
             root_span.set_attribute("http.route", "/webhook")
             root_span.set_attribute("request_id", REQUEST_ID.get() or "")
         try:
-            dedup_cm = (
-                TRACER.start_as_current_span("middleware.dedup")
-                if TRACER is not None
-                else nullcontext()
-            )
-            with dedup_cm as dedup_span:
-                if dedup_span is not None:
-                    dedup_span.set_attribute("cacheable", cacheable)
-                if cacheable:
-                    cached = app.state.dedup.check(message_id)
-                    if dedup_span is not None:
-                        dedup_span.set_attribute("dedup.hit", cached is not None)
-                    if cached is not None:
-                        LOGGER.info(
-                            "dedup hit",
-                            extra={
-                                "event": "dedup_hit",
-                                "context": {"message_id": message_id},
-                            },
-                        )
-                        if root_span is not None:
-                            root_span.set_attribute("http.status_code", 200)
-                        return WebhookResponse.model_validate_json(cached)
-
             request_tenant_id = getattr(request.state, "tenant_id", None)
             resolved_tenant_id = request_tenant_id or payload.tenant_id
             if not resolved_tenant_id:
@@ -319,6 +295,32 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
                 update={"tenant_id": str(resolved_tenant_uuid)}
             )
 
+            dedup_cm = (
+                TRACER.start_as_current_span("middleware.dedup")
+                if TRACER is not None
+                else nullcontext()
+            )
+            with dedup_cm as dedup_span:
+                if dedup_span is not None:
+                    dedup_span.set_attribute("cacheable", cacheable)
+                if cacheable:
+                    cached = app.state.dedup.check(
+                        str(resolved_tenant_uuid), message_id
+                    )
+                    if dedup_span is not None:
+                        dedup_span.set_attribute("dedup.hit", cached is not None)
+                    if cached is not None:
+                        LOGGER.info(
+                            "dedup hit",
+                            extra={
+                                "event": "dedup_hit",
+                                "context": {"message_id": message_id},
+                            },
+                        )
+                        if root_span is not None:
+                            root_span.set_attribute("http.status_code", 200)
+                        return WebhookResponse.model_validate_json(cached)
+
             try:
                 response = app.state.agent.process_webhook(
                     payload, message_id=message_id
@@ -331,7 +333,9 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
                 raise
 
             if cacheable:
-                app.state.dedup.set(message_id, response.model_dump_json())
+                app.state.dedup.set(
+                    str(resolved_tenant_uuid), message_id, response.model_dump_json()
+                )
             if root_span is not None:
                 root_span.set_attribute("http.status_code", 200)
             return response
@@ -363,4 +367,5 @@ def approve(
 
 @app.get("/metrics")
 def metrics() -> Response:
+    # JWT auth is intentionally exempted for Prometheus scrapes; access is restricted at the network layer.
     return Response(content=render_metrics(), media_type="text/plain; version=0.0.4")

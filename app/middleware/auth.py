@@ -53,6 +53,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
             span.set_attribute("http.route", request.url.path)
             if (request.method, request.url.path) in {
                 ("GET", "/health"),
+                # Prometheus scrape — auth handled at network layer
                 ("GET", "/metrics"),
                 ("POST", "/webhook"),
                 ("POST", "/auth/token"),
