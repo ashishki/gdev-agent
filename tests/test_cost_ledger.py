@@ -16,13 +16,14 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
-from app.db import make_session_factory
+from app.db import _set_tenant_ctx, make_session_factory
 from app.exceptions import BudgetError
 from app.llm_client import TriageResult
 from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
@@ -127,8 +128,7 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text("ALTER ROLE gdev_app LOGIN PASSWORD :password"),
-                {"password": password},
+                text(f"ALTER ROLE gdev_app LOGIN PASSWORD '{password}'"),
             )
             await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
             await conn.execute(
@@ -138,7 +138,7 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
             )
     finally:
         await engine.dispose()
-    return str(make_url(database_url).set(username="gdev_app", password=password))
+    return make_url(database_url).set(username="gdev_app", password=password).render_as_string(hide_password=False)
 
 
 class _TrackingLLM:
@@ -171,7 +171,7 @@ def test_budget_exhausted_returns_429_before_llm_call(migrated_postgres: str) ->
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
     llm = _TrackingLLM()
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     store = EventStore(
         sqlite_path=None, db_session_factory=make_session_factory(engine)
     )
@@ -207,17 +207,14 @@ def test_record_uses_upsert_and_accumulates_daily_usage(migrated_postgres: str) 
     )
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
     ledger = CostLedger()
 
     async def _record_twice() -> None:
         async with session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                    {"tenant_id": str(tenant_id)},
-                )
+                await _set_tenant_ctx(session, str(tenant_id))
                 await ledger.record(
                     tenant_id, today, 100, 20, Decimal("0.1000"), session
                 )
@@ -274,17 +271,14 @@ def test_check_budget_isolated_per_tenant(migrated_postgres: str) -> None:
     asyncio.run(_seed_cost(migrated_postgres, tenant_a, today, Decimal("1.0000")))
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
     ledger = CostLedger()
 
     async def _check(tenant_id: UUID) -> None:
         async with session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                    {"tenant_id": str(tenant_id)},
-                )
+                await _set_tenant_ctx(session, str(tenant_id))
                 await ledger.check_budget(tenant_id, session)
 
     try:

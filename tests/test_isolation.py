@@ -15,12 +15,13 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings
-from app.db import make_session_factory
+from app.db import _set_tenant_ctx, make_session_factory
 from app.exceptions import AgentError
 from app.schemas import (
     ApproveRequest,
@@ -123,8 +124,7 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text(f"ALTER ROLE {role} LOGIN PASSWORD :password"),
-                {"password": password},
+                text(f"ALTER ROLE {role} LOGIN PASSWORD '{password}'"),
             )
             await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
             await conn.execute(
@@ -135,7 +135,7 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
     finally:
         await engine.dispose()
 
-    return str(make_url(database_url).set(username=role, password=password))
+    return make_url(database_url).set(username=role, password=password).render_as_string(hide_password=False)
 
 
 async def _count_rows_for_tenant(
@@ -203,16 +203,13 @@ def test_db_rls_read_isolation_for_gdev_app(migrated_postgres: str) -> None:
         _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
     )
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
 
     async def _query_cross_tenant_rows() -> int:
         async with session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                    {"tenant_id": str(tenant_a)},
-                )
+                await _set_tenant_ctx(session, str(tenant_a))
                 result = await session.execute(
                     text("SELECT COUNT(*) FROM tickets WHERE tenant_id = :tenant_id"),
                     {"tenant_id": str(tenant_b)},
@@ -237,16 +234,13 @@ def test_db_rls_write_isolation_for_gdev_app(migrated_postgres: str) -> None:
         _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
     )
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
 
     async def _attempt_cross_tenant_insert() -> None:
         async with session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
-                    {"tenant_id": str(tenant_a)},
-                )
+                await _set_tenant_ctx(session, str(tenant_a))
                 await session.execute(
                     text(
                         """
@@ -279,7 +273,7 @@ def test_event_store_binds_all_rows_to_payload_tenant(migrated_postgres: str) ->
         _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
     )
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     store = EventStore(
         sqlite_path=None, db_session_factory=make_session_factory(engine)
     )
@@ -330,7 +324,7 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(
 
     settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
     approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     agent = AgentService(
         settings=settings,
         store=EventStore(
@@ -379,7 +373,7 @@ def test_gdev_admin_has_bypassrls_and_sees_both_tenants(migrated_postgres: str) 
         _enable_role_login(migrated_postgres, "gdev_admin", "gdev-admin-pass")
     )
 
-    engine = create_async_engine(admin_url)
+    engine = create_async_engine(admin_url, poolclass=NullPool)
 
     async def _query_admin_visibility() -> tuple[int, int, bool]:
         async with engine.connect() as conn:

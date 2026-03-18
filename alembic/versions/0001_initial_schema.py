@@ -376,7 +376,7 @@ def downgrade() -> None:
     op.drop_table("agent_configs")
     op.drop_table("cluster_summaries")
     op.execute("DROP TABLE IF EXISTS ticket_embeddings")
-    op.drop_table("audit_log")
+    op.execute("DROP TABLE IF EXISTS audit_log")
     op.drop_table("approval_events")
     op.drop_table("pending_decisions")
     op.drop_table("proposed_actions")
@@ -396,9 +396,11 @@ def downgrade() -> None:
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gdev_app') THEN
                 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM gdev_app;
+                REVOKE ALL ON SCHEMA public FROM gdev_app;
             END IF;
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gdev_admin') THEN
                 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM gdev_admin;
+                REVOKE ALL ON SCHEMA public FROM gdev_admin;
             END IF;
         END
         $$

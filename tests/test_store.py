@@ -14,10 +14,11 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
-from app.db import make_session_factory
+from app.db import _set_tenant_ctx, make_session_factory
 from app.schemas import (
     AuditLogEntry,
     ClassificationResult,
@@ -150,8 +151,7 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text("ALTER ROLE gdev_app LOGIN PASSWORD :password"),
-                {"password": password},
+                text(f"ALTER ROLE gdev_app LOGIN PASSWORD '{password}'"),
             )
             await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
             await conn.execute(
@@ -162,7 +162,7 @@ async def _enable_gdev_app_login(database_url: str, password: str) -> str:
     finally:
         await engine.dispose()
 
-    return str(make_url(database_url).set(username="gdev_app", password=password))
+    return make_url(database_url).set(username="gdev_app", password=password).render_as_string(hide_password=False)
 
 
 def _build_event_inputs(
@@ -205,7 +205,7 @@ def _build_event_inputs(
 
 
 def _make_store(database_url: str) -> tuple[EventStore, object]:
-    engine = create_async_engine(database_url)
+    engine = create_async_engine(database_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
     return EventStore(sqlite_path=None, db_session_factory=session_factory), engine
 
@@ -396,16 +396,13 @@ def test_cross_tenant_insert_blocked_by_rls_for_gdev_app(
     asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "tenant-e"))
     app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
 
-    engine = create_async_engine(app_url)
+    engine = create_async_engine(app_url, poolclass=NullPool)
     session_factory = make_session_factory(engine)
 
     async def _cross_tenant_insert() -> None:
         async with session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
-                    {"tid": str(tenant_a)},
-                )
+                await _set_tenant_ctx(session, str(tenant_a))
                 await session.execute(
                     text(
                         """
