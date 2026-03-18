@@ -118,7 +118,7 @@ def test_approval_store_updates_queue_depth_gauge() -> None:
     before = _sample("gdev_approval_queue_depth", {"tenant_hash": tenant_hash})
     store.put_pending(pending)
     after_put = _sample("gdev_approval_queue_depth", {"tenant_hash": tenant_hash})
-    store.pop_pending("pending-1")
+    store.pop_pending(tenant_id, "pending-1")
     after_pop = _sample("gdev_approval_queue_depth", {"tenant_hash": tenant_hash})
 
     assert after_put == before + 1

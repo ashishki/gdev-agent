@@ -89,7 +89,7 @@ def test_redis_pending_expired_returns_none() -> None:
     )
     store.put_pending(pending)
 
-    assert store.pop_pending("expired-1") is None
+    assert store.pop_pending("tenant-a", "expired-1") is None
 
 
 def test_approve_forbidden_on_cross_tenant_pending() -> None:
@@ -119,8 +119,10 @@ def test_approve_forbidden_on_cross_tenant_pending() -> None:
             ),
             jwt_tenant_id="tenant-b",
         )
-    assert exc.value.status_code == 403
-    assert approval_store.get_pending(response.pending.pending_id) is not None
+    assert exc.value.status_code == 404
+    assert (
+        approval_store.get_pending("tenant-a", response.pending.pending_id) is not None
+    )
 
 
 def test_approve_forbidden_when_jwt_tenant_missing() -> None:

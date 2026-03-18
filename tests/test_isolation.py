@@ -363,8 +363,8 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(
     finally:
         asyncio.run(engine.dispose())
 
-    assert exc.value.status_code == 403
-    assert approval_store.get_pending(pending.pending_id) is not None
+    assert exc.value.status_code == 404
+    assert approval_store.get_pending(str(tenant_a), pending.pending_id) is not None
 
 
 @pytest.mark.integration

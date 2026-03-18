@@ -12,13 +12,15 @@ class DedupCache:
         self.redis = redis_client
         self.ttl_seconds = ttl_seconds
 
-    def check(self, message_id: str) -> str | None:
+    def check(self, tenant_id: str, message_id: str) -> str | None:
         """Return cached response JSON when present."""
-        raw = self.redis.get(f"dedup:{message_id}")
+        raw = self.redis.get(f"dedup:{tenant_id}:{message_id}")
         if raw is None:
             return None
         return raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
 
-    def set(self, message_id: str, response_json: str) -> None:
+    def set(self, tenant_id: str, message_id: str, response_json: str) -> None:
         """Cache response JSON under dedup key."""
-        self.redis.set(f"dedup:{message_id}", response_json, ex=self.ttl_seconds)
+        self.redis.set(
+            f"dedup:{tenant_id}:{message_id}", response_json, ex=self.ttl_seconds
+        )

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import asyncio
 import hashlib
 import fakeredis
 import logging
 from unittest.mock import Mock
 from uuid import uuid4
 
+import pytest
+
+import app.agent
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
@@ -258,6 +262,38 @@ def test_approve_hashes_reviewer_in_logs_and_audit() -> None:
 
     assert audit_entries[0].approved_by == expected_hash
     assert len(audit_entries[0].approved_by) == 16
+
+
+def test_record_approval_event_uses_shared_run_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        approval_categories=[],
+        auto_approve_threshold=0.5,
+    )
+    agent = AgentService(
+        settings=settings,
+        store=_ApprovalEventStore(),
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=FakeLLMClient(),
+        cost_ledger=_NoopCostLedger(),
+    )
+    called = {"value": False}
+
+    def fake_run_blocking(coroutine):
+        called["value"] = True
+        asyncio.run(coroutine)
+
+    monkeypatch.setattr(app.agent, "run_blocking", fake_run_blocking)
+
+    agent._record_approval_event(
+        pending_id=str(uuid4()),
+        tenant_id=str(uuid4()),
+        decision="approved",
+        reviewer_hash="reviewer-hash",
+    )
+
+    assert called["value"] is True
 
 
 def test_approve_keeps_approved_by_none_when_reviewer_missing() -> None:

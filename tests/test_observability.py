@@ -95,8 +95,8 @@ def test_webhook_trace_contains_required_agent_spans_and_attributes(
     )
 
     dedup_cache = SimpleNamespace(
-        check=lambda _message_id: None,
-        set=lambda _message_id, _body: None,
+        check=lambda _tenant_id, _message_id: None,
+        set=lambda _tenant_id, _message_id, _body: None,
     )
     main_module.app.state.agent = agent
     main_module.app.state.dedup = dedup_cache

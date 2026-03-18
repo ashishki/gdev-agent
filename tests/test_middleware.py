@@ -238,61 +238,70 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
 
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
-    assert redis_client.incr_calls.count("ratelimit:u1") == 3
-    assert ("ratelimit:u1", 60) in redis_client.expire_calls
+    assert redis_client.incr_calls.count("ratelimit:tenant-a:u1") == 3
+    assert ("ratelimit:tenant-a:u1", 60) in redis_client.expire_calls
 
 
 @pytest.mark.asyncio
 async def test_rate_limits_are_independent_per_user() -> None:
+    redis_client = _AsyncRedisStub()
     middleware = RateLimitMiddleware(
         app=None,
         settings=Settings(rate_limit_rpm=1, rate_limit_burst=10),
-        redis_client=_AsyncRedisStub(),
+        redis_client=redis_client,
     )
 
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
 
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u2","text":"hi"}'), ok)
-    ).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u2","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    assert "ratelimit:tenant-a:u1" in redis_client.incr_calls
+    assert "ratelimit:tenant-a:u2" in redis_client.incr_calls
 
 
 @pytest.mark.asyncio
 async def test_burst_limit_exceeded_for_same_user() -> None:
+    redis_client = _AsyncRedisStub()
     middleware = RateLimitMiddleware(
         app=None,
         settings=Settings(rate_limit_rpm=100, rate_limit_burst=3),
-        redis_client=_AsyncRedisStub(),
+        redis_client=redis_client,
     )
 
     async def ok(_request):
         return JSONResponse({"ok": True}, status_code=200)
 
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    assert (
-        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
-    ).status_code == 200
-    blocked = await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    assert (await middleware.dispatch(request, ok)).status_code == 200
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
+    assert redis_client.incr_calls.count("ratelimit_burst:tenant-a:u1") == 4
 
 
 @pytest.mark.asyncio
@@ -309,5 +318,30 @@ async def test_rate_limiter_uses_app_state_client_when_not_injected() -> None:
         b'{"user_id":"u1","text":"hi"}',
         app_state=SimpleNamespace(jwt_blocklist_redis=redis_client),
     )
+    req.state.tenant_id = "tenant-a"
     assert (await middleware.dispatch(req, ok)).status_code == 200
-    assert redis_client.incr_calls == ["ratelimit:u1", "ratelimit_burst:u1"]
+    assert redis_client.incr_calls == [
+        "ratelimit:tenant-a:u1",
+        "ratelimit_burst:tenant-a:u1",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_uses_anonymous_namespace_without_tenant_id() -> None:
+    redis_client = _AsyncRedisStub()
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(rate_limit_rpm=1, rate_limit_burst=10),
+        redis_client=redis_client,
+    )
+
+    async def ok(_request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    assert (
+        await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
+    ).status_code == 200
+    assert redis_client.incr_calls == [
+        "ratelimit:anonymous:u1",
+        "ratelimit_burst:anonymous:u1",
+    ]

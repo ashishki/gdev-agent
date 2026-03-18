@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import hashlib
 from datetime import UTC, datetime
-from queue import Queue
-from threading import Thread
 from typing import Any
 from uuid import UUID
 
@@ -16,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.metrics import APPROVAL_QUEUE_DEPTH
 from app.schemas import PendingDecision
+from app.utils import run_blocking
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ class RedisApprovalStore:
 
     def put_pending(self, decision: PendingDecision) -> None:
         """Store pending decision with expiration TTL."""
-        key = f"pending:{decision.pending_id}"
+        key = self._key(str(decision.tenant_id), str(decision.pending_id))
         payload = decision.model_dump(mode="json")
         self.redis.set(
             key,
@@ -44,15 +42,15 @@ class RedisApprovalStore:
         )
         if self._db_session_factory is not None:
             try:
-                self._run_blocking(self._persist_pending_async(decision))
+                run_blocking(self._persist_pending_async(decision))
             except Exception:
                 self.redis.delete(key)
                 raise
         APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).inc()
 
-    def pop_pending(self, pending_id: str) -> PendingDecision | None:
+    def pop_pending(self, tenant_id: str, pending_id: str) -> PendingDecision | None:
         """Atomically fetch and delete pending decision."""
-        key = f"pending:{pending_id}"
+        key = self._key(tenant_id, pending_id)
         raw = self.redis.execute_command("GETDEL", key)
         if raw is None:
             return None
@@ -70,9 +68,9 @@ class RedisApprovalStore:
             return None
         return decision
 
-    def get_pending(self, pending_id: str) -> PendingDecision | None:
+    def get_pending(self, tenant_id: str, pending_id: str) -> PendingDecision | None:
         """Read pending decision without deleting it."""
-        key = f"pending:{pending_id}"
+        key = self._key(tenant_id, pending_id)
         raw = self.redis.get(key)
         if raw is None:
             return None
@@ -93,28 +91,9 @@ class RedisApprovalStore:
             return None
         return decision
 
-    def _run_blocking(self, coroutine):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coroutine)
-
-        queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
-
-        def _target() -> None:
-            try:
-                result = asyncio.run(coroutine)
-                queue.put((True, result))
-            except Exception as exc:  # pragma: no cover - defensive branch
-                queue.put((False, exc))
-
-        thread = Thread(target=_target, daemon=True)
-        thread.start()
-        ok, data = queue.get()
-        thread.join()
-        if ok:
-            return data
-        raise data  # type: ignore[misc]
+    @staticmethod
+    def _key(tenant_id: str, pending_id: str) -> str:
+        return f"pending:{tenant_id}:{pending_id}"
 
     async def _persist_pending_async(self, decision: PendingDecision) -> None:
         if self._db_session_factory is None:

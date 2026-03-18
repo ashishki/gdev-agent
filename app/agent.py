@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import logging
 from decimal import Decimal
-from queue import Queue
 import threading
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -54,6 +53,7 @@ from app.schemas import (
 )
 from app.store import EventStore
 from app.tools import TOOL_REGISTRY
+from app.utils import run_blocking
 
 LOGGER = logging.getLogger(__name__)
 try:  # pragma: no cover - optional dependency in minimal local envs
@@ -430,18 +430,20 @@ class AgentService:
         jwt_tenant_id: str | None = None,
     ) -> ApproveResponse:
         """Approve or reject a pending action."""
+        if jwt_tenant_id is None:
+            raise HTTPException(status_code=403, detail="Forbidden")
         reviewer_hash = (
             hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
             if request.reviewer
             else None
         )
-        pending = self.approval_store.get_pending(request.pending_id)
+        pending = self.approval_store.get_pending(jwt_tenant_id, request.pending_id)
         if not pending:
             raise HTTPException(status_code=404, detail="pending_id not found")
-        if jwt_tenant_id is None or str(pending.tenant_id) != str(jwt_tenant_id):
+        if str(pending.tenant_id) != str(jwt_tenant_id):
             raise HTTPException(status_code=403, detail="Forbidden")
 
-        pending = self.approval_store.pop_pending(request.pending_id)
+        pending = self.approval_store.pop_pending(jwt_tenant_id, request.pending_id)
         if not pending:
             raise HTTPException(status_code=404, detail="pending_id not found")
 
@@ -672,29 +674,6 @@ class AgentService:
         except (ValueError, TypeError):
             return None
 
-    def _run_blocking(self, coroutine):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coroutine)
-
-        queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
-
-        def _target() -> None:
-            try:
-                result = asyncio.run(coroutine)
-                queue.put((True, result))
-            except Exception as exc:  # pragma: no cover - defensive branch
-                queue.put((False, exc))
-
-        thread = threading.Thread(target=_target, daemon=True)
-        thread.start()
-        ok, data = queue.get()
-        thread.join()
-        if ok:
-            return data
-        raise data  # type: ignore[misc]
-
     def _enforce_budget(self, tenant_id: str | None) -> None:
         tenant_uuid = self._tenant_uuid(tenant_id)
         session_factory = getattr(self.store, "_db_session_factory", None)
@@ -713,7 +692,7 @@ class AgentService:
                     await self.cost_ledger.check_budget(tenant_uuid, session)
 
         try:
-            self._run_blocking(_check_budget())
+            run_blocking(_check_budget())
         except BudgetExhaustedError as exc:
             if tenant_uuid is not None:
                 BUDGET_EXCEEDED_TOTAL.labels(
@@ -782,7 +761,7 @@ class AgentService:
                         ).set(utilization)
 
         try:
-            self._run_blocking(_record())
+            run_blocking(_record())
         except Exception:
             LOGGER.warning(
                 "failed recording llm cost",
@@ -858,7 +837,7 @@ class AgentService:
                         },
                     )
 
-        self._run_blocking(_record())
+        run_blocking(_record())
 
     def _schedule_embedding(
         self, *, ticket_id: str | None, tenant_id: str | None, text_value: str
