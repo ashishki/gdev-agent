@@ -25,6 +25,7 @@ from app.schemas import (
     ProposedAction,
     WebhookRequest,
 )
+import app.store
 from app.store import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,6 +208,36 @@ def _make_store(database_url: str) -> tuple[EventStore, object]:
     engine = create_async_engine(database_url)
     session_factory = make_session_factory(engine)
     return EventStore(sqlite_path=None, db_session_factory=session_factory), engine
+
+
+def test_persist_pipeline_run_uses_shared_run_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = uuid4()
+    store = EventStore(sqlite_path=None, db_session_factory=lambda: None)
+    payload, classification, extracted, action, audit_entry = _build_event_inputs(
+        tenant_id
+    )
+    called = {"value": False}
+
+    def fake_run_blocking(coroutine):
+        called["value"] = True
+        coroutine.close()
+        return "ticket-id"
+
+    monkeypatch.setattr(app.store, "run_blocking", fake_run_blocking)
+
+    assert (
+        store.persist_pipeline_run(
+            payload,
+            classification,
+            extracted,
+            action,
+            audit_entry,
+        )
+        == "ticket-id"
+    )
+    assert called["value"] is True
 
 
 def test_persist_pipeline_run_writes_all_rows_and_hashes_user_id(

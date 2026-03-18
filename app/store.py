@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import sqlite3
 from datetime import UTC, datetime
-from queue import Queue
-from threading import Thread
-from typing import Any, Coroutine, TypeVar, cast
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
@@ -22,8 +19,7 @@ from app.schemas import (
     ProposedAction,
     WebhookRequest,
 )
-
-T = TypeVar("T")
+from app.utils import run_blocking
 
 
 class EventStore:
@@ -80,7 +76,7 @@ class EventStore:
         """Persist ticket + classification + extracted + action + audit in one transaction."""
         if self._db_session_factory is None:
             return None
-        return self._run_blocking(
+        return run_blocking(
             self._persist_pipeline_run_async(
                 payload,
                 classification,
@@ -91,29 +87,6 @@ class EventStore:
                 output_tokens=output_tokens,
             )
         )
-
-    def _run_blocking(self, coroutine: Coroutine[Any, Any, T]) -> T:
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coroutine)
-
-        queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
-
-        def _target() -> None:
-            try:
-                result = asyncio.run(coroutine)
-                queue.put((True, result))
-            except Exception as exc:  # pragma: no cover - defensive branch
-                queue.put((False, exc))
-
-        thread = Thread(target=_target, daemon=True)
-        thread.start()
-        ok, data = queue.get()
-        thread.join()
-        if ok:
-            return cast(T, data)
-        raise data  # type: ignore[misc]
 
     async def _persist_pipeline_run_async(
         self,
