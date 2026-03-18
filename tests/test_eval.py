@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.routers import eval as eval_router
+from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
 from eval import runner as eval_runner
 
 
@@ -69,17 +70,6 @@ class _SessionStub:
         return _ResultStub(None)
 
 
-class _SessionContextStub:
-    def __init__(self, session: _SessionStub) -> None:
-        self._session = session
-
-    async def __aenter__(self) -> _SessionStub:
-        return self._session
-
-    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
-        return False
-
-
 class _AgentStub:
     def process_webhook(self, _payload):  # noqa: ANN001
         return SimpleNamespace(
@@ -127,74 +117,68 @@ async def test_run_eval_job_marks_regression_and_records_cost(
 
 
 @pytest.mark.asyncio
-async def test_start_eval_run_returns_id_and_inserts_row(monkeypatch) -> None:
-    session = _SessionStub()
-    created_tasks = []
+async def test_start_eval_run_delegates_to_service(monkeypatch) -> None:
+    tenant_id = uuid4()
+    expected = EvalRunTriggerResponse(eval_run_id=uuid4())
+    calls: list[UUID] = []
 
-    def _create_task(coro):  # noqa: ANN001
-        created_tasks.append(coro)
-        coro.close()
-        return SimpleNamespace()
+    class _ServiceStub:
+        async def create_run(self, *, tenant_id: UUID) -> EvalRunTriggerResponse:
+            calls.append(tenant_id)
+            return expected
 
-    monkeypatch.setattr(eval_router.asyncio, "create_task", _create_task)
+    monkeypatch.setattr(eval_router, "_get_eval_service", lambda _request: _ServiceStub())
 
-    request = SimpleNamespace(
-        state=SimpleNamespace(tenant_id=uuid4()),
-        app=SimpleNamespace(
-            state=SimpleNamespace(
-                db_session_factory=lambda: _SessionContextStub(session)
-            )
-        ),
-    )
+    request = SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id), app=SimpleNamespace(state=SimpleNamespace()))
+
     response = await eval_router.start_eval_run(request=request)
 
-    UUID(str(response.eval_run_id))
-    insert_rows = [
-        params for sql, params in session.calls if "INSERT INTO eval_runs" in sql
-    ]
-    assert insert_rows
-    assert insert_rows[0]["status"] == "queued"
-    assert created_tasks
+    assert response == expected
+    assert calls == [tenant_id]
 
 
 @pytest.mark.asyncio
-async def test_list_eval_runs_returns_newest_first_page() -> None:
+async def test_list_eval_runs_delegates_to_service(monkeypatch) -> None:
     tenant_id = uuid4()
     now = datetime.now(UTC)
-    session = _SessionStub(
-        eval_rows=[
-            {
-                "eval_run_id": uuid4(),
-                "started_at": now,
-                "completed_at": now,
-                "f1_score": Decimal("0.920"),
-                "guard_block_rate": Decimal("1.000"),
-                "cost_usd": Decimal("0.2000"),
-                "status": "completed",
-                "created_at": now,
-            },
-            {
-                "eval_run_id": uuid4(),
-                "started_at": now - timedelta(minutes=1),
-                "completed_at": now - timedelta(minutes=1),
-                "f1_score": Decimal("0.900"),
-                "guard_block_rate": Decimal("1.000"),
-                "cost_usd": Decimal("0.2100"),
-                "status": "completed",
-                "created_at": now - timedelta(minutes=1),
-            },
-        ]
+    expected = EvalRunListResponse(
+        data=[
+            EvalRunItem(
+                eval_run_id=uuid4(),
+                started_at=now,
+                completed_at=now,
+                f1_score=Decimal("0.920"),
+                guard_block_rate=Decimal("1.000"),
+                cost_usd=Decimal("0.2000"),
+                status="completed",
+                created_at=now,
+            )
+        ],
+        cursor="next-cursor",
+        total=None,
     )
+    calls: list[tuple[UUID, str | None, int, object]] = []
 
+    class _ServiceStub:
+        async def get_runs(self, *, tenant_id: UUID, cursor: str | None, limit: int, db):
+            calls.append((tenant_id, cursor, limit, db))
+            return expected
+
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id=tenant_id),
+        app=SimpleNamespace(state=SimpleNamespace()),
+    )
+    db = object()
+    monkeypatch.setattr(eval_router, "_get_eval_service", lambda _request: _ServiceStub())
     response = await eval_router.list_eval_runs(
-        request=SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id)),
+        request=request,
         cursor=None,
         limit=1,
-        db=session,  # type: ignore[arg-type]
+        db=db,  # type: ignore[arg-type]
     )
 
-    assert response.data[0].status == "completed"
-    assert response.cursor is not None
+    assert response == expected
+    assert calls == [(tenant_id, None, 1, db)]
 
 
 def test_run_eval_default_agent_uses_non_persistent_store(
