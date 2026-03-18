@@ -1,6 +1,6 @@
 # Codex Implementation Agent Prompt v3.11
 
-_Owner: Architecture · Updated: 2026-03-18 (Cycle 11, Phase 9 complete — REG-2 stop-ship)_
+_Owner: Architecture · Updated: 2026-03-19 (Cycle 11, Phase 9 complete — FIX-H done, repo green)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -12,13 +12,13 @@ SESSION HANDOFF — START HERE
               T19 ✅ T20 ✅ T21 ✅ T22 ✅ T23 ✅ T24 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
-              FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅
+              FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅ FIX-H ✅
 
-**Baseline:** 167 pass, 14 fail, 0 skip — **repo NOT green** (`pytest tests/ -q`) — REG-2 stop-ship active
-**Next task:** FIX-H — Fix asyncpg SET LOCAL binding + AuthService transport leak + missing auth routes (BEFORE CLI-1)
+**Baseline:** 187 pass, 0 fail, 0 skip — **repo green** (`pytest tests/ -q`, requires Docker for integration tests)
+**Next task:** Phase 10 — CLI-1 (deferred, awaiting user approval)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
-❌ `pytest tests/ -q` → 167 passed, 14 FAILED, 0 skipped — REG-2 (asyncpg SET LOCAL)
+✅ `pytest tests/ -q` → 187 passed, 0 failed, 0 skipped (Docker required for 13 integration tests)
 ✅ `ruff check app/ tests/`
 ✅ `ruff format --check app/ tests/`
 ✅ `mypy app/`
@@ -28,32 +28,18 @@ SESSION HANDOFF — START HERE
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
 **Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
 **Phase 9 queue:** FIX-G ✅ → SVC-1 ✅ → SVC-2 ✅ → SVC-3 ✅ → DOC-1 ✅ → DOC-2 ✅ → DOC-3 ✅
-**Fix queue (Cycle 11):** FIX-H [ ] — resolve before Phase 10
+**Fix queue (Cycle 11):** FIX-H ✅ — CODE-1 ✅ CODE-2 ✅ CODE-3 ✅
 **Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
 **Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
-
-─── Fix Queue (resolve before Phase 10 queue) ───────────────────────
-🔴 FIX-H [P0] — Fix asyncpg SET LOCAL parameterized binding (REG-2 root cause)
-  File: app/db.py + app/store.py:121 + app/approval_store.py:106 + app/agent.py:687,717,800
-        + app/embedding_service.py:94 + app/services/eval_service.py:98,119,398
-        + app/jobs/rca_clusterer.py:251,279,306,375 + eval/runner.py
-  Change: Extract _set_tenant_ctx(session, tid) helper using text(f"SET LOCAL app.current_tenant_id = '{UUID(str(tid))}'"); replace all parameterized SET LOCAL call sites
-  Test: pytest tests/ -q → 0 failures (resolves all 14 REG-2 failures)
-
-🟡 FIX-H [P1] — Remove JSONResponse import from AuthService (CODE-2)
-  File: app/services/auth_service.py:13 · Change: Replace JSONResponse return with dict/dataclass; move JSONResponse construction to app/routers/auth.py · Test: git grep "from fastapi" app/services/auth_service.py returns zero
-
-🟡 FIX-H [P1] — Add POST /auth/logout and POST /auth/refresh routes (CODE-3)
-  File: app/routers/auth.py · Change: Add two route handlers delegating to AuthService.logout() and AuthService.refresh_token() · Test: POST /auth/logout returns 200; re-use of token returns 401
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 | ID | Sev | Status | Evidence / Note |
 |----|-----|--------|-----------------|
 | ARCH-1 / P1-1 | P1 | CLOSED | ADR-003 §Consequences documents HS256 as v1 choice; P1-1 was a misread — no conflict |
-| CODE-1 (Cycle 11) | P0 | OPEN → FIX-H | asyncpg rejects parameterized `SET LOCAL :tid`; use `text(f"SET LOCAL ...= '{UUID(str(tid))}'")` at 10+ sites; root cause of REG-2 |
-| CODE-2 (Cycle 11) | P1 | OPEN → FIX-H | `AuthService` imports `JSONResponse` from fastapi — transport leak (`app/services/auth_service.py:13`) |
-| CODE-3 (Cycle 11) | P1 | OPEN → FIX-H | `POST /auth/logout` and `POST /auth/refresh` not registered in `app/routers/auth.py` |
+| CODE-1 (Cycle 11) | P0 | CLOSED ✅ FIX-H | `_set_tenant_ctx()` helper extracted to `app/db.py`; f-string with UUID validation used at all SET LOCAL sites |
+| CODE-2 (Cycle 11) | P1 | CLOSED ✅ FIX-H | `JSONResponse` removed from `auth_service.py`; routers construct HTTP response |
+| CODE-3 (Cycle 11) | P1 | CLOSED ✅ FIX-H | `POST /auth/logout` and `POST /auth/refresh` added to `app/routers/auth.py` |
 | CODE-4 (Cycle 11) | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` — budget bypass via CLI (`eval/runner.py:51-110`) |
 | CODE-5 | P2 | OPEN | Silent broad fallback exception in `_fetch_embeddings` — no `LOGGER.warning` (`app/jobs/rca_clusterer.py:276`) |
 | CODE-6 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]` (`app/utils.py:34`) |
@@ -69,14 +55,14 @@ SESSION HANDOFF — START HERE
 | ARCH-5 | P2 | OPEN (partial) | `/metrics` JWT exemption: code comment present (FIX-F); ADR-004 + ARCHITECTURE.md security section not yet updated |
 | ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) → CLU-1 |
 | ARCH-7 | P2 | CLOSED | `app/agent.py` has zero fastapi imports — SVC-3 resolved |
-| ARCH-7 (new) | P2 | OPEN → FIX-H | `AuthService` imports `JSONResponse` — same pattern as old ARCH-7; linked to CODE-2 |
+| ARCH-7 (new) | P2 | CLOSED ✅ FIX-H | `AuthService` imports `JSONResponse` — resolved, linked to CODE-2 |
 | ARCH-8 | P2 | CLOSED | Router business logic extracted — SVC-1/SVC-2 resolved |
-| ARCH-8 (new) | P2 | OPEN → FIX-H | `POST /auth/logout` and `POST /auth/refresh` not routed; linked to CODE-3 |
+| ARCH-8 (new) | P2 | CLOSED ✅ FIX-H | `POST /auth/logout` and `POST /auth/refresh` not routed — resolved, linked to CODE-3 |
 | ARCH-9 (new) | P2 | OPEN | Business logic in `/webhook` and `/approve` handlers (`app/main.py:255-366`) — deferred Phase 10+ |
 | P2-9 | P2 | CLOSED | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
 | P2-10 | P2 | OPEN | Module-level settings access requires API key at import time (`app/main.py:223`) |
 | REG-1 | P1 | CLOSED | Cycle 8 regressions resolved — FIX-9 |
-| REG-2 | P1 | OPEN → FIX-H | 14 test failures in test_cost_ledger (×3), test_isolation (×5), test_llm_client (×3), test_store (×3+1 error) — root cause: CODE-1 |
+| REG-2 | P1 | CLOSED ✅ FIX-H | 14 test failures resolved; root causes: CODE-1 (SET LOCAL), URL password redaction (str(url)→`***`), NullPool missing, fileConfig clobbering caplog |
 
 ─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 
@@ -112,11 +98,18 @@ Summary of immutable rules (A–I):
   D. pgvector extension conditional on pg_available_extensions — keep it.
   E. .venv at project root — use .venv/bin/pip install <pkg>.
   F. make_engine() checks test_database_url first (SQLite fallback for unit tests).
-  G. get_db_session() uses session.begin() + SET LOCAL; skips SET when tenant_id=None.
+  G. get_db_session() uses session.begin() + SET LOCAL via _set_tenant_ctx(); skips SET when tenant_id=None.
      Never use session-level SET — leaks across connection pool.
+     asyncpg rejects parameterized SET LOCAL ($1 syntax) — always use _set_tenant_ctx() f-string helper.
   H. SignatureMiddleware reads body from ASGI receive, replays via replay_receive().
      Do NOT refactor to read from Request object.
   I. WebhookSecretStore does NOT cache secrets in Redis. This is intentional.
+  J. SQLAlchemy URL str() redacts password as `***`. Use url.render_as_string(hide_password=False)
+     when constructing connection strings for test engines.
+  K. Integration test engines used across multiple asyncio.run() calls MUST use poolclass=NullPool.
+     asyncpg pool connections cannot cross event loop boundaries.
+  L. alembic/env.py fileConfig must pass disable_existing_loggers=False to avoid clobbering
+     pytest caplog in tests that run after migrations.
 
 ═══════════════════════════════════════════════════════════════════════
 MANDATORY PRE-TASK PROTOCOL (skip no step)
