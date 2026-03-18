@@ -12,13 +12,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import HTTPException
 from sqlalchemy import text
 
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.embedding_service import EmbeddingService
+from app.exceptions import AgentError, BudgetError, ValidationError
 from app.guardrails.output_guard import OutputGuard
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
@@ -242,9 +242,7 @@ class AgentService:
                     guard_type="output", tenant_hash=metric_tenant_hash
                 ).inc()
         if guard_result.blocked:
-            raise HTTPException(
-                status_code=500, detail="Internal: output guard blocked response"
-            )
+            raise AgentError("Internal: output guard blocked response")
         if guard_result.action_override is not None:
             action = guard_result.action_override
         if guard_result.redacted_draft != draft_response:
@@ -431,7 +429,7 @@ class AgentService:
     ) -> ApproveResponse:
         """Approve or reject a pending action."""
         if jwt_tenant_id is None:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            raise AgentError("Forbidden", status_code=403)
         reviewer_hash = (
             hashlib.sha256((request.reviewer or "").encode()).hexdigest()[:16]
             if request.reviewer
@@ -439,13 +437,13 @@ class AgentService:
         )
         pending = self.approval_store.get_pending(jwt_tenant_id, request.pending_id)
         if not pending:
-            raise HTTPException(status_code=404, detail="pending_id not found")
+            raise AgentError("pending_id not found", status_code=404)
         if str(pending.tenant_id) != str(jwt_tenant_id):
-            raise HTTPException(status_code=403, detail="Forbidden")
+            raise AgentError("Forbidden", status_code=403)
 
         pending = self.approval_store.pop_pending(jwt_tenant_id, request.pending_id)
         if not pending:
-            raise HTTPException(status_code=404, detail="pending_id not found")
+            raise AgentError("pending_id not found", status_code=404)
 
         tenant_id = pending.tenant_id
         if not request.approved:
@@ -594,14 +592,14 @@ class AgentService:
         return str(ticket_id)
 
     def _guard_input(self, text: str) -> None:
-        """Validate incoming text and raise ValueError on guardrail hit."""
+        """Validate incoming text and raise ValidationError on guardrail hit."""
         if len(text) > self.settings.max_input_length:
-            raise ValueError(
+            raise ValidationError(
                 f"Input exceeds max length ({self.settings.max_input_length})"
             )
         lowered = text.lower()
         if any(pattern in lowered for pattern in INJECTION_PATTERNS):
-            raise ValueError("Input failed injection guard")
+            raise ValidationError("Input failed injection guard")
 
     def _draft_response(self, classification: ClassificationResult) -> str:
         """Generate a short user-facing draft reply."""
@@ -698,9 +696,7 @@ class AgentService:
                 BUDGET_EXCEEDED_TOTAL.labels(
                     tenant_hash=_sha256_short(str(tenant_uuid))
                 ).inc()
-            raise HTTPException(
-                status_code=429, detail={"error": {"code": "budget_exhausted"}}
-            ) from exc
+            raise BudgetError() from exc
 
     def _record_cost_best_effort(
         self,

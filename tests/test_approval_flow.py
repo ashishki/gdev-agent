@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
-from fastapi import HTTPException
 
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
+from app.exceptions import AgentError
 from app.llm_client import TriageResult
 from app.schemas import (
     ApproveRequest,
@@ -112,7 +112,7 @@ def test_approve_forbidden_on_cross_tenant_pending() -> None:
     assert response.pending is not None
     assert response.pending.tenant_id == "tenant-a"
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AgentError) as exc:
         agent.approve(
             ApproveRequest(
                 pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
@@ -144,7 +144,7 @@ def test_approve_forbidden_when_jwt_tenant_missing() -> None:
     )
     assert response.pending is not None
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AgentError) as exc:
         agent.approve(
             ApproveRequest(
                 pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
@@ -181,7 +181,7 @@ def test_double_approve_returns_404() -> None:
     )
     assert first.status == "approved"
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AgentError) as exc:
         agent.approve(
             ApproveRequest(
                 pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"

@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from app import main
 from app.config import Settings
+from app.exceptions import AgentError, BudgetError
 from app.schemas import ApproveRequest, WebhookRequest
 
 
@@ -188,16 +189,14 @@ def test_webhook_rejects_non_uuid_tenant_id() -> None:
     assert exc.value.detail == "tenant_id must be a valid UUID"
 
 
-def test_webhook_propagates_budget_exhausted_http_429() -> None:
+def test_webhook_raises_domain_budget_error() -> None:
     def _raise_budget(*_args, **_kwargs):
-        raise HTTPException(
-            status_code=429, detail={"error": {"code": "budget_exhausted"}}
-        )
+        raise BudgetError()
 
     main.app.state.dedup = SimpleNamespace(check=lambda *_: None, set=lambda *_: None)
     main.app.state.agent = SimpleNamespace(process_webhook=_raise_budget)
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BudgetError) as exc:
         main.webhook(
             WebhookRequest(
                 text="hello", tenant_id="3d0f5f00-ec44-4d3f-893f-c8f89ee5f80c"
@@ -207,6 +206,18 @@ def test_webhook_propagates_budget_exhausted_http_429() -> None:
 
     assert exc.value.status_code == 429
     assert exc.value.detail == {"error": {"code": "budget_exhausted"}}
+
+
+def test_handle_agent_error_converts_domain_error_to_http_response() -> None:
+    response = asyncio.run(
+        main.handle_agent_error(
+            SimpleNamespace(),
+            AgentError("pending_id not found", status_code=404),
+        )
+    )
+
+    assert response.status_code == 404
+    assert response.body == b'{"detail":"pending_id not found"}'
 
 
 def test_main_import_does_not_require_get_settings(monkeypatch) -> None:

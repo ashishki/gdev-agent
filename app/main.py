@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import redis
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 try:  # pragma: no cover - optional in minimal local envs
@@ -27,6 +27,7 @@ from app.dependencies import require_role
 from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
 from app.embedding_service import EmbeddingService
+from app.exceptions import AgentError
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
 from app.jobs.rca_clusterer import RCAClusterer
@@ -224,6 +225,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="gdev-agent", lifespan=lifespan)
 
+
+@app.exception_handler(AgentError)
+async def handle_agent_error(_request: Request, exc: AgentError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 # Starlette adds latest middleware first, so add reverse of desired runtime order.
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(JWTMiddleware)
@@ -321,16 +327,7 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
                             root_span.set_attribute("http.status_code", 200)
                         return WebhookResponse.model_validate_json(cached)
 
-            try:
-                response = app.state.agent.process_webhook(
-                    payload, message_id=message_id
-                )
-            except ValueError as exc:
-                if str(exc).startswith("Input "):
-                    if root_span is not None:
-                        root_span.set_attribute("http.status_code", 400)
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
-                raise
+            response = app.state.agent.process_webhook(payload, message_id=message_id)
 
             if cacheable:
                 app.state.dedup.set(
@@ -339,6 +336,10 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
             if root_span is not None:
                 root_span.set_attribute("http.status_code", 200)
             return response
+        except AgentError as exc:
+            if root_span is not None:
+                root_span.set_attribute("http.status_code", exc.status_code)
+            raise
         except HTTPException as exc:
             if root_span is not None:
                 root_span.set_attribute("http.status_code", exc.status_code)

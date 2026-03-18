@@ -14,7 +14,6 @@ import fakeredis
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -24,6 +23,7 @@ from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import make_session_factory
+from app.exceptions import BudgetError
 from app.llm_client import TriageResult
 from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
 from app.store import EventStore
@@ -183,7 +183,7 @@ def test_budget_exhausted_returns_429_before_llm_call(migrated_postgres: str) ->
     )
 
     try:
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(BudgetError) as exc:
             agent.process_webhook(
                 WebhookRequest(
                     tenant_id=str(tenant_id),
