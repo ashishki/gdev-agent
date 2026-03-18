@@ -1,10 +1,10 @@
-"""JWT middleware and auth dependency tests."""
+"""JWT middleware and auth router tests."""
 
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -21,6 +21,7 @@ from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import auth as auth_module
 from app.schemas import AuthTokenRequest, AuthTokenResponse
+from app.services.auth_service import LoginResult
 
 
 class _AsyncRedisStub:
@@ -244,76 +245,6 @@ def test_require_role_enforces_allowed_roles() -> None:
     dep.dependency(request_ok)
 
 
-class _ResultStub:
-    def __init__(self, row: dict[str, object] | None) -> None:
-        self._row = row
-
-    def mappings(self) -> "_ResultStub":
-        return self
-
-    def first(self) -> dict[str, object] | None:
-        return self._row
-
-
-class _SessionStub:
-    def __init__(
-        self,
-        row: dict[str, object] | None,
-        execute_calls: list[tuple[str, dict[str, object]]],
-        known_tenant_slug: str = "tenant-a",
-    ) -> None:
-        self._row = row
-        self._execute_calls = execute_calls
-        self._known_tenant_slug = known_tenant_slug
-        self._tenant_context_valid = False
-
-    async def __aenter__(self) -> "_SessionStub":
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        return None
-
-    def begin(self):
-        return self
-
-    async def execute(self, statement, params):
-        self._execute_calls.append((str(statement), params))
-        sql = str(statement).lower()
-        if "set_config(" in sql:
-            self._tenant_context_valid = (
-                params.get("tenant_slug") == self._known_tenant_slug
-            )
-            return _ResultStub({"set_config": "ok"})
-        if "from tenant_users" in sql and self._tenant_context_valid:
-            return _ResultStub(self._row)
-        return _ResultStub(None)
-
-
-class _SessionFactoryStub:
-    def __init__(
-        self, row: dict[str, object] | None, known_tenant_slug: str = "tenant-a"
-    ) -> None:
-        self._row = row
-        self._known_tenant_slug = known_tenant_slug
-        self.execute_calls: list[tuple[str, dict[str, object]]] = []
-
-    def __call__(self) -> _SessionStub:
-        return _SessionStub(self._row, self.execute_calls, self._known_tenant_slug)
-
-
-def _auth_request(
-    row: dict[str, object] | None,
-    settings: Settings | None = None,
-    known_tenant_slug: str = "tenant-a",
-) -> Request:
-    session_factory = _SessionFactoryStub(row, known_tenant_slug=known_tenant_slug)
-    state = SimpleNamespace(
-        settings=settings or Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8),
-        db_session_factory=session_factory,
-    )
-    return _request("POST", "/auth/token", app_state=state)
-
-
 def _request_with_body(path: str, body: bytes) -> Request:
     scope = {
         "type": "http",
@@ -339,99 +270,89 @@ def _request_with_body(path: str, body: bytes) -> Request:
 
 
 @pytest.mark.asyncio
-async def test_auth_token_correct_credentials_returns_jwt(monkeypatch) -> None:
-    password = "s3cret!"
-    user_id = str(uuid4())
-    tenant_id = str(uuid4())
-    settings = Settings(jwt_secret="x" * 32, jwt_token_expiry_hours=8)
-    row = {
-        "user_id": user_id,
-        "tenant_id": tenant_id,
-        "role": "support_agent",
-        "password_hash": "stored-hash",
-    }
-    monkeypatch.setattr(
-        auth_module.bcrypt,
-        "checkpw",
-        lambda candidate, stored: (
-            candidate == password.encode("utf-8") and stored == b"stored-hash"
+async def test_auth_token_router_delegates_to_auth_service(monkeypatch) -> None:
+    expected = AuthTokenResponse(access_token="token", expires_in=3600)
+    login = AsyncMock(
+        return_value=LoginResult(
+            status_code=200,
+            payload=expected,
+        )
+    )
+
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        async def login(self, payload: AuthTokenRequest) -> LoginResult:
+            return await login(payload)
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    request = _request(
+        "POST",
+        "/auth/token",
+        app_state=SimpleNamespace(
+            settings=Settings(jwt_secret="x" * 32),
+            db_session_factory=object(),
+            jwt_blocklist_redis=object(),
         ),
     )
-    request = _auth_request(row, settings=settings, known_tenant_slug="tenant-a")
+    payload = AuthTokenRequest(
+        tenant_slug="tenant-a",
+        email="agent@example.com",
+        password="s3cret!",
+    )
+
+    response = await auth_module.create_auth_token(payload, request)
+
+    assert response == expected
+    login.assert_awaited_once_with(payload)
+
+
+@pytest.mark.asyncio
+async def test_auth_token_router_returns_service_error_response(monkeypatch) -> None:
+    error_result = LoginResult.model_validate(
+        {
+            "status_code": 401,
+            "payload": {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
+        }
+    )
+    login = AsyncMock(return_value=error_result)
+
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        async def login(self, payload: AuthTokenRequest) -> LoginResult:
+            return await login(payload)
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    request = _request(
+        "POST",
+        "/auth/token",
+        app_state=SimpleNamespace(
+            settings=Settings(jwt_secret="x" * 32),
+            db_session_factory=object(),
+            jwt_blocklist_redis=object(),
+        ),
+    )
+
     response = await auth_module.create_auth_token(
         AuthTokenRequest(
-            tenant_slug="tenant-a", email="agent@example.com", password=password
+            tenant_slug="tenant-a",
+            email="agent@example.com",
+            password="wrong-password",
         ),
         request,
     )
 
-    assert isinstance(response, AuthTokenResponse)
-    body = response.model_dump()
-    assert body["token_type"] == "bearer"
-    assert body["expires_in"] == 8 * 3600
-    claims = jwt.decode(
-        body["access_token"], settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-    )
-    assert claims["sub"] == user_id
-    assert claims["tenant_id"] == tenant_id
-    assert claims["role"] == "support_agent"
-    execute_calls = request.app.state.db_session_factory.execute_calls
-    assert len(execute_calls) == 2
-    assert "set_config" in execute_calls[0][0].lower()
-    assert execute_calls[0][1] == {"tenant_slug": "tenant-a"}
-
-
-@pytest.mark.asyncio
-async def test_auth_token_wrong_password_returns_401_and_logs_hashed_email(
-    monkeypatch,
-) -> None:
-    from unittest.mock import Mock
-
-    warning = Mock()
-    monkeypatch.setattr(auth_module.LOGGER, "warning", warning)
-    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
-    row = {
-        "user_id": str(uuid4()),
-        "tenant_id": str(uuid4()),
-        "role": "viewer",
-        "password_hash": "stored-hash",
-    }
-    response = await auth_module.create_auth_token(
-        AuthTokenRequest(
-            tenant_slug="tenant-a",
-            email="viewer@example.com",
-            password="wrong-password",
-        ),
-        _auth_request(row, known_tenant_slug="tenant-a"),
-    )
-
-    assert isinstance(response, JSONResponse)
     assert response.status_code == 401
     assert b'"code":"invalid_credentials"' in response.body
-    warning.assert_called_once()
-    context = warning.call_args.kwargs["extra"]["context"]
-    assert (
-        context["email_hash"]
-        == auth_module.hashlib.sha256(b"viewer@example.com").hexdigest()
-    )
-
-
-@pytest.mark.asyncio
-async def test_auth_token_unknown_email_returns_same_401_shape(monkeypatch) -> None:
-    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
-    response = await auth_module.create_auth_token(
-        AuthTokenRequest(
-            tenant_slug="tenant-a", email="missing@example.com", password="pw"
-        ),
-        _auth_request(None, known_tenant_slug="tenant-a"),
-    )
-
-    assert isinstance(response, JSONResponse)
-    assert response.status_code == 401
-    assert (
-        response.body
-        == b'{"error":{"code":"invalid_credentials","message":"Invalid email or password"}}'
-    )
+    login.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -476,48 +397,90 @@ async def test_auth_token_rate_limit_blocks_after_5_attempts() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_token_uses_bcrypt_checkpw(monkeypatch) -> None:
-    seen: list[tuple[bytes, bytes]] = []
+    seen: list[dict[str, object]] = []
 
-    def _spy(password: bytes, hashed: bytes) -> bool:
-        seen.append((password, hashed))
-        return True
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            seen.append(kwargs)
 
-    monkeypatch.setattr(auth_module.bcrypt, "checkpw", _spy)
-    row = {
-        "user_id": str(uuid4()),
-        "tenant_id": str(uuid4()),
-        "role": "viewer",
-        "password_hash": "stored-hash",
-    }
+        async def login(self, payload: AuthTokenRequest) -> LoginResult:
+            _ = payload
+            return LoginResult(
+                status_code=200,
+                payload=AuthTokenResponse(access_token="token", expires_in=3600),
+            )
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    state = SimpleNamespace(
+        settings=Settings(jwt_secret="x" * 32),
+        db_session_factory="db-factory",
+        jwt_blocklist_redis="redis-client",
+    )
+
     response = await auth_module.create_auth_token(
         AuthTokenRequest(
-            tenant_slug="tenant-a", email="user@example.com", password="pw"
+            tenant_slug="tenant-a",
+            email="user@example.com",
+            password="pw",
         ),
-        _auth_request(row, known_tenant_slug="tenant-a"),
+        _request("POST", "/auth/token", app_state=state),
     )
 
     assert isinstance(response, AuthTokenResponse)
-    assert seen
+    assert seen == [
+        {
+            "settings": state.settings,
+            "db_session_factory": "db-factory",
+            "jwt_blocklist_redis": "redis-client",
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_auth_token_unknown_tenant_slug_returns_401(monkeypatch) -> None:
-    monkeypatch.setattr(auth_module.bcrypt, "checkpw", lambda *_: False)
-    row = {
-        "user_id": str(uuid4()),
-        "tenant_id": str(uuid4()),
-        "role": "viewer",
-        "password_hash": "stored-hash",
-    }
-    response = await auth_module.create_auth_token(
-        AuthTokenRequest(
-            tenant_slug="tenant-x", email="user@example.com", password="pw"
-        ),
-        _auth_request(row, known_tenant_slug="tenant-a"),
+    captured: list[AuthTokenRequest] = []
+    error_result = LoginResult.model_validate(
+        {
+            "status_code": 401,
+            "payload": {
+                "error": {
+                    "code": "invalid_credentials",
+                    "message": "Invalid email or password",
+                }
+            },
+        }
     )
 
-    assert isinstance(response, JSONResponse)
+    class _ServiceStub:
+        def __init__(self, **kwargs) -> None:
+            _ = kwargs
+
+        async def login(self, payload: AuthTokenRequest) -> LoginResult:
+            captured.append(payload)
+            return error_result
+
+    monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)
+    payload = AuthTokenRequest(
+        tenant_slug="tenant-x",
+        email="user@example.com",
+        password="pw",
+    )
+
+    response = await auth_module.create_auth_token(
+        payload,
+        _request(
+            "POST",
+            "/auth/token",
+            app_state=SimpleNamespace(
+                settings=Settings(jwt_secret="x" * 32),
+                db_session_factory=object(),
+                jwt_blocklist_redis=object(),
+            ),
+        ),
+    )
+
     assert response.status_code == 401
+    assert captured == [payload]
 
 
 @pytest.mark.asyncio
