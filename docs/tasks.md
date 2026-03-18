@@ -1557,7 +1557,7 @@ _Goal: eliminate architecture drift (ARCH-7, ARCH-8) by pulling business logic o
 **Owner:** Codex
 **Priority:** P2 (CODE-1, CODE-2, CODE-3 — Cycle 9)
 **Depends-on:** FIX-A
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 Redis hot-path keys use `{type}:{tenant_id}:{id}` order (e.g. `dedup:{tenant_id}:{msg}`).
@@ -1587,7 +1587,7 @@ makes full tenant key enumeration/deletion require type-specific SCAN patterns.
 **Owner:** Codex
 **Priority:** P2 (ARCH-8)
 **Depends-on:** T05, T06, T06B
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 `app/routers/auth.py` contains business logic (token creation, blocklist management, rate-limit enforcement). Extract into `app/services/auth_service.py`; router becomes thin adapter.
@@ -1613,7 +1613,7 @@ makes full tenant key enumeration/deletion require type-specific SCAN patterns.
 **Owner:** Codex
 **Priority:** P2 (ARCH-8)
 **Depends-on:** T22, T23, T24
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 `app/routers/eval.py` and `eval/runner.py` contain logic that should live in a service layer. Extract into `app/services/eval_service.py`.
@@ -1637,7 +1637,7 @@ makes full tenant key enumeration/deletion require type-specific SCAN patterns.
 **Owner:** Codex
 **Priority:** P2 (ARCH-7, P2-6)
 **Depends-on:** T03
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 `app/agent.py:15` imports `HTTPException` from fastapi — service layer must not import HTTP primitives.
@@ -1664,7 +1664,7 @@ Replace with a domain exception that the router layer catches and converts.
 **Owner:** Codex
 **Priority:** P2 (ARCH-2 drift, eval subsystem undocumented)
 **Depends-on:** SVC-1, SVC-2, SVC-3, T24
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 `docs/ARCHITECTURE.md` is at v2.1 and missing: eval subsystem, service layer, load test results, Phase 8 fixes, Docker stack (T24).
@@ -1686,7 +1686,7 @@ Replace with a domain exception that the router layer catches and converts.
 **Owner:** Codex
 **Priority:** P2 (ARCH-2)
 **Depends-on:** T13
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 ADR-002 documents OpenAI/1536-dim embeddings but implementation uses Voyage/1024-dim (T13). ADR must reflect actual decision.
@@ -1706,7 +1706,7 @@ ADR-002 documents OpenAI/1536-dim embeddings but implementation uses Voyage/1024
 **Owner:** Codex
 **Priority:** P2
 **Depends-on:** T22, T23, T24
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 No documentation exists for the eval subsystem (T22–T24).

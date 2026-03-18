@@ -12,13 +12,13 @@ SESSION HANDOFF — START HERE
               T19 ✅ T20 ✅ T21 ✅ T22 ✅ T23 ✅ T24 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
-              FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅
+              FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅
 
-**Baseline:** 155 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
-**Next task:** FIX-G — Invert Redis key segment order to `{tenant_id}:{type}:{id}` (Phase 9 start)
+**Baseline:** 168 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
+**Next task:** CLI-1 — Typer admin CLI (Phase 10 start)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
-✅ `pytest tests/ -q` → 155 passed, 13 skipped
+✅ `pytest tests/ -q` → 168 passed, 13 skipped
 ✅ `ruff check app/ tests/`
 ✅ `ruff format --check app/ tests/`
 ✅ `mypy app/`
@@ -27,7 +27,7 @@ SESSION HANDOFF — START HERE
 **Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
 **Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
-**Phase 9 queue:** FIX-G [ ] → SVC-1 [ ] → SVC-2 [ ] → SVC-3 [ ] → DOC-1 [ ] → DOC-2 [ ] → DOC-3 [ ]
+**Phase 9 queue:** FIX-G ✅ → SVC-1 ✅ → SVC-2 ✅ → SVC-3 ✅ → DOC-1 ✅ → DOC-2 ✅ → DOC-3 ✅
 **Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
 **Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
 
@@ -50,16 +50,16 @@ No P0 or P1 findings this cycle. Phase 8 complete. Proceed to Phase 9 queue.
 | CODE-11 | P2 | CLOSED | Redis hot-path keys tenant-namespaced — FIX-A resolved |
 | CODE-12 | P2 | OPEN | Import-time `get_settings()` coupling may require API key at import (`app/main.py:223`) |
 | CODE-13 | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` call — budget bypass via CLI (`eval/runner.py:51-110`) |
-| CODE-14 | P2 | OPEN | Key prefix order deviates from data-map §3 canonical form — `dedup:`, `pending:`, `ratelimit:` should be `{tenant_id}:prefix:id` (`app/dedup.py:17`, `app/approval_store.py:96`, `app/middleware/rate_limit.py:97`) |
+| CODE-14 | P2 | CLOSED | Key prefix order inverted to `{tenant_id}:prefix:id` — FIX-G resolved |
 | CODE-15 | P2 | OPEN | `auth_ratelimit:{email_hash}` has no tenant prefix — global by design but absent from data-map §3 (`app/middleware/rate_limit.py:129`) |
 | CODE-16 | P2 | OPEN | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion (`app/jobs/rca_clusterer.py:427-440`) |
-| ARCH-2 | P2 | OPEN | ADR-002 vector stack drift (OpenAI/1536 vs Voyage/1024) — deferred to DOC-2 |
+| ARCH-2 | P2 | CLOSED | ADR-002 updated to Voyage/1024-dim; migration 0004 confirmed correct — DOC-2 resolved |
 | ARCH-3 | P2 | CLOSED | `eval/runner.py:184` calls `check_budget()` before LLM — FIX-E resolved |
 | ARCH-4 | P2 | CLOSED | `rca_clusterer.py` now has `rca.run`, `rca.cluster`, `rca.summarize` spans — FIX-D resolved |
-| ARCH-5 | P2 | OPEN (partial) | `/metrics` exemption comment added in code; ARCHITECTURE.md update deferred to DOC-1 |
+| ARCH-5 | P2 | CLOSED | ARCHITECTURE.md v3.0 documents `/metrics` exemption — DOC-1 resolved |
 | ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) |
-| ARCH-7 | P2 | OPEN | Service-layer import boundary violation (`app/agent.py:15`) — deferred to SVC-3 |
-| ARCH-8 | P2 | OPEN | Router layer carries business logic (`app/routers/auth.py`, `app/routers/eval.py`) — deferred to Phase 9 |
+| ARCH-7 | P2 | CLOSED | `app/agent.py` has zero fastapi imports — domain exceptions in `app/exceptions.py`, SVC-3 resolved |
+| ARCH-8 | P2 | CLOSED | Router business logic extracted to AuthService + EvalService — SVC-1/SVC-2 resolved |
 | P2-1 | P2 | CLOSED | Redis keys tenant-namespaced — FIX-A resolved (superseded by CODE-14 prefix-order note) |
 | P2-9 | P2 | CLOSED | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
 | P2-10 | P2 | OPEN | Module-level settings access requires API key at import time (`app/main.py:223`) |
