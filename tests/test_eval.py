@@ -29,6 +29,9 @@ class _ResultStub:
     def first(self) -> dict[str, object] | None:
         return self._row
 
+    def one_or_none(self) -> dict[str, object] | None:
+        return self._row
+
     def all(self) -> list[dict[str, object]]:
         return self._rows
 
@@ -77,33 +80,42 @@ class _SessionContextStub:
         return False
 
 
+class _AgentStub:
+    def process_webhook(self, _payload):  # noqa: ANN001
+        return SimpleNamespace(
+            classification=SimpleNamespace(category="bug_report")
+        )
+
+
 @pytest.mark.asyncio
-async def test_run_eval_job_marks_regression_and_records_cost(monkeypatch) -> None:
+async def test_run_eval_job_marks_regression_and_records_cost(
+    monkeypatch, tmp_path: Path
+) -> None:
     session = _SessionStub(prior_f1="0.900")
     tenant_id = uuid4()
     eval_run_id = uuid4()
     recorded: dict[str, object] = {}
-
-    monkeypatch.setattr(
-        eval_runner,
-        "run_eval",
-        lambda *_args, **_kwargs: {
-            "accuracy": 0.87,
-            "guard_block_rate": 1.0,
-            "cost_usd": 0.12,
-        },
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        '{"text":"charged twice","expected_category":"billing"}\n',
+        encoding="utf-8",
     )
 
     async def _record(self, **kwargs):  # noqa: ANN001
         recorded.update(kwargs)
 
+    async def _check_budget(self, tenant_id, db) -> None:  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(eval_runner.CostLedger, "check_budget", _check_budget)
     monkeypatch.setattr(eval_runner.CostLedger, "record", _record)
 
     report = await eval_runner.run_eval_job(
-        cases_path=Path("eval/cases.jsonl"),
+        cases_path=cases_path,
         tenant_id=tenant_id,
         eval_run_id=eval_run_id,
         db_session=session,  # type: ignore[arg-type]
+        agent=_AgentStub(),
     )
 
     assert report["regression_alert"] is True
@@ -111,7 +123,7 @@ async def test_run_eval_job_marks_regression_and_records_cost(monkeypatch) -> No
     assert update_rows
     assert update_rows[-1]["status"] == "completed_with_regression"
     assert recorded["tenant_id"] == tenant_id
-    assert recorded["cost_usd"] == Decimal("0.12")
+    assert recorded["cost_usd"] == Decimal("0.0")
 
 
 @pytest.mark.asyncio
