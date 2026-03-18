@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.10
+# Codex Implementation Agent Prompt v3.11
 
-_Owner: Architecture · Updated: 2026-03-18 (Cycle 9, Phase 8 complete)_
+_Owner: Architecture · Updated: 2026-03-18 (Cycle 11, Phase 9 complete — REG-2 stop-ship)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -14,11 +14,11 @@ SESSION HANDOFF — START HERE
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
               FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅
 
-**Baseline:** 168 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
-**Next task:** CLI-1 — Typer admin CLI (Phase 10 start)
+**Baseline:** 167 pass, 14 fail, 0 skip — **repo NOT green** (`pytest tests/ -q`) — REG-2 stop-ship active
+**Next task:** FIX-H — Fix asyncpg SET LOCAL binding + AuthService transport leak + missing auth routes (BEFORE CLI-1)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
-✅ `pytest tests/ -q` → 168 passed, 13 skipped
+❌ `pytest tests/ -q` → 167 passed, 14 FAILED, 0 skipped — REG-2 (asyncpg SET LOCAL)
 ✅ `ruff check app/ tests/`
 ✅ `ruff format --check app/ tests/`
 ✅ `mypy app/`
@@ -28,43 +28,55 @@ SESSION HANDOFF — START HERE
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
 **Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
 **Phase 9 queue:** FIX-G ✅ → SVC-1 ✅ → SVC-2 ✅ → SVC-3 ✅ → DOC-1 ✅ → DOC-2 ✅ → DOC-3 ✅
+**Fix queue (Cycle 11):** FIX-H [ ] — resolve before Phase 10
 **Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
 **Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
 
-─── Fix Queue ─── (empty — proceed to phase queue) ──────────────────
-No P0 or P1 findings this cycle. Phase 8 complete. Proceed to Phase 9 queue.
+─── Fix Queue (resolve before Phase 10 queue) ───────────────────────
+🔴 FIX-H [P0] — Fix asyncpg SET LOCAL parameterized binding (REG-2 root cause)
+  File: app/db.py + app/store.py:121 + app/approval_store.py:106 + app/agent.py:687,717,800
+        + app/embedding_service.py:94 + app/services/eval_service.py:98,119,398
+        + app/jobs/rca_clusterer.py:251,279,306,375 + eval/runner.py
+  Change: Extract _set_tenant_ctx(session, tid) helper using text(f"SET LOCAL app.current_tenant_id = '{UUID(str(tid))}'"); replace all parameterized SET LOCAL call sites
+  Test: pytest tests/ -q → 0 failures (resolves all 14 REG-2 failures)
+
+🟡 FIX-H [P1] — Remove JSONResponse import from AuthService (CODE-2)
+  File: app/services/auth_service.py:13 · Change: Replace JSONResponse return with dict/dataclass; move JSONResponse construction to app/routers/auth.py · Test: git grep "from fastapi" app/services/auth_service.py returns zero
+
+🟡 FIX-H [P1] — Add POST /auth/logout and POST /auth/refresh routes (CODE-3)
+  File: app/routers/auth.py · Change: Add two route handlers delegating to AuthService.logout() and AuthService.refresh_token() · Test: POST /auth/logout returns 200; re-use of token returns 401
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 | ID | Sev | Status | Evidence / Note |
 |----|-----|--------|-----------------|
-| ARCH-1 | P1 | CLOSED | ADR/runtime aligned on HS256 (`app/config.py:49`, `docs/adr/003-rbac-design.md`) |
-| CODE-3 | P2 | CLOSED | `tenant_id_hash` logging verified in `app/agent.py` |
-| CODE-4 | P2 | CLOSED | Secrets scan clean; `Bearer ` literal removed from `app/` scope |
+| ARCH-1 / P1-1 | P1 | CLOSED | ADR-003 §Consequences documents HS256 as v1 choice; P1-1 was a misread — no conflict |
+| CODE-1 (Cycle 11) | P0 | OPEN → FIX-H | asyncpg rejects parameterized `SET LOCAL :tid`; use `text(f"SET LOCAL ...= '{UUID(str(tid))}'")` at 10+ sites; root cause of REG-2 |
+| CODE-2 (Cycle 11) | P1 | OPEN → FIX-H | `AuthService` imports `JSONResponse` from fastapi — transport leak (`app/services/auth_service.py:13`) |
+| CODE-3 (Cycle 11) | P1 | OPEN → FIX-H | `POST /auth/logout` and `POST /auth/refresh` not registered in `app/routers/auth.py` |
+| CODE-4 (Cycle 11) | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` — budget bypass via CLI (`eval/runner.py:51-110`) |
 | CODE-5 | P2 | OPEN | Silent broad fallback exception in `_fetch_embeddings` — no `LOGGER.warning` (`app/jobs/rca_clusterer.py:276`) |
-| CODE-6 | P2 | CLOSED | Negative cross-tenant test present (`tests/test_rca_clusterer.py:163`) |
-| CODE-7 | P2 | CLOSED | Guarded `tool_choice` with empty tools fixed (`app/llm_client.py:288-294`) |
-| CODE-8 | P3 | OPEN | RCA fallback exception branch lacks direct unit coverage (`tests/test_rca_clusterer.py`) |
-| CODE-9 | P2 | CLOSED | Async `summarize_cluster_async` via `asyncio.to_thread` — FIX-C resolved |
-| CODE-10 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]` (`app/utils.py:34`) |
+| CODE-6 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]` (`app/utils.py:34`) |
+| CODE-7 | P2 | OPEN | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion (`app/jobs/rca_clusterer.py:427-440`) |
+| CODE-8 | P2 | OPEN | `auth_ratelimit:{email_hash}` absent from data-map §3 (`app/middleware/rate_limit.py:129`) |
+| CODE-9 | P2 | OPEN | Import-time `get_settings()` coupling requires API key at import (`app/main.py:223`) |
+| CODE-10 | P2 | CLOSED | Key prefix order inverted to `{tenant_id}:prefix:id` — FIX-G resolved |
 | CODE-11 | P2 | CLOSED | Redis hot-path keys tenant-namespaced — FIX-A resolved |
-| CODE-12 | P2 | OPEN | Import-time `get_settings()` coupling may require API key at import (`app/main.py:223`) |
-| CODE-13 | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` call — budget bypass via CLI (`eval/runner.py:51-110`) |
-| CODE-14 | P2 | CLOSED | Key prefix order inverted to `{tenant_id}:prefix:id` — FIX-G resolved |
-| CODE-15 | P2 | OPEN | `auth_ratelimit:{email_hash}` has no tenant prefix — global by design but absent from data-map §3 (`app/middleware/rate_limit.py:129`) |
-| CODE-16 | P2 | OPEN | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion (`app/jobs/rca_clusterer.py:427-440`) |
-| ARCH-2 | P2 | CLOSED | ADR-002 updated to Voyage/1024-dim; migration 0004 confirmed correct — DOC-2 resolved |
+| CODE-12 | P3 | OPEN | No unit test for `_fetch_embeddings` ANN fallback exception branch (`tests/test_rca_clusterer.py`) |
+| ARCH-2 | P2 | CLOSED | ADR-002 updated to Voyage/1024-dim — DOC-2 resolved |
 | ARCH-3 | P2 | CLOSED | `eval/runner.py:184` calls `check_budget()` before LLM — FIX-E resolved |
-| ARCH-4 | P2 | CLOSED | `rca_clusterer.py` now has `rca.run`, `rca.cluster`, `rca.summarize` spans — FIX-D resolved |
-| ARCH-5 | P2 | CLOSED | ARCHITECTURE.md v3.0 documents `/metrics` exemption — DOC-1 resolved |
-| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) |
-| ARCH-7 | P2 | CLOSED | `app/agent.py` has zero fastapi imports — domain exceptions in `app/exceptions.py`, SVC-3 resolved |
-| ARCH-8 | P2 | CLOSED | Router business logic extracted to AuthService + EvalService — SVC-1/SVC-2 resolved |
-| P2-1 | P2 | CLOSED | Redis keys tenant-namespaced — FIX-A resolved (superseded by CODE-14 prefix-order note) |
+| ARCH-4 | P2 | CLOSED | `rca_clusterer.py` OTel spans added — FIX-D resolved |
+| ARCH-5 | P2 | OPEN (partial) | `/metrics` JWT exemption: code comment present (FIX-F); ADR-004 + ARCHITECTURE.md security section not yet updated |
+| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) → CLU-1 |
+| ARCH-7 | P2 | CLOSED | `app/agent.py` has zero fastapi imports — SVC-3 resolved |
+| ARCH-7 (new) | P2 | OPEN → FIX-H | `AuthService` imports `JSONResponse` — same pattern as old ARCH-7; linked to CODE-2 |
+| ARCH-8 | P2 | CLOSED | Router business logic extracted — SVC-1/SVC-2 resolved |
+| ARCH-8 (new) | P2 | OPEN → FIX-H | `POST /auth/logout` and `POST /auth/refresh` not routed; linked to CODE-3 |
+| ARCH-9 (new) | P2 | OPEN | Business logic in `/webhook` and `/approve` handlers (`app/main.py:255-366`) — deferred Phase 10+ |
 | P2-9 | P2 | CLOSED | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
 | P2-10 | P2 | OPEN | Module-level settings access requires API key at import time (`app/main.py:223`) |
-| ARCH-9 | P2 | CLOSED | `GET /eval/runs` implemented in `app/routers/eval.py` and covered by tests |
-| REG-1 | P1 | CLOSED | Cycle 8 regressions resolved; full test suite green |
+| REG-1 | P1 | CLOSED | Cycle 8 regressions resolved — FIX-9 |
+| REG-2 | P1 | OPEN → FIX-H | 14 test failures in test_cost_ledger (×3), test_isolation (×5), test_llm_client (×3), test_store (×3+1 error) — root cause: CODE-1 |
 
 ─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 

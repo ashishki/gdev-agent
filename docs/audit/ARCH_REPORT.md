@@ -1,26 +1,25 @@
 ---
-# ARCH_REPORT — Cycle 9
+# ARCH_REPORT — Cycle 11
 _Date: 2026-03-18_
 
 ## Component Verdicts
 
 | Component | Verdict | Note |
 |-----------|---------|------|
-| `app/agent.py` — AgentService | VIOLATION | Imports `HTTPException` from FastAPI (ARCH-7); service layer must not depend on transport layer |
-| `app/main.py` — FastAPI entrypoint | PASS | Lifespan, middleware stack, core endpoints correct; `/metrics` exemption comment-documented |
-| `app/llm_client.py` — LLMClient | PASS | Tool-use loop ≤5 turns; `summarize_cluster_async` uses `asyncio.to_thread` (CODE-9 resolved) |
-| `app/dedup.py` — DedupCache | PASS | Key format `dedup:{tenant_id}:{message_id}` matches data-map §3; CODE-11 resolved |
-| `app/approval_store.py` — RedisApprovalStore | PASS | Key format `pending:{tenant_id}:{pending_id}` matches data-map §3; CODE-11 resolved |
-| `app/middleware/rate_limit.py` — RateLimitMiddleware | PASS | Key format `ratelimit:{tenant}:{user_id}`; anonymous fallback for pre-auth webhook; CODE-11 resolved |
-| `app/middleware/auth.py` — JWTMiddleware | DRIFT | `/metrics` exemption present but policy contract not in ARCHITECTURE.md or any ADR (ARCH-5 open) |
-| `app/routers/auth.py` — auth router | VIOLATION | bcrypt + JWT minting directly in route handler; no service layer (ARCH-8); business logic in transport layer |
-| `app/routers/eval.py` — eval router | VIOLATION | Direct DB INSERT for eval_run record in route handler; no service layer (ARCH-8) |
-| `app/routers/clusters.py` — clusters router | DRIFT | `GET /clusters/{cluster_id}` returns ticket_ids via time-window heuristic on `ticket_embeddings`, not persisted membership (ARCH-6) |
-| `app/jobs/rca_clusterer.py` — RCAClusterer | PASS | `rca.run`, `rca.cluster`, `rca.summarize` OTel spans present; async summarize via `asyncio.to_thread`; ARCH-4 resolved |
-| `eval/runner.py` — EvalRunner | PASS | `check_budget()` called before each LLM case iteration at line 184; ARCH-3 resolved |
-| `app/cost_ledger.py` — CostLedger | PASS | check_budget + record implemented |
-| `app/embedding_service.py` — EmbeddingService | PASS | Voyage AI / voyage-3-lite / 1024 dims; matches data-map §2 |
-| `app/dependencies.py` — require_role | PASS | Role enforcement via FastAPI Depends; correct layer |
+| `app/agent.py` — AgentService | PASS | No FastAPI import (P2-6 resolved). Domain exceptions (`AgentError`, `BudgetError`, `ValidationError`) from `app/exceptions.py` used throughout. Business logic correctly separated from transport. |
+| `app/services/auth_service.py` — AuthService | DRIFT | Imports `fastapi.responses.JSONResponse` (line 13); `_ServiceResult.to_response()` constructs a `JSONResponse` inside the service layer — transport type leaks across layer boundary. SVC-1 partially unmet. |
+| `app/services/eval_service.py` — EvalService | PASS | No FastAPI imports. Clean service contract. Budget check, DB writes, and background task dispatch all in service layer. |
+| `app/routers/auth.py` — auth router | DRIFT | Exposes only `POST /auth/token` (login). `logout()` and `refresh_token()` methods exist in `AuthService` but no corresponding router endpoints are registered. Dead service code or missing routes (ARCH-8). |
+| `app/routers/eval.py` — eval router | PASS | Thin handlers; all business logic delegated to `EvalService`. Error translation at router boundary is correct pattern. |
+| `app/routers/clusters.py` — clusters router | DRIFT | `GET /clusters/{cluster_id}` contains inline SQL with time-window heuristic membership query (lines 151–175) — business logic in router layer. ARCH-6 carry-forward; CLU-1 not yet implemented. |
+| `app/main.py` — `/webhook` and `/approve` handlers | DRIFT | Both handlers contain business logic: tenant_id resolution, UUID validation, dedup cache access, OTel span management, HMAC `X-Approve-Secret` check. Not thin handler shells. Pre-dates Phase 9 service-layer extraction (ARCH-9). |
+| `app/llm_client.py` — LLMClient | PASS | No FastAPI imports. Tool-use loop capped at default `max_turns=5` (line 186, enforced at line 199). |
+| `app/guardrails/output_guard.py` — OutputGuard | PASS | Clean; no transport imports. |
+| `app/middleware/` — auth, rate_limit, signature | PASS | FastAPI/Starlette imports are correct at the middleware layer. |
+| `app/exceptions.py` — domain exceptions | PASS | No transport imports. `AgentError` carries `status_code` metadata; mapped to HTTP responses in `main.py` exception handler — correct pattern. |
+| `app/jobs/rca_clusterer.py` — RCA Clusterer | DRIFT | `_fetch_embeddings` swallows exception silently with no warning log (CODE-5). `_fetch_raw_texts_admin` uses `gdev_admin` session without `tenant_id` assertion guard (CODE-7). Both carry-forward from Cycle 10. |
+| `eval/runner.py` — EvalRunner | DRIFT | Non-async `run_eval()` path skips `check_budget()` call — budget bypass for CLI or direct invocation (CODE-10). |
+| `app/utils.py` — run_blocking | DRIFT | `raise data  # type: ignore[misc]` — untyped re-raise; no `BaseException` narrowing (CODE-9). |
 
 ---
 
@@ -28,62 +27,69 @@ _Date: 2026-03-18_
 
 | ADR | Verdict | Note |
 |-----|---------|------|
-| ADR-001 Storage: PostgreSQL + RLS + Redis cache | PASS | Postgres primary store, RLS enforced via `SET LOCAL app.current_tenant_id`, Redis TTL cache for tenant config |
-| ADR-002 Vector DB: pgvector conditional | DRIFT | ADR specifies `text-embedding-3-small` (OpenAI) / VECTOR(1536); implementation uses `voyage-3-lite` / VECTOR(1024). ADR text not updated since provider change. |
-| ADR-003 RBAC: HS256 JWT | PASS | ADR-003 §JWT Structure explicitly specifies HS256; implementation matches. P1-1 was a misattribution — the RS256 reference exists only in ARCHITECTURE.md prose, not in ADR-003. Revisit for v2 OAuth migration. |
-| ADR-004 Observability: OTel spans per pipeline stage | PASS | `rca_clusterer.py` now has `rca.run` / `rca.cluster` / `rca.summarize` spans; ARCH-4 resolved. `/metrics` exemption policy still lacks formal documentation (ARCH-5). |
-| ADR-005 Orchestration: Claude tool_use loop ≤5 turns | PASS | `llm_client.py` enforces `max_turns=5`; APScheduler in `main.py` lifespan matches §v1 Implementation contract |
+| ADR-001 — PostgreSQL + RLS + Redis cache | PASS | Postgres is primary store. Alembic migrations 0001/0002 implement 16-table schema with RLS policies and `gdev_app`/`gdev_admin` roles. Redis retained for TTL-based ephemeral keys only. Google Sheets retained as optional export per ADR intent. |
+| ADR-002 — pgvector conditional (Voyage AI) | PASS | `ticket_embeddings.embedding VECTOR(1024)` in schema; TEXT fallback in migration; HNSW index specified in data-map. ADR updated in DOC-2 to record Voyage AI (`voyage-3-lite`) replacing the original OpenAI `text-embedding-3-small` reference. Implementation, config (`app/config.py:29`), and ADR are now consistent. ARCH-2 is closed. |
+| ADR-003 — RBAC: HS256 | PASS | ADR-003 §Consequences explicitly documents HS256 as the v1 choice and describes the RS256 migration path. Code uses HS256 consistently. The P1-1 finding in MEMORY.md ("RS256 mandated, HS256 implemented") is a misread; the ADR accepts HS256 for v1. P1-1 should be closed. |
+| ADR-004 — OTel spans + Prometheus in new services | PASS | `AuthService` and `EvalService` both include OTel `TRACER` (with noop fallback) and Prometheus `Counter`/`Histogram` metrics. Span naming follows `service.auth.*` / `service.eval.*` convention consistent with ADR-004 trace schema. |
+| ADR-005 — Claude tool_use loop ≤ 5 turns | PASS | `LLMClient` defaults `max_turns=5` (line 186); loop enforces limit (line 199). APScheduler in-process for RCA/cost jobs per ADR-005 §v1 Implementation. Eval on-demand via `POST /eval/run`. Migration trigger criteria not yet reached. |
 
 ---
 
 ## Architecture Findings
 
-### ARCH-2 [P2] — ADR-002 embedding model spec drift
-Symptom: ADR-002 specifies `text-embedding-3-small` (OpenAI) and `VECTOR(1536)`; runtime config and schema use `voyage-3-lite` and `VECTOR(1024)`.
-Evidence: `docs/adr/002-vector-database.md:32` (`VECTOR(1536)`), `app/config.py:29` (`embedding_model: str = "voyage-3-lite"`), `docs/data-map.md:116` (`VECTOR(1024)`).
-Root cause: ADR-002 was authored before the embedding provider was finalized; never updated when Voyage AI was adopted.
-Impact: ADR is misleading; HNSW tuning parameters in ADR-002 are sized for 1536-dim vectors — incorrect for the running system.
-Fix: Update ADR-002 to reflect `voyage-3-lite` / 1024 dims; revise HNSW parameters; add "Updated 2026-03-18" to status. Tracked as DOC-2.
+### ARCH-7 [P2] — AuthService imports FastAPI transport type
+Symptom: `AuthService._ServiceResult.to_response()` constructs a `JSONResponse` inside the service layer.
+Evidence: `app/services/auth_service.py:13` — `from fastapi.responses import JSONResponse`; `app/services/auth_service.py:87` — `return JSONResponse(...)`.
+Root cause: SVC-1 extracted business logic from the router but carried transport response construction into the service. `_ServiceResult` was intended to keep status-code semantics in the service, but the concrete `JSONResponse` type crosses the layer boundary.
+Impact: Service cannot be used outside a FastAPI context (CLI, unit tests without ASGI). Tests for `AuthService` implicitly depend on FastAPI being importable.
+Fix: Replace `JSONResponse` return in `to_response()` with a plain dict or a `ServiceResult(status_code, payload_dict)` dataclass. Move `JSONResponse(...)` construction to the router. Remove `fastapi` import from `auth_service.py`.
 
-### ARCH-5 [P2] — `/metrics` auth contract undocumented at architecture level
-Symptom: `GET /metrics` is exempt from JWT auth; the exemption is justified in a code comment but is absent from ARCHITECTURE.md, any ADR, and any ops runbook.
-Evidence: `app/middleware/auth.py:57` (exemption with comment), `app/main.py:368-371` (route), `docs/ARCHITECTURE.md` (no `/metrics` auth section).
-Root cause: FIX-F documentation deferred; policy is implicit in code only.
-Impact: Any engineer reading ARCHITECTURE.md cannot determine the intended auth model. Per-tenant Prometheus labels (e.g. `tenant_id_hash`) are readable by any network-reachable client.
-Fix: Add an explicit §Security Assumptions entry to ARCHITECTURE.md: "`GET /metrics` is exempt from application-level JWT auth; access restriction is enforced at the network/infrastructure layer (VPC firewall, Prometheus scrape IP allowlist). No per-tenant RBAC is enforced at the application layer." Tracked as FIX-F.
+### ARCH-8 [P2] — `POST /auth/logout` and `POST /auth/refresh` not routed
+Symptom: `AuthService` implements `logout()` and `refresh_token()` but `app/routers/auth.py` only registers `POST /auth/token`.
+Evidence: `app/routers/auth.py` — single route definition. `app/services/auth_service.py:212,273` — both methods fully implemented.
+Root cause: SVC-1 scope covered only the login flow; logout and refresh routes were not added to the router.
+Impact: Token revocation (`logout`) and refresh are unreachable via the API. The JWT blocklist mechanism is dead code for external callers; users cannot invalidate tokens before expiry.
+Fix: Add `POST /auth/logout` and `POST /auth/refresh` routes in `app/routers/auth.py` mirroring the `create_auth_token` pattern. Update ARCHITECTURE.md §2.1 and spec.md §8 API surface table.
 
-### ARCH-6 [P2] — Cluster membership is a time-window approximation
-Symptom: `GET /clusters/{cluster_id}` returns tickets by querying `ticket_embeddings` where `created_at BETWEEN cluster.first_seen AND cluster.last_seen`, not via persisted cluster membership.
-Evidence: `app/routers/clusters.py:151-175`.
-Root cause: No `cluster_memberships` join table exists; `cluster_summaries` stores only aggregate time bounds. Any ticket in the time window appears regardless of DBSCAN cluster assignment.
-Impact: Endpoint is non-deterministic — overlapping time windows across clusters produce incorrect ticket attribution. Violates spec §7 `ClusterSummary` entity contract.
-Fix: Add `cluster_memberships(cluster_id UUID, ticket_id UUID)` table; populate in `_upsert_cluster` (`app/jobs/rca_clusterer.py`); join on membership in the clusters router. Requires Alembic migration.
+### ARCH-9 [P2] — Business logic embedded in `/webhook` and `/approve` route functions
+Symptom: `POST /webhook` in `app/main.py` contains tenant_id resolution, UUID validation, dedup cache interaction, and OTel span management. `POST /approve` contains `X-Approve-Secret` HMAC check logic inline.
+Evidence: `app/main.py:255–346` (webhook), `app/main.py:349–366` (approve).
+Root cause: These handlers pre-date the service-layer pattern introduced in Phase 9. SVC-1/SVC-2/SVC-3 extracted auth and eval but did not extract webhook/approve flows.
+Impact: Inconsistent layer discipline across the codebase; webhook/approve handlers are harder to test in isolation. Not blocking for CLI-1 since CLI will invoke services directly, not through these routes.
+Fix: Phase 10+ — extract webhook routing logic into `AgentService` or a new `WebhookService`; move `X-Approve-Secret` check into `AgentService.approve()` or a dedicated middleware. Lower priority than ARCH-7/ARCH-8.
 
-### ARCH-7 [P2] — AgentService imports HTTPException from FastAPI
-Symptom: `app/agent.py:15` imports `HTTPException` from `fastapi`; the service layer must not depend on the transport/framework layer.
-Evidence: `app/agent.py:15` (`from fastapi import HTTPException`).
-Root cause: HTTPException was used as a convenience exception during initial development and never extracted.
-Impact: `app/agent.py` is coupled to FastAPI; cannot be reused or unit-tested without the FastAPI dependency. Blocks SVC-1 service extraction in Phase 9.
-Fix: Define `class AgentError(Exception)` in `app/exceptions.py`; replace `HTTPException` usage in `agent.py` with domain exceptions; catch in `main.py` route handlers and map to HTTP status codes.
+### ARCH-6 [P2] — `GET /clusters/{cluster_id}` returns members via time-window heuristic (carry-forward)
+Symptom: Member tickets derived by querying `ticket_embeddings` within `first_seen`/`last_seen` timestamps, not by persisted cluster membership records.
+Evidence: `app/routers/clusters.py:151–175`.
+Root cause: `rca_cluster_members` table and Alembic migration 0003 not yet implemented. CLU-1 deferred to Phase 10.
+Impact: Cluster membership is approximate and unstable; tickets added or removed from the time window after cluster creation change membership silently. Business reports on cluster composition are unreliable.
+Fix: CLU-1 (Phase 10) — add `rca_cluster_members` table with migration 0003; write membership at cluster creation in `rca_clusterer.py`; replace heuristic query with direct membership join in `clusters.py`. Verify no integration tests depend on heuristic behaviour before replacing.
 
-### ARCH-8 [P2] — Router layer carries business logic
-Symptom: `app/routers/auth.py` performs bcrypt hash verification and JWT minting directly in the route handler (lines 26–96). `app/routers/eval.py` performs direct DB INSERT for `eval_runs` in the route handler (lines 77–95).
-Evidence: `app/routers/auth.py:26-96`, `app/routers/eval.py:77-95`.
-Root cause: Service layer for auth and eval was never extracted; logic grew inline in route handlers.
-Impact: Business logic is untestable without FastAPI `Request` context. Blocks Phase 9 SVC-1 (AuthService) and SVC-2 (EvalService) extraction.
-Fix: Extract `AuthService.authenticate(email, password, tenant_slug)` → `app/services/auth_service.py`; extract `EvalService.start_run(tenant_id)` → `app/services/eval_service.py`; route handlers become thin coordinators. Deferred to Phase 9.
+### ARCH-5 [P2] — `/metrics` JWT exemption absent from ADR and ARCHITECTURE.md (carry-forward, partially mitigated)
+Symptom: `GET /metrics` is exempt from `JWTMiddleware`; the security rationale (Prometheus scrape; network-layer restriction) is present only in an inline code comment.
+Evidence: `app/main.py:371` — inline comment added by FIX-F. No ADR or ARCHITECTURE.md security section documents this policy.
+Root cause: FIX-F mitigated the code-level gap but did not add a doc-level decision record.
+Impact: If network restriction is removed or misconfigured, metrics expose tenant_id hashes and operational counters without authentication. No written policy means reviewers cannot verify the assumption holds.
+Fix: Add a paragraph to ARCHITECTURE.md §Security (or §Observability) stating that `/metrics` relies on network-layer access control; add a note to ADR-004 §Consequences. Low effort; no code change needed.
 
 ---
 
-## Resolved Since Cycle 8
+## CLI-1 Design Assessment
 
-| Finding | Resolution |
-|---------|------------|
-| ARCH-3 (eval budget bypass) | `eval/runner.py:184` calls `check_budget()` before each LLM case — CLOSED |
-| ARCH-4 (RCA OTel gap) | `rca_clusterer.py` now has `rca.run`, `rca.cluster`, `rca.summarize` spans — CLOSED |
-| CODE-9 (blocking sync in async RCA path) | `summarize_cluster_async` uses `asyncio.to_thread` — CLOSED |
-| CODE-11 (Redis keys not tenant-namespaced) | All three hot-path keys now tenant-prefixed per data-map §3 — CLOSED |
-| ARCH-9 (`GET /eval/runs` missing) | Implemented in `app/routers/eval.py` — CLOSED (Cycle 8) |
+CLI-1 (Typer admin CLI at `scripts/cli.py`) is a Phase 10 start task. Architecture assessment:
+
+- **Service layer reuse**: The CLI should invoke `app/services/` (AuthService, EvalService) and domain objects (CostLedger, TenantRegistry) directly — not by making HTTP calls to the running API. This avoids coupling the CLI to the transport layer and allows offline admin operations.
+- **DB access**: CLI must initialise an `AsyncEngine` and `AsyncSession` factory (via `app/db.make_engine()` and `app/db.make_session_factory()`). Pattern already established in `scripts/seed_db.py`.
+- **Budget bypass risk**: `eval/runner.py` non-async path has no `check_budget()` call (CODE-10). Any CLI `rca run` or `eval run` command that invokes `run_eval()` directly is subject to the same bypass. CODE-10 must be fixed before or alongside CLI-1.
+- **No new ADR required** for CLI-1 as long as it uses the existing service layer and DB stack. If CLI introduces a new execution model (e.g., Celery task dispatch, direct RCA trigger bypassing APScheduler), a new ADR is warranted.
+
+## CLU-1 Design Assessment
+
+CLU-1 introduces `rca_cluster_members` table and migration 0003:
+
+- **RLS placement**: The new table must have an RLS policy `tenant_id = current_setting('app.current_tenant_id')::UUID` consistent with all other tenant-scoped tables in migration 0001. The `gdev_app` user must have `SELECT/INSERT` on the table; `gdev_admin` has `BYPASSRLS`.
+- **Clusterer admin session write pattern**: `rca_clusterer.py` uses `gdev_admin` for reads (`_fetch_raw_texts_admin`). Writes to `rca_cluster_members` should use the `gdev_app` session with `SET LOCAL app.current_tenant_id` set to the tenant being clustered — matching the write pattern in `AgentService` and `EvalService`. Using `gdev_admin` for writes is acceptable but removes the RLS defence-in-depth layer; document the choice explicitly if that path is taken.
+- **Heuristic callers**: After CLU-1, audit `app/routers/clusters.py` and any integration tests for remaining callers of the time-window heuristic. Replace all before removing the heuristic code path.
 
 ---
 
@@ -91,9 +97,13 @@ Fix: Extract `AuthService.authenticate(email, password, tenant_slug)` → `app/s
 
 | File | Section | Change |
 |------|---------|--------|
-| `docs/adr/002-vector-database.md` | Decision (line 32) | Replace `VECTOR(1536)` / `text-embedding-3-small` with `VECTOR(1024)` / `voyage-3-lite`; update HNSW size estimates; add "Updated 2026-03-18" |
-| `docs/ARCHITECTURE.md` | §2.1 Component Status | Add T05–T24 components: `app/routers/auth.py`, `app/routers/eval.py`, `app/routers/clusters.py`, `app/routers/tickets.py`, `app/routers/agents.py`, `app/routers/analytics.py`, `app/jobs/rca_clusterer.py`, `app/embedding_service.py`, `app/cost_ledger.py`, `app/metrics.py`, `app/dependencies.py`, `app/utils.py` |
-| `docs/ARCHITECTURE.md` | §2.2 Repository Layout | Add `app/routers/`, `app/jobs/`, `app/services/` subtrees |
-| `docs/ARCHITECTURE.md` | §5 Security Assumptions | Add `/metrics` auth contract: "exempt from JWT; restricted at network layer" |
-| `docs/ARCHITECTURE.md` | Header | Bump to v2.2, date 2026-03-18 |
+| `docs/ARCHITECTURE.md` | §2.1 Component Status | Mark `POST /auth/logout` and `POST /auth/refresh` as missing routes; update auth router description (ARCH-8) |
+| `docs/ARCHITECTURE.md` | §Security or §Observability | Document `/metrics` JWT exemption and network-layer access control assumption (ARCH-5) |
+| `docs/spec.md` | §8 API Surface | Add `POST /auth/logout` and `POST /auth/refresh` rows to the API table (ARCH-8) |
+| `docs/CODEX_PROMPT.md` | Open findings | Close ARCH-2 (resolved by DOC-2); close P1-1 (HS256 is the documented v1 choice per ADR-003, not a violation) |
+| `docs/adr/003-rbac-design.md` | (no change needed) | ADR already documents HS256 as v1 choice; P1-1 in MEMORY.md should be closed as a misread |
+| `docs/adr/004-observability-stack.md` | §Consequences | Add note that `/metrics` endpoint relies on network-layer restriction; no JWT auth by design (ARCH-5) |
+
 ---
+
+_ARCH_REPORT.md written. Run PROMPT_2_CODE.md._

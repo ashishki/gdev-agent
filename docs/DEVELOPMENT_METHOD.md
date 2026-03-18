@@ -112,7 +112,7 @@ SEC-4 No hardcoded secrets · SEC-5 Async correctness · SEC-6 Auth/RBAC on new 
 - Last task touched: auth, middleware, RLS, tenant isolation, secrets
 - 5+ P2 findings open for 3+ cycles
 
-**Skip deep review if:** the completed phase already has an archive entry in `docs/audit/AUDIT_INDEX.md` — review was done in a prior session; treat as within-phase and run light review only.
+**Skip deep review if:** the **just-completed phase** already has an archive entry in `docs/audit/AUDIT_INDEX.md` (e.g. `PHASE9_REVIEW.md` for Phase 9) — review was done in a prior session; treat as within-phase and run light review only. Check the specific phase that finished, not any prior phase.
 
 **Skip all review:** doc-only patches, test-only changes, dependency bumps.
 

@@ -1720,6 +1720,56 @@ No documentation exists for the eval subsystem (T22–T24).
 
 ---
 
+## Cycle 11 Review Blockers (2026-03-18) — MUST RESOLVE BEFORE CLI-1
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 11)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| CODE-1 [P0] | P0 | `SET LOCAL` with bound parameter `:tid` rejected by asyncpg — root cause of all 14 REG-2 failures | FIX-H |
+| CODE-2 [P1] | P1 | `AuthService` imports `JSONResponse` from `fastapi.responses` — transport type in service layer | FIX-H |
+| CODE-3 [P1] | P1 | `POST /auth/logout` and `POST /auth/refresh` not registered in `app/routers/auth.py` | FIX-H |
+
+---
+
+### FIX-H · Fix asyncpg `SET LOCAL` binding, AuthService transport leak, missing auth routes
+
+**Owner:** Codex
+**Priority:** P0 (stop-ship — 14 test regressions)
+**Depends-on:** SVC-1, SVC-2, SVC-3
+**Status:** [ ]
+
+**Scope:**
+Three findings from Cycle 11 review must be resolved before Phase 10 begins:
+1. **CODE-1 [P0]**: asyncpg rejects parameterized `SET LOCAL app.current_tenant_id = :tid`. All 10+ call sites must be replaced with a literal f-string using a pre-validated UUID. Root cause of all 14 REG-2 test failures.
+2. **CODE-2 [P1]**: `AuthService` imports `JSONResponse` from fastapi — transport type leaks into service layer. Remove import; return plain dict or dataclass from service methods.
+3. **CODE-3 [P1]**: `POST /auth/logout` and `POST /auth/refresh` exist in `AuthService` but have no router endpoints. Token revocation is unreachable.
+
+**Files to MODIFY:**
+- `app/db.py` — extract `_set_tenant_ctx(session, tid)` helper using `text(f"SET LOCAL app.current_tenant_id = '{UUID(str(tid))}'")` and call from `get_db_session()`
+- `app/store.py:121` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/approval_store.py:106` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/agent.py:687, 717, 800` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/embedding_service.py:94` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/services/eval_service.py:98, 119, 398` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/jobs/rca_clusterer.py:251, 279, 306, 375` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `eval/runner.py` — replace parameterized `SET LOCAL` with `_set_tenant_ctx()` call
+- `app/services/auth_service.py` — remove `from fastapi.responses import JSONResponse`; replace `_ServiceResult.to_response()` return with `dict` or dataclass; update all callers
+- `app/routers/auth.py` — add `POST /auth/logout` and `POST /auth/refresh` routes; construct `JSONResponse` at router boundary
+- `tests/test_auth_service.py` — update assertions from `JSONResponse` type to `dict`/dataclass
+- `tests/test_endpoints.py` — add tests for `POST /auth/logout` (200, then 401 on reuse) and `POST /auth/refresh` (200, returns new token)
+
+**Acceptance Criteria:**
+1. `pytest tests/ -q` passes with 0 failures (REG-2 resolved).
+2. `git grep "from fastapi" app/services/auth_service.py` returns zero results.
+3. `POST /auth/logout` returns 200; subsequent request with same JWT returns 401.
+4. `POST /auth/refresh` returns 200 with new access token.
+5. `_set_tenant_ctx()` helper exists in `app/db.py`; all `SET LOCAL` call sites use it.
+6. `UUID(str(tid))` validation in `_set_tenant_ctx()` raises `ValueError` on malformed input — no SQL injection path.
+7. `ruff check app/ tests/` — zero errors.
+
+---
+
 ## Phase 10 — Admin CLI + Cluster Persistence
 
 _Goal: operational tooling for tenant admins; persist RCA cluster membership for stable cluster detail endpoints._
