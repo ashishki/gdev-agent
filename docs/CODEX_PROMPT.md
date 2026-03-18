@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.9
+# Codex Implementation Agent Prompt v3.10
 
-_Owner: Architecture · Updated: 2026-03-09 (Cycle 8, post-T22 verification)_
+_Owner: Architecture · Updated: 2026-03-18 (Cycle 9, Phase 8 complete)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -12,12 +12,13 @@ SESSION HANDOFF — START HERE
               T19 ✅ T20 ✅ T21 ✅ T22 ✅ T23 ✅ T24 ✅
               P0-1 ✅ P0-2 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
+              FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅
 
-**Baseline:** 144 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
-**Next task:** FIX-A — Tenant-namespace Redis hot-path keys (Phase 8 start)
+**Baseline:** 155 pass, 13 skip — repo baseline green (`pytest tests/ -q`)
+**Next task:** SVC-1 — Extract AuthService (Phase 9 start)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
-✅ `pytest tests/ -q` → 144 passed, 13 skipped
+✅ `pytest tests/ -q` → 155 passed, 13 skipped
 ✅ `ruff check app/ tests/`
 ✅ `ruff format --check app/ tests/`
 ✅ `mypy app/`
@@ -25,10 +26,13 @@ SESSION HANDOFF — START HERE
 **Phase 5 queue:** T16 ✅ → T17 ✅ → T18 ✅
 **Phase 6 queue:** T19 ✅ → T20 ✅ → T21 ✅
 **Phase 7 queue:** T22 ✅ → T23 ✅ → T24 ✅
-**Phase 8 queue:** FIX-A [ ] → FIX-B [ ] → FIX-C [ ] → FIX-D [ ] → FIX-E [ ] → FIX-F [ ]
+**Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
 **Phase 9 queue:** SVC-1 [ ] → SVC-2 [ ] → SVC-3 [ ] → DOC-1 [ ] → DOC-2 [ ] → DOC-3 [ ]
 **Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
 **Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
+
+─── Fix Queue ─── (empty — proceed to phase queue) ──────────────────
+No P0 or P1 findings this cycle. Phase 8 complete. Proceed to Phase 9 queue.
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
@@ -37,24 +41,28 @@ SESSION HANDOFF — START HERE
 | ARCH-1 | P1 | CLOSED | ADR/runtime aligned on HS256 (`app/config.py:49`, `docs/adr/003-rbac-design.md`) |
 | CODE-3 | P2 | CLOSED | `tenant_id_hash` logging verified in `app/agent.py` |
 | CODE-4 | P2 | CLOSED | Secrets scan clean; `Bearer ` literal removed from `app/` scope |
-| CODE-5 | P2 | OPEN | Silent broad fallback exception remains in `_fetch_embeddings` (`app/jobs/rca_clusterer.py:228`) |
+| CODE-5 | P2 | OPEN | Silent broad fallback exception in `_fetch_embeddings` — no `LOGGER.warning` (`app/jobs/rca_clusterer.py:276`) |
 | CODE-6 | P2 | CLOSED | Negative cross-tenant test present (`tests/test_rca_clusterer.py:163`) |
 | CODE-7 | P2 | CLOSED | Guarded `tool_choice` with empty tools fixed (`app/llm_client.py:288-294`) |
 | CODE-8 | P3 | OPEN | RCA fallback exception branch lacks direct unit coverage (`tests/test_rca_clusterer.py`) |
-| CODE-9 | P2 | OPEN | Blocking sync summarize call from async RCA path (`app/jobs/rca_clusterer.py:297`) |
-| CODE-10 | P2 | OPEN | `/metrics` route policy drift: no explicit RBAC/exemption contract (`app/main.py:362`) |
-| CODE-11 | P2 | OPEN | Redis hot-path keys remain non-tenant-prefixed (`app/dedup.py:17`, `app/approval_store.py:25`, `app/middleware/rate_limit.py:95`) |
+| CODE-9 | P2 | CLOSED | Async `summarize_cluster_async` via `asyncio.to_thread` — FIX-C resolved |
+| CODE-10 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]` (`app/utils.py:34`) |
+| CODE-11 | P2 | CLOSED | Redis hot-path keys tenant-namespaced — FIX-A resolved |
 | CODE-12 | P2 | OPEN | Import-time `get_settings()` coupling may require API key at import (`app/main.py:223`) |
-| ARCH-2 | P2 | OPEN | ADR-002 vector stack drift (OpenAI/1536 vs Voyage/1024) |
-| ARCH-3 | P2 | OPEN | RCA summarization cost path bypasses CostLedger budget/accounting |
-| ARCH-4 | P2 | OPEN | Prometheus present; rca_clusterer.py confirmed zero OTel spans — instrumentation entirely absent |
-| ARCH-5 | P2 | OPEN | `/metrics` exposure/auth contract drift vs security assumptions |
-| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership |
-| ARCH-7 | P2 | OPEN | Service-layer import boundary violation (`app/agent.py:15`) |
-| ARCH-8 | P2 | OPEN | Router layer still carries business logic (`app/routers/auth.py`, `app/main.py`) |
-| P2-1 | P2 | OPEN | Redis keys not tenant-namespaced in hot paths |
-| P2-9 | P2 | OPEN | `_run_blocking()` duplicated across modules |
-| P2-10 | P2 | OPEN | Module-level settings access requires API key at import time |
+| CODE-13 | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` call — budget bypass via CLI (`eval/runner.py:51-110`) |
+| CODE-14 | P2 | OPEN | Key prefix order deviates from data-map §3 canonical form — `dedup:`, `pending:`, `ratelimit:` should be `{tenant_id}:prefix:id` (`app/dedup.py:17`, `app/approval_store.py:96`, `app/middleware/rate_limit.py:97`) |
+| CODE-15 | P2 | OPEN | `auth_ratelimit:{email_hash}` has no tenant prefix — global by design but absent from data-map §3 (`app/middleware/rate_limit.py:129`) |
+| CODE-16 | P2 | OPEN | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion (`app/jobs/rca_clusterer.py:427-440`) |
+| ARCH-2 | P2 | OPEN | ADR-002 vector stack drift (OpenAI/1536 vs Voyage/1024) — deferred to DOC-2 |
+| ARCH-3 | P2 | CLOSED | `eval/runner.py:184` calls `check_budget()` before LLM — FIX-E resolved |
+| ARCH-4 | P2 | CLOSED | `rca_clusterer.py` now has `rca.run`, `rca.cluster`, `rca.summarize` spans — FIX-D resolved |
+| ARCH-5 | P2 | OPEN (partial) | `/metrics` exemption comment added in code; ARCHITECTURE.md update deferred to DOC-1 |
+| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) |
+| ARCH-7 | P2 | OPEN | Service-layer import boundary violation (`app/agent.py:15`) — deferred to SVC-3 |
+| ARCH-8 | P2 | OPEN | Router layer carries business logic (`app/routers/auth.py`, `app/routers/eval.py`) — deferred to Phase 9 |
+| P2-1 | P2 | CLOSED | Redis keys tenant-namespaced — FIX-A resolved (superseded by CODE-14 prefix-order note) |
+| P2-9 | P2 | CLOSED | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
+| P2-10 | P2 | OPEN | Module-level settings access requires API key at import time (`app/main.py:223`) |
 | ARCH-9 | P2 | CLOSED | `GET /eval/runs` implemented in `app/routers/eval.py` and covered by tests |
 | REG-1 | P1 | CLOSED | Cycle 8 regressions resolved; full test suite green |
 

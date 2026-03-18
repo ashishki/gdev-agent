@@ -1398,6 +1398,9 @@ _Goal: close the 6 highest-impact open P2 findings before any new features._
 _All tasks are small, low-risk, and independent. Can be implemented in any order._
 _Deep review runs after all 6 are done (phase boundary)._
 
+**Phase 8 complete — Cycle 9 review (2026-03-18): all six FIX tasks verified resolved. Baseline: 155 pass / 13 skip.**
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 9)
+
 ---
 
 ### FIX-A · Tenant-namespace Redis hot-path keys
@@ -1405,7 +1408,7 @@ _Deep review runs after all 6 are done (phase boundary)._
 **Owner:** Codex
 **Priority:** P2 (CODE-11 / P2-1 — open 3+ cycles)
 **Depends-on:** T03, T05
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18)
 
 **Scope:**
 Three Redis key prefixes are not tenant-scoped, allowing cross-tenant key collisions in shared Redis.
@@ -1429,7 +1432,7 @@ Three Redis key prefixes are not tenant-scoped, allowing cross-tenant key collis
 **Owner:** Codex
 **Priority:** P2 (P2-9 — open 3+ cycles)
 **Depends-on:** T02
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18)
 
 **Scope:**
 `_run_blocking()` is duplicated in `app/agent.py` and `app/store.py`. Extract to `app/utils.py`.
@@ -1454,7 +1457,7 @@ Three Redis key prefixes are not tenant-scoped, allowing cross-tenant key collis
 **Owner:** Codex
 **Priority:** P2 (CODE-9 — open 3+ cycles)
 **Depends-on:** T14
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18)
 
 **Scope:**
 `RCAClusterer` calls `LLMClient.summarize_cluster()` synchronously from an async context,
@@ -1477,7 +1480,7 @@ risking event-loop stall under load.
 **Owner:** Codex
 **Priority:** P2 (ARCH-4 — zero spans confirmed)
 **Depends-on:** T14, T16
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18)
 
 **Scope:**
 `app/jobs/rca_clusterer.py` has zero OpenTelemetry instrumentation. ADR-004 mandates spans per pipeline stage.
@@ -1503,7 +1506,7 @@ risking event-loop stall under load.
 **Owner:** Codex
 **Priority:** P2 (ARCH-3 — open 3+ cycles)
 **Depends-on:** T10, T22
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18)
 
 **Scope:**
 `eval/runner.py` calls `CostLedger.record()` after each eval case but never calls
@@ -1525,7 +1528,7 @@ risking event-loop stall under load.
 **Owner:** Codex
 **Priority:** P2 (ARCH-5, CODE-10)
 **Depends-on:** T05, T07
-**Status:** [ ]
+**Status:** ✅ done (Cycle 9 — 2026-03-18, inline comments added; ARCHITECTURE.md update deferred to DOC-1)
 
 **Scope:**
 `GET /metrics` is exempt from JWT auth — this is intentional (Prometheus scrape endpoint)
