@@ -60,10 +60,14 @@ def test_ttl_is_set() -> None:
     store = RedisApprovalStore(redis_client, ttl_seconds=777)
 
     store.put_pending(_pending("p4"))
-    ttl = redis_client.ttl("pending:tenant-a:p4")
+    ttl = redis_client.ttl("tenant-a:pending:p4")
 
     assert ttl > 0
     assert ttl <= 777
+
+
+def test_key_builder_uses_tenant_first_order() -> None:
+    assert RedisApprovalStore._key("tenant-a", "p6") == "tenant-a:pending:p6"
 
 
 def test_pending_is_isolated_by_tenant() -> None:

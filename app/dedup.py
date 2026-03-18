@@ -14,7 +14,7 @@ class DedupCache:
 
     def check(self, tenant_id: str, message_id: str) -> str | None:
         """Return cached response JSON when present."""
-        raw = self.redis.get(f"dedup:{tenant_id}:{message_id}")
+        raw = self.redis.get(f"{tenant_id}:dedup:{message_id}")
         if raw is None:
             return None
         return raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
@@ -22,5 +22,5 @@ class DedupCache:
     def set(self, tenant_id: str, message_id: str, response_json: str) -> None:
         """Cache response JSON under dedup key."""
         self.redis.set(
-            f"dedup:{tenant_id}:{message_id}", response_json, ex=self.ttl_seconds
+            f"{tenant_id}:dedup:{message_id}", response_json, ex=self.ttl_seconds
         )

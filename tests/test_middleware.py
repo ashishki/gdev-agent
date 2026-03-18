@@ -249,8 +249,8 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
-    assert redis_client.incr_calls.count("ratelimit:tenant-a:u1") == 3
-    assert ("ratelimit:tenant-a:u1", 60) in redis_client.expire_calls
+    assert redis_client.incr_calls.count("tenant-a:ratelimit:u1") == 3
+    assert ("tenant-a:ratelimit:u1", 60) in redis_client.expire_calls
 
 
 @pytest.mark.asyncio
@@ -271,8 +271,8 @@ async def test_rate_limits_are_independent_per_user() -> None:
     request = _request(b'{"user_id":"u2","text":"hi"}')
     request.state.tenant_id = "tenant-a"
     assert (await middleware.dispatch(request, ok)).status_code == 200
-    assert "ratelimit:tenant-a:u1" in redis_client.incr_calls
-    assert "ratelimit:tenant-a:u2" in redis_client.incr_calls
+    assert "tenant-a:ratelimit:u1" in redis_client.incr_calls
+    assert "tenant-a:ratelimit:u2" in redis_client.incr_calls
 
 
 @pytest.mark.asyncio
@@ -301,7 +301,7 @@ async def test_burst_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
-    assert redis_client.incr_calls.count("ratelimit_burst:tenant-a:u1") == 4
+    assert redis_client.incr_calls.count("tenant-a:ratelimit_burst:u1") == 4
 
 
 @pytest.mark.asyncio
@@ -321,8 +321,8 @@ async def test_rate_limiter_uses_app_state_client_when_not_injected() -> None:
     req.state.tenant_id = "tenant-a"
     assert (await middleware.dispatch(req, ok)).status_code == 200
     assert redis_client.incr_calls == [
-        "ratelimit:tenant-a:u1",
-        "ratelimit_burst:tenant-a:u1",
+        "tenant-a:ratelimit:u1",
+        "tenant-a:ratelimit_burst:u1",
     ]
 
 
@@ -342,6 +342,17 @@ async def test_rate_limiter_uses_anonymous_namespace_without_tenant_id() -> None
         await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     ).status_code == 200
     assert redis_client.incr_calls == [
-        "ratelimit:anonymous:u1",
-        "ratelimit_burst:anonymous:u1",
+        "anonymous:ratelimit:u1",
+        "anonymous:ratelimit_burst:u1",
     ]
+
+
+def test_webhook_key_uses_tenant_first_order() -> None:
+    assert (
+        RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", "u1")
+        == "tenant-a:ratelimit:u1"
+    )
+    assert (
+        RateLimitMiddleware._webhook_key("ratelimit", None, "u1")
+        == "anonymous:ratelimit:u1"
+    )

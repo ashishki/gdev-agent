@@ -25,9 +25,9 @@ _Date: 2026-03-03 · All schema changes require a migration file and a bump to t
 | `cost_ledger` | Postgres | — | 2 years | Low |
 | `eval_runs` | Postgres | — | 1 year | Low |
 | `eval_cases` | File (`eval/cases.jsonl`) | — | Version-controlled | Medium (synthetic) |
-| `dedup_keys` | Redis (`dedup:{tenant}:{msg_id}`) | — | 24 h TTL | Low (hash only) |
-| `rate_limit_counters` | Redis (`ratelimit:{tenant}:{user}`) | — | 60 s TTL | Low |
-| `approval_pending` | Redis (`pending:{tenant}:{id}`) | Postgres | Per APPROVAL_TTL | Low |
+| `dedup_keys` | Redis (`{tenant}:dedup:{msg_id}`) | — | 24 h TTL | Low (hash only) |
+| `rate_limit_counters` | Redis (`{tenant}:ratelimit:{user}`) | — | 60 s TTL | Low |
+| `approval_pending` | Redis (`{tenant}:pending:{id}`) | Postgres | Per APPROVAL_TTL | Low |
 | `session_tokens` | Redis (JWT blocklist) | — | Token expiry | High |
 
 ---

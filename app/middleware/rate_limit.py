@@ -154,4 +154,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Webhook requests may arrive before auth context exists; isolate those under
         # an explicit anonymous namespace instead of implicitly formatting `None`.
         tenant_prefix = str(tenant_id) if tenant_id is not None else "anonymous"
-        return f"{prefix}:{tenant_prefix}:{user_id}"
+        return f"{tenant_prefix}:{prefix}:{user_id}"

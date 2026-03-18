@@ -93,7 +93,7 @@ class RedisApprovalStore:
 
     @staticmethod
     def _key(tenant_id: str, pending_id: str) -> str:
-        return f"pending:{tenant_id}:{pending_id}"
+        return f"{tenant_id}:pending:{pending_id}"
 
     async def _persist_pending_async(self, decision: PendingDecision) -> None:
         if self._db_session_factory is None:
