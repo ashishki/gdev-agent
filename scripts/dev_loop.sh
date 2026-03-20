@@ -117,10 +117,8 @@ while true; do
     log "--- Starting claude session (retry ${RETRY_COUNT}/${MAX_RETRIES}) ---"
 
     # Run claude. --print makes it non-interactive; output is captured + tee'd to log.
-    # --dangerously-skip-permissions is blocked under root.
-    # On root: permissions are handled via .claude/settings.json allowlist.
-    # On non-root: uncomment the flag below for full auto-mode.
     claude \
+        --dangerously-skip-permissions \
         --print \
         -p "$PROMPT_CONTENT" \
         2>&1 | tee -a "$LOG_FILE" || true
