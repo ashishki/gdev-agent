@@ -261,35 +261,30 @@ Checklist when bootstrapping this workflow in a new repo:
 
 ## Phase Report Format
 
-Generated at every phase boundary. Sent via Telegram (mobile-readable).
+Generated at every phase boundary. Sent via Telegram.
+**Hard limit: 400 characters max.** No exceptions — token cost and readability.
 
 ```
-📦 Phase [N] — [Phase Name] — COMPLETE
-
-What was built:
-• [Deliverable 1] — [1-sentence plain English why it matters]
-• [Deliverable 2] — [why]
-• [Deliverable 3] — [why]
-
-Why this phase matters:
-[2-3 sentences in plain English — how this fits the overall system.
-Explain as if talking to someone learning software engineering.]
-
-Tests:
-• Before: [N] pass / [N] skip
-• After:  [N] pass / [N] skip / [N] fail
-• New tests added: [N] ([what they cover])
-
-Open issues:
-• P1: [N] — [short description of most important one]
-• P2: [N] — [examples]
-• Blocking next phase: Yes/No
-
-Overall health: ✅ Green / ⚠️ Caution / 🔴 Stop
-[1 sentence verdict]
-
-Next: Phase [N+1] — [Name]
+📦 Ph[N] [Name] ✅
+Built: [2-3 items, one line each]
+Tests: [N]→[N] pass
+Issues: P1:[N] P2:[N]
+Health: ✅/⚠️/🔴
+Next: Ph[N+1] [Name]
 ```
+
+Example:
+```
+📦 Ph9 Service Layer ✅
+Built: AuthService (login/logout/refresh), EvalService (budget gate), domain exceptions
+Tests: 174→187 pass, 0 fail
+Issues: P1:2 P2:3
+Health: ✅
+Next: Ph10 CLI + Clustering
+```
+
+The full report (with student-friendly explanations) is written to
+`docs/audit/PHASE_REPORT_LATEST.md` for reading at leisure — not sent over Telegram.
 
 ---
 

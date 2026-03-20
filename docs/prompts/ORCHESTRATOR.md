@@ -489,25 +489,30 @@ Files updated: [list with what changed in each]
 
 Only runs after a completed deep review cycle (after Step 6.5).
 
-Generate a plain-language phase report following the template in `docs/WORKFLOW_CANON.md`
-(section "Phase Report Format"). Write it to `docs/audit/PHASE_REPORT_LATEST.md`.
+**Two outputs — keep them separate:**
 
-The report must:
-- Explain what was built in plain English (student-level — why each thing exists)
-- Show test baseline before and after
-- List open P1/P2 findings with plain-English risk description
-- Give an overall health verdict (Green / Caution / Stop)
-- Name the next phase
+**1. Full report** → write to `docs/audit/PHASE_REPORT_LATEST.md`
+Content: plain-English explanation of what was built and why, test delta,
+open findings with risk description, health verdict, next phase.
+Student-friendly tone. No length limit.
 
-**Telegram delivery (if configured):**
+**2. Telegram summary** → max 400 characters, strict.
+Format (copy exactly, fill in values):
+```
+📦 Ph[N] [Name] ✅
+Built: [comma-separated, max 2 lines]
+Tests: [before]→[after] pass
+Issues: P1:[N] P2:[N]
+Health: ✅/⚠️/🔴
+Next: Ph[N+1] [Name]
+```
 
+Telegram delivery:
 ```bash
 if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-  REPORT=$(cat docs/audit/PHASE_REPORT_LATEST.md)
   curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -d chat_id="${TELEGRAM_CHAT_ID}" \
-    -d parse_mode="Markdown" \
-    --data-urlencode "text=${REPORT}" > /dev/null
+    --data-urlencode "text=SUMMARY_HERE" > /dev/null
   echo "Phase report sent to Telegram."
 fi
 ```
