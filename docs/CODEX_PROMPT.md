@@ -15,7 +15,7 @@ SESSION HANDOFF — START HERE
               FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅ FIX-H ✅
 
 **Baseline:** 187 pass, 0 fail, 0 skip — **repo green** (`pytest tests/ -q`, requires Docker for integration tests)
-**Next task:** Phase 10 — CLI-1 (deferred, awaiting user approval)
+**Next task:** Phase 10 — CLI-1
 
 ─── Validation Snapshot ──────────────────────────────────────────────
 ✅ `pytest tests/ -q` → 187 passed, 0 failed, 0 skipped (Docker required for 13 integration tests)
