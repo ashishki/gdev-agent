@@ -12,7 +12,7 @@ auditability, and root-cause analytics in one service.
 
 ## Current status
 
-The roadmap through **Phase 7** is implemented.
+The roadmap through **Phase 9** is implemented.
 
 Delivered phases:
 
@@ -23,13 +23,15 @@ Delivered phases:
 - **Phase 5 — Embeddings and RCA:** embedding persistence, RCA background clustering, cluster APIs.
 - **Phase 6 — Security hardening:** protected endpoint flow and auth safeguards across the API.
 - **Phase 7 — Eval and scale readiness:** eval REST API, per-tenant eval baseline, load-test harness, Docker updates.
+- **Phase 8 — Reliability fixes:** Redis key namespace normalisation, tenant-scoped rate-limit keys, `_run_blocking()` extraction, OTel spans on RCA clusterer, budget check before LLM in eval runner, `/metrics` JWT exemption.
+- **Phase 9 — Service layer:** `AuthService` (login/logout/refresh token), `EvalService` (budget-gated eval runs), domain exceptions (`AgentError`, `BudgetError`, `ValidationError`), alembic migration 0002 (`gdev_admin BYPASSRLS`).
 
 Current engineering baseline:
 
-- `pytest tests/ -q` → `144 passed, 13 skipped`
+- `pytest tests/ -q` → `187 passed, 0 failed` (Docker required for integration tests)
 - `ruff check app/ tests/` → passing
-- `ruff format --check app/ tests/` → passing
-- `mypy app/` → passing
+- `ruff format --check app/ tests/` → ~20 pre-existing style drifts (lint is clean)
+- `mypy app/` → pre-existing errors in `app/agent.py` only
 
 ---
 
@@ -153,6 +155,11 @@ Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · n8n integration:
 | Eval REST API (`POST /eval/run`, `GET /eval/runs`) | ✅ |
 | Per-tenant eval baseline + regression alerting | ✅ |
 | Locust load-test harness | ✅ |
+| AuthService — login / logout / refresh-token (JWT blocklist) | ✅ |
+| EvalService — budget-gated eval runs | ✅ |
+| Domain exceptions — `AgentError`, `BudgetError`, `ValidationError` | ✅ |
+| Redis key namespacing — all hot-path keys tenant-scoped | ✅ |
+| OTel spans on RCA clusterer | ✅ |
 
 ---
 
@@ -458,10 +465,10 @@ GOOGLE_SHEETS_ID=
 
 Current repository baseline:
 
-- `144 passed, 13 skipped` on `pytest tests/ -q`
+- `187 passed, 0 failed` on `pytest tests/ -q` (Docker required for integration tests)
 - `ruff check` passing
-- `ruff format --check` passing
-- `mypy app/` passing
+- `ruff format --check` — ~20 pre-existing style drifts; lint is clean
+- `mypy app/` — pre-existing errors in `app/agent.py` only
 
 Tests run offline — no live Anthropic, Linear, Telegram, or Sheets calls are required.
 Mocks and stubs are used for external integrations, while DB-backed integration paths can run
@@ -484,6 +491,21 @@ against Docker or a local test database when configured.
 | `test_sheets_integration.py` | Audit log append, retry on 429 |
 | `test_tool_registry.py` | Action dispatch, unknown-tool error, TOOLS/REGISTRY sync |
 | `test_eval_runner.py` | Eval harness accuracy calculation |
+| `test_eval_service.py` | EvalService budget gate, run creation |
+| `test_auth_service.py` | AuthService login / logout / refresh token |
+| `test_auth.py` | Auth router endpoints |
+| `test_cost_ledger.py` | Budget check, UPSERT record, `BudgetExhaustedError` |
+| `test_rbac.py` | `require_role()` dependency, 403 paths |
+| `test_isolation.py` | Cross-tenant RLS enforcement |
+| `test_rca_clusterer.py` | RCA background job, OTel spans |
+| `test_embedding_service.py` | Embedding persistence and retrieval |
+| `test_metrics.py` | `/metrics` endpoint, JWT exemption |
+| `test_observability.py` | Structured logging fields, request_id propagation |
+| `test_endpoints.py` | Combined endpoint smoke tests |
+| `test_store.py` | SQLite WAL event log |
+| `test_utils.py` | `_run_blocking()` helper |
+| `test_load_test_fixtures.py` | Locust fixture setup |
+| `test_agent_registry.py` | Agent registry API |
 | `test_logging.py` | JSON formatter, exc_info, timestamp source, request_id |
 | `test_agent.py` | Cost estimation, draft wiring, audit log fields |
 | `test_llm_client.py` | Tool-use loop, retry on 5xx, token accumulation |
@@ -573,11 +595,13 @@ What is already implemented:
 
 - governed support triage with approval routing,
 - multi-tenant storage and RLS isolation,
-- JWT auth and role-based access control,
-- cost tracking and budget enforcement,
+- JWT auth (login / logout / refresh token) and role-based access control,
+- cost tracking and budget enforcement (service-layer budget gate),
 - audit, analytics, and agent registry APIs,
-- embedding storage and RCA clustering,
+- embedding storage and RCA clustering with OTel spans,
 - eval runs with per-tenant baseline tracking,
+- domain exception hierarchy (`AgentError`, `BudgetError`, `ValidationError`),
+- tenant-namespaced Redis key space across all hot-path operations,
 - load-test assets and full-stack Docker setup.
 
 Primary remaining work is no longer “build core features,” but productization choices:
@@ -625,11 +649,15 @@ gdev-agent/
 ├── alembic/
 │   ├── env.py               # Async migrations; reads DATABASE_URL from os.environ directly
 │   └── versions/
-│       └── 0001_initial_schema.py  # 16 tables, RLS on 15, two DB roles
+│       ├── 0001_initial_schema.py          # 16 tables, RLS on 15, two DB roles
+│       ├── 0002_grant_admin_bypassrls.py   # gdev_admin BYPASSRLS grant
+│       ├── 0003_add_password_hash_to_tenant_users.py
+│       └── 0004_resize_ticket_embeddings_vector_to_1024.py
 ├── app/
 │   ├── main.py              # FastAPI app, lifespan, middleware stack
 │   ├── config.py            # pydantic-settings; loaded once via get_settings()
 │   ├── db.py                # make_engine(), make_session_factory(), get_db_session()
+│   ├── exceptions.py        # Domain exceptions: AgentError, BudgetError, ValidationError
 │   ├── tenant_registry.py   # TenantRegistry: Redis-cached (async) tenant config
 │   ├── secrets_store.py     # WebhookSecretStore: Fernet-decrypt per-tenant HMAC secret
 │   ├── schemas.py           # All Pydantic models
@@ -639,12 +667,16 @@ gdev-agent/
 │   ├── store.py             # EventStore: optional SQLite WAL event log
 │   ├── approval_store.py    # RedisApprovalStore: TTL-based pending decisions
 │   ├── dedup.py             # DedupCache: 24 h idempotency by message_id
+│   ├── utils.py             # _run_blocking() and shared helpers
 │   ├── guardrails/
 │   │   └── output_guard.py  # Secret scan, URL allowlist, confidence floor
 │   ├── middleware/
 │   │   ├── signature.py     # Per-tenant HMAC-SHA256 verification
-│   │   ├── rate_limit.py    # Per-user Redis sliding window
+│   │   ├── rate_limit.py    # Per-user Redis sliding window (tenant-namespaced keys)
 │   │   └── auth.py          # JWT auth + role context injection
+│   ├── services/
+│   │   ├── auth_service.py  # AuthService: login / logout / refresh token
+│   │   └── eval_service.py  # EvalService: budget-gated eval run creation
 │   ├── integrations/
 │   │   ├── linear.py
 │   │   ├── telegram.py
@@ -657,7 +689,7 @@ gdev-agent/
 │   │   ├── auth.py
 │   │   └── eval.py
 │   ├── jobs/
-│   │   └── rca_clusterer.py
+│   │   └── rca_clusterer.py # RCA background clusterer with OTel spans
 │   └── tools/
 │       ├── __init__.py
 │       ├── ticketing.py
@@ -665,7 +697,7 @@ gdev-agent/
 ├── eval/
 │   ├── runner.py
 │   └── cases.jsonl
-├── tests/                   # current local baseline: 144 pass / 13 skip
+├── tests/                   # current local baseline: 187 pass / 0 fail
 ├── n8n/
 │   ├── workflow_triage.json
 │   ├── workflow_approval_callback.json

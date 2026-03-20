@@ -1,7 +1,7 @@
 # gdev-agent — Workflow Orchestrator
 
-_v1.2 · Single entry point for the full development cycle._
-_Reference: ~/dev/ai-stack/projects/telegram-research-agent/docs/prompts/workflow_orchestrator.md_
+_v2.0 · Single entry point for the full development cycle._
+_References: docs/WORKFLOW_CANON.md · gstack (garrytan/gstack) · gsamat audit workflow_
 
 ---
 
@@ -58,7 +58,13 @@ Project root: `/home/artem/dev/ai-stack/projects/gdev-agent`
 
 ---
 
-### Step 0 — Determine Current State
+### Step 0 — Goals Check + Determine Current State
+
+**Goals check — always, before anything else.**
+
+Read `docs/CODEX_PROMPT.md` section "Current Phase" and `docs/tasks.md` upcoming phase header.
+Answer: _What is the business goal of the current phase? What must be true when it ends?_
+If the next task does not map to those goals, stop and report before building.
 
 Read in full:
 1. `docs/CODEX_PROMPT.md` — baseline, Fix Queue, open findings, next task
@@ -444,16 +450,95 @@ Fix Queue: [N items in CODEX_PROMPT.md]
 
 ---
 
-### Step 7 — Loop
+### Step 6.5 — Doc Update (phase boundary only)
+
+Only runs after a completed deep review cycle.
+
+Use **Agent tool** (`general-purpose`):
+
+```
+You are the Doc Updater for gdev-agent.
+Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+
+A phase just completed. Update all project documentation to match current code state.
+
+Read:
+- docs/audit/REVIEW_REPORT.md — what changed, what is current baseline
+- README.md — check: Current Status, Features table, Tests table, Repository layout
+- docs/ARCHITECTURE.md — check: any new files, components, or changed data flows
+- docs/CODEX_PROMPT.md — already patched by Consolidation Agent; verify version bump
+
+Update each file where facts are stale:
+1. README.md — phase number, test baseline, feature list, file tree
+2. docs/ARCHITECTURE.md — only if new components or data flows were added
+3. docs/CODEX_PROMPT.md — confirm version, baseline, and Fix Queue are current
+
+Rules:
+- Change only what is factually wrong or missing. No rewrites.
+- Every change must be traceable to something in REVIEW_REPORT.md or the Codex completion report.
+- Do not update docs/tasks.md — that was already patched by Consolidation Agent.
+
+Return:
+DOC_UPDATE_RESULT: DONE
+Files updated: [list with what changed in each]
+```
+
+---
+
+### Step 6.6 — Phase Report (phase boundary only)
+
+Only runs after a completed deep review cycle (after Step 6.5).
+
+Generate a plain-language phase report following the template in `docs/WORKFLOW_CANON.md`
+(section "Phase Report Format"). Write it to `docs/audit/PHASE_REPORT_LATEST.md`.
+
+The report must:
+- Explain what was built in plain English (student-level — why each thing exists)
+- Show test baseline before and after
+- List open P1/P2 findings with plain-English risk description
+- Give an overall health verdict (Green / Caution / Stop)
+- Name the next phase
+
+**Telegram delivery (if configured):**
+
+```bash
+if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+  REPORT=$(cat docs/audit/PHASE_REPORT_LATEST.md)
+  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${TELEGRAM_CHAT_ID}" \
+    -d parse_mode="Markdown" \
+    --data-urlencode "text=${REPORT}" > /dev/null
+  echo "Phase report sent to Telegram."
+fi
+```
+
+---
+
+### Step 7 — Rate Limit Checkpoint + Loop
+
+**Before looping back — always save checkpoint to memory:**
+
+Write to `/tmp/gdev_checkpoint.md` (read by dev_loop.sh on resume):
+```
+Last completed: [T## — Title] at [timestamp]
+Baseline: [N] pass / [N] skip
+Next task: [T## — Title]
+Phase: [current phase name]
+Review tier next: [light | deep]
+Any blockers: [none | description]
+```
+
+Then update memory (MEMORY.md project section) with the same state.
 
 Print one-line progress: `[T##] done. Baseline: N pass. Next: [T## — Title].`
 
 Return to Step 0.
 
 Stop when:
-- All tasks `✅` → "Development cycle complete. MVP ready." → stop.
-- Task `[!]` → print blocker, stop, ask user.
-- P0 unresolved after 2 attempts → print findings, stop, ask user.
+- All tasks `✅` → generate final completion report (same format as Phase Report, titled "PROJECT COMPLETE") → send Telegram → stop.
+- Task `[!]` → save checkpoint → print blocker → stop.
+- P0 unresolved after 2 attempts → save checkpoint → print findings → stop.
+- API rate limit (429 / "overloaded") → save checkpoint → print "RATE_LIMIT_HIT" → stop cleanly.
 
 ---
 
