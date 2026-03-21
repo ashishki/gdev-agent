@@ -65,9 +65,7 @@ class _DedupStub:
 def _response() -> WebhookResponse:
     return WebhookResponse(
         status="executed",
-        classification=ClassificationResult(
-            category="other", urgency="low", confidence=0.9
-        ),
+        classification=ClassificationResult(category="other", urgency="low", confidence=0.9),
         extracted=ExtractedFields(),
         action=ProposedAction(tool="create_ticket_and_reply", payload={}, risky=False),
         draft_response="ok",
@@ -89,10 +87,9 @@ def test_handle_successful_flow() -> None:
     calls: list[tuple[WebhookRequest, str | None]] = []
 
     agent = SimpleNamespace(
-        process_webhook=lambda payload, message_id=None: calls.append(
-            (payload, message_id)
+        process_webhook=lambda payload, message_id=None: (
+            calls.append((payload, message_id)) or response
         )
-        or response
     )
     dedup = _DedupStub()
     service = WebhookService(agent, dedup, _TracerStub(), Settings(anthropic_api_key="k"))

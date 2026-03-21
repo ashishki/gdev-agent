@@ -123,14 +123,15 @@ class DemoRunner:
             "text": "I was charged twice for my gem pack and need a refund review.",
             "metadata": {"source": "demo.py"},
         }
-        body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode(
-            "utf-8"
+        body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        signature = (
+            "sha256="
+            + hmac.new(
+                self.config.webhook_secret.encode("utf-8"),
+                body_bytes,
+                hashlib.sha256,
+            ).hexdigest()
         )
-        signature = "sha256=" + hmac.new(
-            self.config.webhook_secret.encode("utf-8"),
-            body_bytes,
-            hashlib.sha256,
-        ).hexdigest()
         response = await self._client.post(
             "/webhook",
             content=body_bytes,
@@ -242,12 +243,8 @@ def build_config(args: argparse.Namespace) -> DemoConfig:
     return DemoConfig(
         base_url=args.url.rstrip("/"),
         tenant_slug=os.environ.get("DEMO_TENANT_SLUG", "test-tenant-a"),
-        tenant_id=os.environ.get(
-            "DEMO_TENANT_ID", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-        ),
-        webhook_secret=os.environ.get(
-            "DEMO_WEBHOOK_SECRET", "test-webhook-secret-a"
-        ),
+        tenant_id=os.environ.get("DEMO_TENANT_ID", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        webhook_secret=os.environ.get("DEMO_WEBHOOK_SECRET", "test-webhook-secret-a"),
         admin_email=os.environ.get("DEMO_ADMIN_EMAIL", "admin-a@example.com"),
         admin_password=os.environ.get("DEMO_ADMIN_PASSWORD", "password123"),
         approve_secret=os.environ.get("DEMO_APPROVE_SECRET", "approve-secret"),

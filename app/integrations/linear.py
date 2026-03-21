@@ -47,17 +47,11 @@ class LinearClient:
             },
         }
         with httpx.Client(timeout=10.0) as client:
-            response = client.post(
-                "https://api.linear.app/graphql", json=body, headers=headers
-            )
+            response = client.post("https://api.linear.app/graphql", json=body, headers=headers)
 
         if response.status_code == 429:
-            LOGGER.warning(
-                "linear throttled", extra={"event": "linear_throttled", "context": {}}
-            )
-            raise HTTPException(
-                status_code=503, detail="Linear temporarily unavailable"
-            )
+            LOGGER.warning("linear throttled", extra={"event": "linear_throttled", "context": {}})
+            raise HTTPException(status_code=503, detail="Linear temporarily unavailable")
         if 400 <= response.status_code < 500:
             LOGGER.error(
                 "linear client error",

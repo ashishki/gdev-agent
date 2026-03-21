@@ -32,6 +32,7 @@ from app.services.auth_service import (
 
 UTC = timezone.utc
 
+
 class _AsyncRedisStub:
     def __init__(self) -> None:
         self.values: dict[str, int] = {}
@@ -524,17 +525,13 @@ async def test_auth_logout_router_delegates_to_auth_service(monkeypatch) -> None
 @pytest.mark.asyncio
 async def test_auth_refresh_router_delegates_to_auth_service(monkeypatch) -> None:
     expected = AuthTokenResponse(access_token="new-token", expires_in=3600)
-    refresh = AsyncMock(
-        return_value=RefreshTokenResult(status_code=200, payload=expected)
-    )
+    refresh = AsyncMock(return_value=RefreshTokenResult(status_code=200, payload=expected))
 
     class _ServiceStub:
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-        async def refresh_token(
-            self, payload: RefreshTokenRequest
-        ) -> RefreshTokenResult:
+        async def refresh_token(self, payload: RefreshTokenRequest) -> RefreshTokenResult:
             return await refresh(payload)
 
     monkeypatch.setattr(auth_module, "AuthService", _ServiceStub)

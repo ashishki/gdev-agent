@@ -16,6 +16,7 @@ from eval import runner as eval_runner
 
 UTC = timezone.utc
 
+
 class _ResultStub:
     def __init__(
         self,
@@ -73,9 +74,7 @@ class _SessionStub:
 
 class _AgentStub:
     def process_webhook(self, _payload):  # noqa: ANN001
-        return SimpleNamespace(
-            classification=SimpleNamespace(category="bug_report")
-        )
+        return SimpleNamespace(classification=SimpleNamespace(category="bug_report"))
 
 
 class _SyncBeginStub:
@@ -124,9 +123,7 @@ class _SyncBudgetAgentStub:
 
 
 @pytest.mark.asyncio
-async def test_run_eval_job_marks_regression_and_records_cost(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_run_eval_job_marks_regression_and_records_cost(monkeypatch, tmp_path: Path) -> None:
     session = _SessionStub(prior_f1="0.900")
     tenant_id = uuid4()
     eval_run_id = uuid4()
@@ -175,7 +172,9 @@ async def test_start_eval_run_delegates_to_service(monkeypatch) -> None:
 
     monkeypatch.setattr(eval_router, "_get_eval_service", lambda _request: _ServiceStub())
 
-    request = SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id), app=SimpleNamespace(state=SimpleNamespace()))
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id=tenant_id), app=SimpleNamespace(state=SimpleNamespace())
+    )
 
     response = await eval_router.start_eval_run(request=request)
 
@@ -227,9 +226,7 @@ async def test_list_eval_runs_delegates_to_service(monkeypatch) -> None:
     assert calls == [(tenant_id, None, 1, db)]
 
 
-def test_run_eval_default_agent_uses_non_persistent_store(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_run_eval_default_agent_uses_non_persistent_store(monkeypatch, tmp_path: Path) -> None:
     created: dict[str, object] = {}
 
     class _CapturedAgent:

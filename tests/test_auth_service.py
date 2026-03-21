@@ -22,6 +22,7 @@ from app.services.auth_service import (
 
 UTC = timezone.utc
 
+
 @dataclass
 class _RecordedSpan:
     name: str
@@ -87,9 +88,7 @@ class _SessionStub:
         self._execute_calls.append((str(statement), params))
         sql = str(statement).lower()
         if "set_config(" in sql:
-            self._tenant_context_valid = (
-                params.get("tenant_slug") == self._known_tenant_slug
-            )
+            self._tenant_context_valid = params.get("tenant_slug") == self._known_tenant_slug
             return _ResultStub({"set_config": "ok"})
         if "from tenant_users" in sql and self._tenant_context_valid:
             return _ResultStub(self._row)
@@ -133,9 +132,7 @@ def _metric_value(method: str, outcome: str) -> float:
     return float(value) if value is not None else 0.0
 
 
-def _token(
-    settings: Settings, *, tenant_id: str, user_id: str, role: str, jti: str
-) -> str:
+def _token(settings: Settings, *, tenant_id: str, user_id: str, role: str, jti: str) -> str:
     now = datetime.now(UTC)
     claims = {
         "sub": user_id,

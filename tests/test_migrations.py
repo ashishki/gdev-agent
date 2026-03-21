@@ -159,14 +159,10 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     # Ensure a clean slate for the downgrade assertion
     command.downgrade(cfg, "base")
 
-    assert (
-        _root_dir() / "alembic" / "versions" / "0005_cluster_membership.py"
-    ).exists()
+    assert (_root_dir() / "alembic" / "versions" / "0005_cluster_membership.py").exists()
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
-    assert EXPECTED_TABLES.issubset(upgraded), (
-        f"Missing tables: {EXPECTED_TABLES - upgraded}"
-    )
+    assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
     gdev_admin_bypassrls = asyncio.run(_role_bypassrls(async_url, "gdev_admin"))
     assert gdev_admin_bypassrls is True
     tenant_users_has_password_hash = asyncio.run(
@@ -207,9 +203,7 @@ def test_initial_migration_upgrade_and_downgrade(
             sync_url = container.get_connection_url()
             import re
 
-            async_url = re.sub(
-                r"^postgresql(\+\w+)?://", "postgresql+asyncpg://", sync_url
-            )
+            async_url = re.sub(r"^postgresql(\+\w+)?://", "postgresql+asyncpg://", sync_url)
             _run_migration_test(async_url, monkeypatch)
         return
 
@@ -226,9 +220,7 @@ def test_initial_migration_upgrade_and_downgrade(
     try:
         import psycopg2  # type: ignore[import-untyped]
 
-        conn = psycopg2.connect(
-            "dbname=postgres user=postgres host=/var/run/postgresql"
-        )
+        conn = psycopg2.connect("dbname=postgres user=postgres host=/var/run/postgresql")
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute("DROP DATABASE IF EXISTS gdev_test")
@@ -246,9 +238,7 @@ def test_initial_migration_upgrade_and_downgrade(
 
 
 def test_get_settings_accepts_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(
-        "DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/db"
-    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/db")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     get_settings.cache_clear()
 

@@ -39,9 +39,7 @@ class _SpanProtocol(Protocol):
 
 
 class _TracerProtocol(Protocol):
-    def start_as_current_span(
-        self, name: str, **kwargs: object
-    ) -> _SpanProtocol: ...
+    def start_as_current_span(self, name: str, **kwargs: object) -> _SpanProtocol: ...
 
 
 class _AgentProtocol(Protocol):
@@ -78,9 +76,7 @@ class ApprovalService:
             try:
                 self.verify_hmac(approve_secret_header, tenant_id=tenant_id)
                 response = self.dispatch_approve(payload, tenant_id)
-                APPROVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="handle", outcome="success"
-                ).inc()
+                APPROVAL_SERVICE_CALLS_TOTAL.labels(method="handle", outcome="success").inc()
                 LOGGER.info(
                     "approval handled",
                     extra={
@@ -107,9 +103,7 @@ class ApprovalService:
                     perf_counter() - started_at
                 )
 
-    def verify_hmac(
-        self, approve_secret_header: str | None, *, tenant_id: str | None
-    ) -> None:
+    def verify_hmac(self, approve_secret_header: str | None, *, tenant_id: str | None) -> None:
         started_at = perf_counter()
         with self._tracer.start_as_current_span("service.approval.verify_hmac") as span:
             if tenant_id is not None:
@@ -122,9 +116,7 @@ class ApprovalService:
                         method="verify_hmac", outcome="unauthorized"
                     ).inc()
                     raise AgentError("Unauthorized", status_code=401)
-                APPROVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="verify_hmac", outcome="success"
-                ).inc()
+                APPROVAL_SERVICE_CALLS_TOTAL.labels(method="verify_hmac", outcome="success").inc()
                 LOGGER.info(
                     "approval secret verified",
                     extra={
@@ -171,9 +163,7 @@ class ApprovalService:
             )
             return jwt_tenant_id
 
-    def dispatch_approve(
-        self, payload: ApproveRequest, tenant_id: str | None
-    ) -> ApproveResponse:
+    def dispatch_approve(self, payload: ApproveRequest, tenant_id: str | None) -> ApproveResponse:
         started_at = perf_counter()
         with self._tracer.start_as_current_span("service.approval.dispatch_approve") as span:
             if tenant_id is not None:
@@ -207,6 +197,6 @@ class ApprovalService:
                 )
                 raise
             finally:
-                APPROVAL_SERVICE_DURATION_SECONDS.labels(
-                    method="dispatch_approve"
-                ).observe(perf_counter() - started_at)
+                APPROVAL_SERVICE_DURATION_SECONDS.labels(method="dispatch_approve").observe(
+                    perf_counter() - started_at
+                )

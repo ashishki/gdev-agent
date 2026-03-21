@@ -174,9 +174,7 @@ class AgentService:
             except TypeError:
                 triage = self.llm_client.run_agent(payload.text, payload.user_id)
             classification = triage.classification
-            cost_usd = self._estimate_llm_cost_usd(
-                triage.input_tokens, triage.output_tokens
-            )
+            cost_usd = self._estimate_llm_cost_usd(triage.input_tokens, triage.output_tokens)
             span.set_attribute("input_tokens", triage.input_tokens)
             span.set_attribute("output_tokens", triage.output_tokens)
             span.set_attribute("cost_usd", cost_usd)
@@ -202,17 +200,13 @@ class AgentService:
             LLM_COST_USD_TOTAL.labels(
                 model=self.settings.anthropic_model, tenant_hash=metric_tenant_hash
             ).inc(cost_usd)
-            LLM_TURNS_USED.labels(tenant_hash=metric_tenant_hash).observe(
-                triage.turns_used
-            )
+            LLM_TURNS_USED.labels(tenant_hash=metric_tenant_hash).observe(triage.turns_used)
 
         extracted = triage.extracted
         with TRACER.start_as_current_span("agent.propose_action") as span:
             if tenant_hash is not None:
                 span.set_attribute("tenant_id_hash", tenant_hash)
-            action, fallback_draft = self.propose_action(
-                payload, classification, extracted
-            )
+            action, fallback_draft = self.propose_action(payload, classification, extracted)
             span.set_attribute("tool", action.tool)
             span.set_attribute("risky", action.risky)
             span.set_attribute("risk_reason", action.risk_reason or "")
@@ -224,16 +218,10 @@ class AgentService:
         with TRACER.start_as_current_span("agent.output_guard") as span:
             if tenant_hash is not None:
                 span.set_attribute("tenant_id_hash", tenant_hash)
-            guard_result = self.output_guard.scan(
-                draft_response, classification.confidence, action
-            )
+            guard_result = self.output_guard.scan(draft_response, classification.confidence, action)
             span.set_attribute("blocked", guard_result.blocked)
-            span.set_attribute(
-                "redacted", guard_result.redacted_draft != draft_response
-            )
-            span.set_attribute(
-                "url_stripped", guard_result.redacted_draft != draft_response
-            )
+            span.set_attribute("redacted", guard_result.redacted_draft != draft_response)
+            span.set_attribute("url_stripped", guard_result.redacted_draft != draft_response)
             if guard_result.blocked:
                 GUARD_BLOCKS_TOTAL.labels(
                     guard_type="output",
@@ -511,9 +499,7 @@ class AgentService:
             reviewer_hash=reviewer_hash,
         )
         APPROVED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
-        return ApproveResponse(
-            status="approved", pending_id=request.pending_id, result=result
-        )
+        return ApproveResponse(status="approved", pending_id=request.pending_id, result=result)
 
     def propose_action(
         self,
@@ -597,9 +583,7 @@ class AgentService:
     def _guard_input(self, text: str) -> None:
         """Validate incoming text and raise ValidationError on guardrail hit."""
         if len(text) > self.settings.max_input_length:
-            raise ValidationError(
-                f"Input exceeds max length ({self.settings.max_input_length})"
-            )
+            raise ValidationError(f"Input exceeds max length ({self.settings.max_input_length})")
         lowered = text.lower()
         if any(pattern in lowered for pattern in INJECTION_PATTERNS):
             raise ValidationError("Input failed injection guard")
@@ -613,7 +597,9 @@ class AgentService:
         if classification.category == "bug_report":
             return "Thanks for the bug report. We have shared it with the team and will follow up with steps."
         if classification.category == "cheater_report":
-            return "Thanks for the report. Our moderation team will investigate this player activity."
+            return (
+                "Thanks for the report. Our moderation team will investigate this player activity."
+            )
         if classification.category == "gameplay_question":
             return "Thanks for your question. We will send the best available guidance shortly."
         return "Thanks for contacting support. We have logged your request and will reply soon."
@@ -654,17 +640,13 @@ class AgentService:
                 return
         except RuntimeError:
             pass
-        threading.Thread(
-            target=self.sheets_client.append_log, args=(entry,), daemon=True
-        ).start()
+        threading.Thread(target=self.sheets_client.append_log, args=(entry,), daemon=True).start()
 
     def _estimate_llm_cost_usd(self, input_tokens: int, output_tokens: int) -> float:
         """Estimate LLM cost in USD from token usage."""
         return float(
-            (Decimal(input_tokens) / Decimal(1000))
-            * self.settings.llm_input_rate_per_1k
-            + (Decimal(output_tokens) / Decimal(1000))
-            * self.settings.llm_output_rate_per_1k
+            (Decimal(input_tokens) / Decimal(1000)) * self.settings.llm_input_rate_per_1k
+            + (Decimal(output_tokens) / Decimal(1000)) * self.settings.llm_output_rate_per_1k
         )
 
     def _tenant_uuid(self, tenant_id: str | None) -> UUID | None:
@@ -693,9 +675,7 @@ class AgentService:
             run_blocking(_check_budget())
         except BudgetExhaustedError as exc:
             if tenant_uuid is not None:
-                BUDGET_EXCEEDED_TOTAL.labels(
-                    tenant_hash=_sha256_short(str(tenant_uuid))
-                ).inc()
+                BUDGET_EXCEEDED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_uuid))).inc()
             raise BudgetError() from exc
 
     def _record_cost_best_effort(
@@ -741,14 +721,8 @@ class AgentService:
                     )
                     if budget_row:
                         cost_value = Decimal(str(budget_row["cost_usd"] or "0"))
-                        budget_value = Decimal(
-                            str(budget_row["daily_budget_usd"] or "0")
-                        )
-                        utilization = (
-                            float(cost_value / budget_value)
-                            if budget_value > 0
-                            else 0.0
-                        )
+                        budget_value = Decimal(str(budget_row["daily_budget_usd"] or "0"))
+                        utilization = float(cost_value / budget_value) if budget_value > 0 else 0.0
                         BUDGET_UTILIZATION_RATIO.labels(
                             tenant_hash=_sha256_short(str(tenant_uuid))
                         ).set(utilization)

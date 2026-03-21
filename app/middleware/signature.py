@@ -50,9 +50,9 @@ class SignatureMiddleware:
             tenant_slug = headers.get("x-tenant-slug")
             if not tenant_slug:
                 span.set_attribute("signature.valid", False)
-                await JSONResponse(
-                    {"detail": "Missing X-Tenant-Slug header"}, status_code=400
-                )(scope, empty_receive, send)
+                await JSONResponse({"detail": "Missing X-Tenant-Slug header"}, status_code=400)(
+                    scope, empty_receive, send
+                )
                 return
             span.set_attribute("tenant_slug_present", True)
 

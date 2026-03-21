@@ -69,10 +69,7 @@ def _scope(
         "http_version": "1.1",
         "method": "POST",
         "path": path,
-        "headers": [
-            (k.lower().encode("latin-1"), v.encode("latin-1"))
-            for k, v in headers.items()
-        ],
+        "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers.items()],
         "query_string": b"",
         "client": ("127.0.0.1", 12345),
         "server": ("testserver", 80),
@@ -120,9 +117,7 @@ async def test_missing_tenant_slug_rejected() -> None:
         middleware,
         b'{"user_id":"u1","text":"hi"}',
         {"X-Webhook-Signature": "sha256=x"},
-        app_state=SimpleNamespace(
-            webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})
-        ),
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
     )
     assert status == 400
     assert called is False
@@ -140,9 +135,7 @@ async def test_correct_signature_passes() -> None:
             "X-Webhook-Signature": _sig("secret-a", body),
             "Content-Type": "application/json",
         },
-        app_state=SimpleNamespace(
-            webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})
-        ),
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
     )
     assert status == 200
     assert called is True
@@ -161,9 +154,7 @@ async def test_tampered_body_with_old_signature_rejected() -> None:
             "X-Webhook-Signature": _sig("secret-a", original),
             "Content-Type": "application/json",
         },
-        app_state=SimpleNamespace(
-            webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})
-        ),
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
     )
     assert status == 401
     assert called is False
@@ -181,9 +172,7 @@ async def test_unknown_tenant_slug_rejected() -> None:
             "X-Webhook-Signature": _sig("secret-a", body),
             "Content-Type": "application/json",
         },
-        app_state=SimpleNamespace(
-            webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})
-        ),
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
     )
     assert status == 401
     assert called is False
@@ -202,18 +191,14 @@ async def test_cross_tenant_secret_rejected() -> None:
             "Content-Type": "application/json",
         },
         app_state=SimpleNamespace(
-            webhook_secret_store=_SecretStoreStub(
-                {"tenant-a": "secret-a", "tenant-b": "secret-b"}
-            )
+            webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a", "tenant-b": "secret-b"})
         ),
     )
     assert status == 401
     assert called is False
 
 
-def _request(
-    body: bytes, path: str = "/webhook", app_state: object | None = None
-) -> Request:
+def _request(body: bytes, path: str = "/webhook", app_state: object | None = None) -> Request:
     scope = _scope(path, {"Content-Type": "application/json"}, app_state=app_state)
 
     async def receive():
@@ -349,10 +334,6 @@ async def test_rate_limiter_uses_anonymous_namespace_without_tenant_id() -> None
 
 def test_webhook_key_uses_tenant_first_order() -> None:
     assert (
-        RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", "u1")
-        == "tenant-a:ratelimit:u1"
+        RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", "u1") == "tenant-a:ratelimit:u1"
     )
-    assert (
-        RateLimitMiddleware._webhook_key("ratelimit", None, "u1")
-        == "anonymous:ratelimit:u1"
-    )
+    assert RateLimitMiddleware._webhook_key("ratelimit", None, "u1") == "anonymous:ratelimit:u1"

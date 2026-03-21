@@ -20,9 +20,7 @@ async def main() -> None:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for seed script")
 
-    sql = (Path(__file__).resolve().parents[1] / "docker" / "seed.sql").read_text(
-        encoding="utf-8"
-    )
+    sql = (Path(__file__).resolve().parents[1] / "docker" / "seed.sql").read_text(encoding="utf-8")
     conn = await asyncpg.connect(_normalize_url(database_url))
     try:
         await conn.execute(sql)

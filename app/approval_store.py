@@ -81,9 +81,7 @@ class RedisApprovalStore:
         decision = PendingDecision.model_validate_json(text)
         if decision.expires_at < datetime.now(UTC):
             self.redis.delete(key)
-            APPROVAL_QUEUE_DEPTH.labels(
-                tenant_hash=_sha256_short(decision.tenant_id)
-            ).dec()
+            APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).dec()
             LOGGER.info(
                 "pending expired",
                 extra={

@@ -82,9 +82,7 @@ def _sha256_short(value: str) -> str:
 class AuthService:
     """Business logic for auth endpoints."""
 
-    def __init__(
-        self, *, settings: Settings, db_session_factory, jwt_blocklist_redis
-    ) -> None:
+    def __init__(self, *, settings: Settings, db_session_factory, jwt_blocklist_redis) -> None:
         self._settings = settings
         self._db_session_factory = db_session_factory
         self._jwt_blocklist_redis = jwt_blocklist_redis
@@ -164,9 +162,7 @@ class AuthService:
                 )
                 return LoginResult(
                     status_code=200,
-                    payload=AuthTokenResponse(
-                        access_token=token, expires_in=expires_in
-                    ),
+                    payload=AuthTokenResponse(access_token=token, expires_in=expires_in),
                 )
             except Exception as exc:
                 span.record_exception(exc)
@@ -195,9 +191,7 @@ class AuthService:
                 span.set_attribute("tenant_id_hash", tenant_hash)
                 ttl_seconds = self._ttl_seconds(int(str(claims["exp"])))
                 await self._store_revoked_token(str(claims["jti"]), ttl_seconds)
-                AUTH_SERVICE_CALLS_TOTAL.labels(
-                    method="logout", outcome="success"
-                ).inc()
+                AUTH_SERVICE_CALLS_TOTAL.labels(method="logout", outcome="success").inc()
                 LOGGER.info(
                     "auth logout completed",
                     extra={
@@ -207,9 +201,7 @@ class AuthService:
                 )
                 return LogoutResult(status_code=200, payload=LogoutResponse())
             except ExpiredSignatureError:
-                AUTH_SERVICE_CALLS_TOTAL.labels(
-                    method="logout", outcome="token_expired"
-                ).inc()
+                AUTH_SERVICE_CALLS_TOTAL.labels(method="logout", outcome="token_expired").inc()
                 return LogoutResult(
                     status_code=401,
                     payload=ErrorResponse(
@@ -220,9 +212,7 @@ class AuthService:
                     ),
                 )
             except JWTError:
-                AUTH_SERVICE_CALLS_TOTAL.labels(
-                    method="logout", outcome="invalid_token"
-                ).inc()
+                AUTH_SERVICE_CALLS_TOTAL.labels(method="logout", outcome="invalid_token").inc()
                 return LogoutResult(
                     status_code=401,
                     payload=ErrorResponse(
@@ -288,9 +278,7 @@ class AuthService:
                 )
                 return RefreshTokenResult(
                     status_code=200,
-                    payload=AuthTokenResponse(
-                        access_token=token, expires_in=expires_in
-                    ),
+                    payload=AuthTokenResponse(access_token=token, expires_in=expires_in),
                 )
             except ExpiredSignatureError:
                 AUTH_SERVICE_CALLS_TOTAL.labels(
@@ -322,9 +310,7 @@ class AuthService:
                 )
             except Exception as exc:
                 span.record_exception(exc)
-                AUTH_SERVICE_CALLS_TOTAL.labels(
-                    method="refresh_token", outcome="error"
-                ).inc()
+                AUTH_SERVICE_CALLS_TOTAL.labels(method="refresh_token", outcome="error").inc()
                 LOGGER.error(
                     "auth refresh failed",
                     extra={"event": "auth_refresh_failed", "context": {}},
@@ -362,9 +348,7 @@ class AuthService:
 
     @staticmethod
     def _login_invalid_result(email_hash: str) -> LoginResult:
-        AUTH_SERVICE_CALLS_TOTAL.labels(
-            method="login", outcome="invalid_credentials"
-        ).inc()
+        AUTH_SERVICE_CALLS_TOTAL.labels(method="login", outcome="invalid_credentials").inc()
         LOGGER.warning(
             "invalid auth credentials",
             extra={

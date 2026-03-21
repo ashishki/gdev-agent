@@ -16,9 +16,7 @@ DEFAULT_KB_BASE_URL = "https://kb." + "example.com"
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "gdev-agent"
     app_env: str = "dev"

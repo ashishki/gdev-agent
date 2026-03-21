@@ -48,9 +48,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 payload = json.loads(body.decode("utf-8") or "{}")
             except json.JSONDecodeError:
                 payload = {}
-            redis_client = self.redis or getattr(
-                request.app.state, "jwt_blocklist_redis", None
-            )
+            redis_client = self.redis or getattr(request.app.state, "jwt_blocklist_redis", None)
             if redis_client is None:
                 span.set_attribute("rate_limit.bypassed", True)
                 LOGGER.warning(
@@ -66,15 +64,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         span.set_attribute("rate_limit.user_present", False)
                         return await call_next(request)
                     tenant_id = getattr(request.state, "tenant_id", None)
-                    user_hash = hashlib.sha256(
-                        str(user_id).encode("utf-8")
-                    ).hexdigest()[:16]
+                    user_hash = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:16]
                     span.set_attribute("user_id_hash", user_hash)
 
                     minute_key = self._webhook_key("ratelimit", tenant_id, str(user_id))
-                    burst_key = self._webhook_key(
-                        "ratelimit_burst", tenant_id, str(user_id)
-                    )
+                    burst_key = self._webhook_key("ratelimit_burst", tenant_id, str(user_id))
                     minute_count = int(await redis_client.incr(minute_key))
                     if minute_count == 1:
                         await redis_client.expire(minute_key, 60)
@@ -99,9 +93,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         span.set_attribute("rate_limit.user_present", False)
                         return await call_next(request)
 
-                    email_hash = hashlib.sha256(
-                        email.strip().lower().encode("utf-8")
-                    ).hexdigest()[:16]
+                    email_hash = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[
+                        :16
+                    ]
                     span.set_attribute("email_hash", email_hash)
                     auth_key = f"auth_ratelimit:{email_hash}"
                     auth_count = int(await redis_client.incr(auth_key))

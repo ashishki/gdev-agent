@@ -38,9 +38,7 @@ SYSTEM_PROMPT = (
     "Use available tools to classify requests and extract entities. "
     "Always call classify_request and extract_entities before ending your turn."
 )
-ERROR_CODE_PATTERN = re.compile(
-    r"\b(?:ERR[-_ ]?\d{3,}|E[-_]\d{4,})\b", flags=re.IGNORECASE
-)
+ERROR_CODE_PATTERN = re.compile(r"\b(?:ERR[-_ ]?\d{3,}|E[-_]\d{4,})\b", flags=re.IGNORECASE)
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -195,9 +193,7 @@ class LLMClient:
             for block in response.content:
                 block_type = getattr(block, "type", None)
                 if block_type == "text":
-                    assistant_content.append(
-                        {"type": "text", "text": getattr(block, "text", "")}
-                    )
+                    assistant_content.append({"type": "text", "text": getattr(block, "text", "")})
                     continue
                 if block_type != "tool_use":
                     continue
@@ -244,9 +240,7 @@ class LLMClient:
             messages.append({"role": "user", "content": tool_results})
 
         if classification is None:
-            classification = ClassificationResult(
-                category="other", urgency="low", confidence=0.0
-            )
+            classification = ClassificationResult(category="other", urgency="low", confidence=0.0)
         elif force_pending:
             classification = classification.model_copy(update={"confidence": 0.0})
         if extracted.user_id is None:
@@ -300,18 +294,13 @@ class LLMClient:
             return {"label": "Cluster", "summary": raw_text[:400], "severity": None}
 
         label = str(parsed.get("label", "Cluster")).strip() or "Cluster"
-        summary = (
-            str(parsed.get("summary", "Summary unavailable")).strip()
-            or "Summary unavailable"
-        )
+        summary = str(parsed.get("summary", "Summary unavailable")).strip() or "Summary unavailable"
         severity = parsed.get("severity")
         if isinstance(severity, str) and severity in {"low", "medium", "high"}:
             return {"label": label, "summary": summary, "severity": severity}
         return {"label": label, "summary": summary, "severity": None}
 
-    async def summarize_cluster_async(
-        self, ticket_texts: list[str]
-    ) -> dict[str, str | None]:
+    async def summarize_cluster_async(self, ticket_texts: list[str]) -> dict[str, str | None]:
         """Run cluster summarization off the event loop."""
         return await asyncio.to_thread(self.summarize_cluster, ticket_texts)
 
@@ -365,9 +354,7 @@ class LLMClient:
                             model=model, status="ok", tenant_hash=tenant_hash
                         ).inc()
                         if attempt_count > 1:
-                            LLM_RETRY_TOTAL.labels(tenant_hash=tenant_hash).inc(
-                                attempt_count - 1
-                            )
+                            LLM_RETRY_TOTAL.labels(tenant_hash=tenant_hash).inc(attempt_count - 1)
                         return response
             except Exception as exc:
                 span.set_attribute("status", "error")
@@ -377,12 +364,10 @@ class LLMClient:
                 ).inc()
                 raise
             finally:
-                span.set_attribute(
-                    "duration_ms", round((time.monotonic() - started) * 1000, 2)
+                span.set_attribute("duration_ms", round((time.monotonic() - started) * 1000, 2))
+                LLM_DURATION_SECONDS.labels(model=model, tenant_hash=tenant_hash).observe(
+                    time.monotonic() - started
                 )
-                LLM_DURATION_SECONDS.labels(
-                    model=model, tenant_hash=tenant_hash
-                ).observe(time.monotonic() - started)
 
         raise RuntimeError("unreachable")
 
@@ -460,9 +445,7 @@ class LLMClient:
             tone = str(tool_input.get("tone", "informational"))
             draft_text = str(tool_input.get("draft_text", "")).strip()
             if not draft_text:
-                draft_text = (
-                    "Thanks for contacting support. We have logged your request."
-                )
+                draft_text = "Thanks for contacting support. We have logged your request."
             return {
                 "tone": tone,
                 "include_faq_links": bool(tool_input.get("include_faq_links", False)),

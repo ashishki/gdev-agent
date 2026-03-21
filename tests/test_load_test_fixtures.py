@@ -24,7 +24,4 @@ def test_hmac_sign_matches_known_sha256() -> None:
         "text": "charged twice",
     }
     signature = hmac_sign(serialize_payload(payload), "secret")
-    assert (
-        signature
-        == "sha256=9f4c674caf64b290ead19e2c5e540a99805ab409f1990b45b42904caf01de631"
-    )
+    assert signature == "sha256=9f4c674caf64b290ead19e2c5e540a99805ab409f1990b45b42904caf01de631"

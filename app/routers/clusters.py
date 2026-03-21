@@ -156,14 +156,10 @@ async def list_clusters(
             page_rows = rows[:limit]
             data = [ClusterListItem.model_validate(dict(row)) for row in page_rows]
             next_cursor = data[-1].updated_at.isoformat() if len(rows) > limit else None
-            CLUSTER_LIST_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="success"
-            ).inc()
+            CLUSTER_LIST_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="success").inc()
             return ClusterListResponse(data=data, cursor=next_cursor, total=None)
         except Exception as exc:
-            CLUSTER_LIST_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="error"
-            ).inc()
+            CLUSTER_LIST_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
             span.record_exception(exc)
             raise
         finally:
@@ -251,16 +247,12 @@ async def get_cluster(
             )
             detail = dict(row)
             detail["ticket_ids"] = [item["ticket_id"] for item in ticket_rows[:10]]
-            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="success"
-            ).inc()
+            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="success").inc()
             return ClusterDetailResponse(
                 data=[ClusterDetailItem.model_validate(detail)], cursor=None, total=None
             )
         except Exception as exc:
-            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="error"
-            ).inc()
+            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
             span.record_exception(exc)
             raise
         finally:
@@ -366,9 +358,7 @@ async def get_cluster_tickets(
                 .all()
             )
 
-            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="success"
-            ).inc()
+            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="success").inc()
             return ClusterTicketsResponse(
                 tickets=[TicketListItem.model_validate(dict(row)) for row in rows],
                 total=total,
@@ -376,9 +366,7 @@ async def get_cluster_tickets(
             )
         except Exception as exc:
             span.record_exception(exc)
-            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(
-                tenant_hash=tenant_hash, outcome="error"
-            ).inc()
+            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
             raise
         finally:
             CLUSTER_TICKETS_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(

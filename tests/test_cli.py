@@ -103,7 +103,16 @@ def test_help_lists_all_commands() -> None:
 def test_tenant_list_command(monkeypatch) -> None:  # noqa: ANN001
     runner = CliRunner()
     session = _SessionStub(
-        [[{"tenant_id": str(uuid4()), "slug": "alpha", "is_active": True, "daily_budget_usd": "10.0"}]]
+        [
+            [
+                {
+                    "tenant_id": str(uuid4()),
+                    "slug": "alpha",
+                    "is_active": True,
+                    "daily_budget_usd": "10.0",
+                }
+            ]
+        ]
     )
     engine = _EngineStub()
     _patch_settings(monkeypatch)
@@ -121,7 +130,14 @@ def test_tenant_create_command(monkeypatch) -> None:  # noqa: ANN001
     tenant_id = uuid4()
     session = _SessionStub(
         [
-            [{"tenant_id": str(tenant_id), "slug": "studio-a", "is_active": True, "daily_budget_usd": "12.5"}],
+            [
+                {
+                    "tenant_id": str(tenant_id),
+                    "slug": "studio-a",
+                    "is_active": True,
+                    "daily_budget_usd": "12.5",
+                }
+            ],
             [],
         ]
     )
@@ -132,6 +148,7 @@ def test_tenant_create_command(monkeypatch) -> None:  # noqa: ANN001
     _patch_session_bundle(monkeypatch, session, engine)
     monkeypatch.setattr(cli, "uuid4", lambda: tenant_id)
     monkeypatch.setattr(cli, "_redis_client_from_settings", lambda settings: redis)
+
     async def _fake_set_tenant_ctx(session, tenant_id):  # noqa: ANN001
         _ = session
         tenant_ctx_calls.append(str(tenant_id))
@@ -140,7 +157,16 @@ def test_tenant_create_command(monkeypatch) -> None:  # noqa: ANN001
 
     result = runner.invoke(
         cli.app,
-        ["tenant", "create", "--name", "Studio A", "--slug", "studio-a", "--daily-budget-usd", "12.5"],
+        [
+            "tenant",
+            "create",
+            "--name",
+            "Studio A",
+            "--slug",
+            "studio-a",
+            "--daily-budget-usd",
+            "12.5",
+        ],
     )
 
     assert result.exit_code == 0

@@ -17,6 +17,7 @@ from app.schemas import AgentConfigUpdate
 
 UTC = timezone.utc
 
+
 class _ResultStub:
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self._rows = rows
@@ -155,9 +156,7 @@ async def test_put_agents_route_returns_404_for_missing_or_cross_tenant(
     request = SimpleNamespace(
         state=SimpleNamespace(tenant_id=uuid4()),
         app=SimpleNamespace(
-            state=SimpleNamespace(
-                tenant_registry=SimpleNamespace(invalidate=_invalidate)
-            )
+            state=SimpleNamespace(tenant_registry=SimpleNamespace(invalidate=_invalidate))
         ),
     )
 

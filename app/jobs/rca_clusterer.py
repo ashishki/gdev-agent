@@ -80,17 +80,15 @@ class RCAClusterer:
         self._db_session_factory = db_session_factory
         self._llm_client = llm_client or LLMClient(settings)
         self._admin_engine: AsyncEngine | None = None
-        self._admin_session_factory = (
-            admin_session_factory or self._build_admin_session_factory(settings)
+        self._admin_session_factory = admin_session_factory or self._build_admin_session_factory(
+            settings
         )
 
     def _build_admin_session_factory(
         self,
         settings: Settings,
     ) -> async_sessionmaker[AsyncSession] | None:
-        database_url = (
-            str(settings.database_url) if settings.database_url is not None else None
-        )
+        database_url = str(settings.database_url) if settings.database_url is not None else None
         if not database_url:
             return None
         parsed: URL = make_url(database_url)
@@ -98,9 +96,7 @@ class RCAClusterer:
             return None
         admin_url = parsed.set(username="gdev_admin")
         self._admin_engine = create_async_engine(str(admin_url), pool_pre_ping=True)
-        return async_sessionmaker(
-            self._admin_engine, expire_on_commit=False, class_=AsyncSession
-        )
+        return async_sessionmaker(self._admin_engine, expire_on_commit=False, class_=AsyncSession)
 
     async def aclose(self) -> None:
         if self._admin_engine is not None:
@@ -168,9 +164,7 @@ class RCAClusterer:
                         1,
                         min(
                             50,
-                            int(
-                                self._settings.rca_budget_per_run_usd / Decimal("0.003")
-                            ),
+                            int(self._settings.rca_budget_per_run_usd / Decimal("0.003")),
                         ),
                     )
                     if len(clusters) > budget_cap:
@@ -195,12 +189,8 @@ class RCAClusterer:
                             cluster_number=index,
                         )
 
-                    RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(
-                        len(clusters)
-                    )
-                    RCA_TICKETS_SCANNED_TOTAL.labels(tenant_hash=tenant_hash).inc(
-                        len(rows)
-                    )
+                    RCA_CLUSTERS_ACTIVE.labels(tenant_hash=tenant_hash).set(len(clusters))
+                    RCA_TICKETS_SCANNED_TOTAL.labels(tenant_hash=tenant_hash).inc(len(rows))
                     LOGGER.info(
                         "rca run complete",
                         extra={
@@ -221,9 +211,7 @@ class RCAClusterer:
             )
 
     async def _fetch_embeddings(self, tenant_id: str) -> list[dict[str, object]]:
-        lookback = datetime.now(UTC) - timedelta(
-            hours=self._settings.rca_lookback_hours
-        )
+        lookback = datetime.now(UTC) - timedelta(hours=self._settings.rca_lookback_hours)
         async with self._db_session_factory() as session:
             try:
                 async with session.begin():
@@ -306,9 +294,7 @@ class RCAClusterer:
         ]
         first_seen = min(created_ats) if created_ats else datetime.now(UTC)
         last_seen = max(created_ats) if created_ats else datetime.now(UTC)
-        texts = await self._fetch_raw_texts_admin(
-            tenant_id=tenant_id, ticket_ids=ticket_ids[:5]
-        )
+        texts = await self._fetch_raw_texts_admin(tenant_id=tenant_id, ticket_ids=ticket_ids[:5])
         label = f"Cluster {cluster_number}"
         summary = f"{len(cluster_rows)} related tickets"
         severity = self._severity_from_size(len(cluster_rows))
@@ -318,9 +304,7 @@ class RCAClusterer:
                     span.set_attribute("cluster_id", cluster_id)
                     span.set_attribute("ticket_count", len(cluster_rows))
                     try:
-                        summary_result = await self._llm_client.summarize_cluster_async(
-                            texts
-                        )
+                        summary_result = await self._llm_client.summarize_cluster_async(texts)
                     except Exception as exc:
                         span.record_exception(exc)
                         raise
@@ -417,9 +401,7 @@ class RCAClusterer:
                     ],
                 )
 
-    async def _fetch_raw_texts_admin(
-        self, *, tenant_id: str, ticket_ids: list[str]
-    ) -> list[str]:
+    async def _fetch_raw_texts_admin(self, *, tenant_id: str, ticket_ids: list[str]) -> list[str]:
         if not ticket_ids or self._admin_session_factory is None:
             return []
         statement = text(
@@ -481,9 +463,7 @@ class RCAClusterer:
         clusters.sort(key=len, reverse=True)
         return clusters
 
-    def _dbscan(
-        self, embeddings: list[list[float]], *, eps: float, min_samples: int
-    ) -> list[int]:
+    def _dbscan(self, embeddings: list[list[float]], *, eps: float, min_samples: int) -> list[int]:
         n = len(embeddings)
         labels = [-1] * n
         visited = [False] * n

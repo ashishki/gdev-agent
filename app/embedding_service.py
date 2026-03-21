@@ -85,9 +85,7 @@ class EmbeddingService:
             try:
                 embedding = await self._embed_text(text_value)
                 if len(embedding) != 1024:
-                    raise ValueError(
-                        f"Expected embedding size 1024, got {len(embedding)}"
-                    )
+                    raise ValueError(f"Expected embedding size 1024, got {len(embedding)}")
 
                 async with self._db_session_factory() as session:
                     async with session.begin():
@@ -109,13 +107,9 @@ class EmbeddingService:
                             },
                         )
 
-                EMBEDDING_UPSERTS_TOTAL.labels(
-                    tenant_hash=tenant_hash, status="ok"
-                ).inc()
+                EMBEDDING_UPSERTS_TOTAL.labels(tenant_hash=tenant_hash, status="ok").inc()
             except Exception as exc:
-                EMBEDDING_UPSERTS_TOTAL.labels(
-                    tenant_hash=tenant_hash, status="error"
-                ).inc()
+                EMBEDDING_UPSERTS_TOTAL.labels(tenant_hash=tenant_hash, status="error").inc()
                 span.record_exception(exc)
                 LOGGER.warning(
                     "embedding upsert failed",
@@ -128,9 +122,7 @@ class EmbeddingService:
                 raise
             finally:
                 duration = time.monotonic() - started
-                EMBEDDING_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
-                    duration
-                )
+                EMBEDDING_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(duration)
 
     async def _embed_text(self, text_value: str) -> list[float]:
         if not self._settings.voyage_api_key:

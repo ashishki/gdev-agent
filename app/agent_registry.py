@@ -118,9 +118,7 @@ class AgentRegistryService:
                         "model_id": payload.model_id,
                         "max_turns": payload.max_turns,
                         "tools_enabled": payload.tools_enabled,
-                        "guardrails": json.dumps(
-                            payload.guardrails, ensure_ascii=False
-                        ),
+                        "guardrails": json.dumps(payload.guardrails, ensure_ascii=False),
                         "prompt_version": payload.prompt_version,
                     },
                 )

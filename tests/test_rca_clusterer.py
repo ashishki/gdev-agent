@@ -14,6 +14,7 @@ from app.jobs.rca_clusterer import RCAClusterer
 
 UTC = timezone.utc
 
+
 class _ResultStub:
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self._rows = rows
@@ -117,9 +118,7 @@ async def test_run_tenant_caps_clusters_at_50(monkeypatch: pytest.MonkeyPatch) -
         }
         for index in range(60)
     ]
-    monkeypatch.setattr(
-        clusterer, "_fetch_embeddings", lambda tenant_id: asyncio.sleep(0, rows)
-    )
+    monkeypatch.setattr(clusterer, "_fetch_embeddings", lambda tenant_id: asyncio.sleep(0, rows))
     monkeypatch.setattr(
         clusterer, "_deactivate_existing_clusters", lambda tenant_id: asyncio.sleep(0)
     )
@@ -170,15 +169,11 @@ async def test_run_tenant_emits_run_and_cluster_spans(
     ]
 
     monkeypatch.setattr(rca_clusterer, "TRACER", tracer)
-    monkeypatch.setattr(
-        clusterer, "_fetch_embeddings", lambda tenant_id: asyncio.sleep(0, rows)
-    )
+    monkeypatch.setattr(clusterer, "_fetch_embeddings", lambda tenant_id: asyncio.sleep(0, rows))
     monkeypatch.setattr(
         clusterer, "_deactivate_existing_clusters", lambda tenant_id: asyncio.sleep(0)
     )
-    monkeypatch.setattr(
-        clusterer, "_dbscan", lambda embeddings, eps, min_samples: [0, 0]
-    )
+    monkeypatch.setattr(clusterer, "_dbscan", lambda embeddings, eps, min_samples: [0, 0])
     monkeypatch.setattr(
         clusterer,
         "_upsert_cluster",
@@ -188,9 +183,7 @@ async def test_run_tenant_emits_run_and_cluster_spans(
     await clusterer.run_tenant(tenant_id)
 
     spans = {span.name: span for span in tracer.spans}
-    assert spans["rca.run"].attributes["tenant_id_hash"] == rca_clusterer._sha256_short(
-        tenant_id
-    )
+    assert spans["rca.run"].attributes["tenant_id_hash"] == rca_clusterer._sha256_short(tenant_id)
     assert spans["rca.run"].attributes["ticket_count"] == 2
     assert spans["rca.cluster"].attributes["cluster_count"] == 1
 
@@ -200,9 +193,7 @@ async def test_upsert_cluster_calls_llm_and_writes_summary() -> None:
     db_session = _SessionStub()
     llm = _LLMStub(fail=False)
     tenant_id = str(uuid4())
-    admin_session = _SessionStub(
-        rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}]
-    )
+    admin_session = _SessionStub(rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}])
     clusterer = RCAClusterer(
         settings=Settings(anthropic_api_key="k"),
         db_session_factory=_SessionFactoryStub(db_session),
@@ -223,8 +214,7 @@ async def test_upsert_cluster_calls_llm_and_writes_summary() -> None:
     assert upsert_params is not None
     assert upsert_params["label"] == "Payment issue"
     assert any(
-        "INSERT INTO rca_cluster_members" in statement
-        for statement, _ in admin_session.calls
+        "INSERT INTO rca_cluster_members" in statement for statement, _ in admin_session.calls
     )
 
 
@@ -316,9 +306,7 @@ async def test_upsert_cluster_uses_generic_label_on_llm_failure() -> None:
         db_session_factory=_SessionFactoryStub(db_session),
         llm_client=_LLMStub(fail=True),
         admin_session_factory=_SessionFactoryStub(
-            _SessionStub(
-                rows=[{"tenant_id": tenant_id, "raw_text": "checkout timeout"}]
-            )
+            _SessionStub(rows=[{"tenant_id": tenant_id, "raw_text": "checkout timeout"}])
         ),
     )
     await clusterer._upsert_cluster(
@@ -351,9 +339,7 @@ async def test_fetch_raw_texts_admin_raises_on_cross_tenant_row() -> None:
     )
 
     with pytest.raises(ValueError, match="Cross-tenant"):
-        await clusterer._fetch_raw_texts_admin(
-            tenant_id="tenant-a", ticket_ids=[str(uuid4())]
-        )
+        await clusterer._fetch_raw_texts_admin(tenant_id="tenant-a", ticket_ids=[str(uuid4())])
 
 
 @pytest.mark.asyncio

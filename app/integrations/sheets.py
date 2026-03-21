@@ -15,16 +15,12 @@ LOGGER = logging.getLogger(__name__)
 class SheetsClient:
     """Append-only Sheets client."""
 
-    def __init__(
-        self, credentials_json: str | None, spreadsheet_id: str | None
-    ) -> None:
+    def __init__(self, credentials_json: str | None, spreadsheet_id: str | None) -> None:
         self.enabled = bool(credentials_json and spreadsheet_id)
         self.spreadsheet_id = spreadsheet_id
         self._service: Any | None = None
         if not self.enabled:
-            LOGGER.warning(
-                "sheets disabled", extra={"event": "sheets_disabled", "context": {}}
-            )
+            LOGGER.warning("sheets disabled", extra={"event": "sheets_disabled", "context": {}})
             return
         try:
             from google.oauth2.service_account import Credentials  # type: ignore

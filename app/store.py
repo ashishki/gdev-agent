@@ -24,6 +24,7 @@ from app.utils import run_blocking
 
 UTC = timezone.utc
 
+
 class EventStore:
     """Persists events to SQLite and pipeline runs to Postgres when configured."""
 
@@ -104,16 +105,12 @@ class EventStore:
         if payload.tenant_id is None or audit_entry.tenant_id is None:
             raise ValueError("tenant_id is required for Postgres EventStore writes")
         if self._db_session_factory is None:
-            raise ValueError(
-                "db_session_factory is required for Postgres EventStore writes"
-            )
+            raise ValueError("db_session_factory is required for Postgres EventStore writes")
 
         payload_tenant_id = UUID(str(payload.tenant_id))
         audit_tenant_id = UUID(str(audit_entry.tenant_id))
         if payload_tenant_id != audit_tenant_id:
-            raise ValueError(
-                "tenant_id mismatch between webhook payload and audit log entry"
-            )
+            raise ValueError("tenant_id mismatch between webhook payload and audit log entry")
 
         user_id_hash = hashlib.sha256((payload.user_id or "").encode()).hexdigest()
 
@@ -177,9 +174,7 @@ class EventStore:
                     {
                         "ticket_id": str(ticket_id),
                         "tenant_id": str(payload_tenant_id),
-                        "fields": json.dumps(
-                            extracted.model_dump(mode="json"), ensure_ascii=False
-                        ),
+                        "fields": json.dumps(extracted.model_dump(mode="json"), ensure_ascii=False),
                     },
                 )
 

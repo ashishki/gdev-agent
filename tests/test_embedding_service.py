@@ -20,14 +20,10 @@ from app.store import EventStore
 
 
 class _FakeLLMClient:
-    def run_agent(
-        self, text: str, user_id: str | None = None, max_turns: int = 5
-    ) -> TriageResult:
+    def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
         _ = (text, max_turns)
         return TriageResult(
-            classification=ClassificationResult(
-                category="other", urgency="low", confidence=0.99
-            ),
+            classification=ClassificationResult(category="other", urgency="low", confidence=0.99),
             extracted=ExtractedFields(user_id=user_id),
             draft_text="ok",
             input_tokens=10,
@@ -115,27 +111,21 @@ async def test_embedding_service_upsert_uses_voyage_response(
         async def post(self, *_args, **_kwargs):
             return _Response()
 
-    monkeypatch.setattr(
-        "app.embedding_service.httpx.AsyncClient", lambda **_: _Client()
-    )
+    monkeypatch.setattr("app.embedding_service.httpx.AsyncClient", lambda **_: _Client())
     await service.upsert(
         tenant_id=str(uuid4()),
         ticket_id=str(uuid4()),
         text_value="payment failed",
     )
 
-    upsert_call = next(
-        call for call in session.calls if "INSERT INTO ticket_embeddings" in call[0]
-    )
+    upsert_call = next(call for call in session.calls if "INSERT INTO ticket_embeddings" in call[0])
     params = upsert_call[1]
     assert params["model_version"] == "voyage-3-lite"
     assert len(params["embedding"]) == 1024
 
 
 @pytest.mark.asyncio
-async def test_embedding_service_uses_deterministic_mock_vector_when_voyage_missing() -> (
-    None
-):
+async def test_embedding_service_uses_deterministic_mock_vector_when_voyage_missing() -> None:
     session = _SessionStub()
     service = EmbeddingService(
         settings=Settings(anthropic_api_key="k", voyage_api_key=""),
@@ -144,17 +134,13 @@ async def test_embedding_service_uses_deterministic_mock_vector_when_voyage_miss
     tenant_id = str(uuid4())
     ticket_id = str(uuid4())
 
-    await service.upsert(
-        tenant_id=tenant_id, ticket_id=ticket_id, text_value="same text"
-    )
+    await service.upsert(tenant_id=tenant_id, ticket_id=ticket_id, text_value="same text")
     first_upsert = next(
         call for call in session.calls if "INSERT INTO ticket_embeddings" in call[0]
     )[1]
 
     session.calls.clear()
-    await service.upsert(
-        tenant_id=tenant_id, ticket_id=ticket_id, text_value="same text"
-    )
+    await service.upsert(tenant_id=tenant_id, ticket_id=ticket_id, text_value="same text")
     second_upsert = next(
         call for call in session.calls if "INSERT INTO ticket_embeddings" in call[0]
     )[1]
@@ -180,9 +166,7 @@ async def test_embedding_upsert_is_fire_and_forget_for_webhook_path() -> None:
         llm_client=_FakeLLMClient(),
         embedding_service=embedding_service,  # type: ignore[arg-type]
     )
-    agent.execute_action = lambda *_args, **_kwargs: {
-        "ticket": {"ticket_id": str(uuid4())}
-    }  # type: ignore[method-assign]
+    agent.execute_action = lambda *_args, **_kwargs: {"ticket": {"ticket_id": str(uuid4())}}  # type: ignore[method-assign]
     agent._append_audit_async = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
 
     started = time.monotonic()

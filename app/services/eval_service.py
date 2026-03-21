@@ -57,7 +57,9 @@ class EvalService:
         task_scheduler=asyncio.create_task,
     ) -> None:
         self._db_session_factory = db_session_factory
-        self._cases_path = cases_path or Path(__file__).resolve().parents[2] / "eval" / "cases.jsonl"
+        self._cases_path = (
+            cases_path or Path(__file__).resolve().parents[2] / "eval" / "cases.jsonl"
+        )
         self._cost_ledger = cost_ledger or CostLedger()
         self._eval_runner = eval_runner
         self._task_scheduler = task_scheduler
@@ -123,9 +125,7 @@ class EvalService:
                         eval_run_id=eval_run_id,
                     )
                 )
-                EVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="create_run", outcome="success"
-                ).inc()
+                EVAL_SERVICE_CALLS_TOTAL.labels(method="create_run", outcome="success").inc()
                 LOGGER.info(
                     "eval run queued",
                     extra={
@@ -227,9 +227,7 @@ class EvalService:
                 )
                 return EvalRunListResponse(data=data, cursor=next_cursor, total=None)
             except InvalidCursorError:
-                EVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="get_runs", outcome="invalid_cursor"
-                ).inc()
+                EVAL_SERVICE_CALLS_TOTAL.labels(method="get_runs", outcome="invalid_cursor").inc()
                 raise
             except Exception as exc:
                 span.record_exception(exc)
@@ -263,9 +261,10 @@ class EvalService:
             span.set_attribute("eval_run_id", str(eval_run_id))
             try:
                 row = (
-                    await db.execute(
-                        text(
-                            """
+                    (
+                        await db.execute(
+                            text(
+                                """
                             SELECT
                                 eval_run_id,
                                 started_at,
@@ -279,17 +278,18 @@ class EvalService:
                             WHERE tenant_id = :tenant_id AND eval_run_id = :eval_run_id
                             LIMIT 1
                             """
-                        ),
-                        {
-                            "tenant_id": str(tenant_id),
-                            "eval_run_id": str(eval_run_id),
-                        },
+                            ),
+                            {
+                                "tenant_id": str(tenant_id),
+                                "eval_run_id": str(eval_run_id),
+                            },
+                        )
                     )
-                ).mappings().first()
+                    .mappings()
+                    .first()
+                )
                 outcome = "found" if row is not None else "not_found"
-                EVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="get_run_status", outcome=outcome
-                ).inc()
+                EVAL_SERVICE_CALLS_TOTAL.labels(method="get_run_status", outcome=outcome).inc()
                 LOGGER.info(
                     "eval run status fetched",
                     extra={
@@ -303,9 +303,7 @@ class EvalService:
                 return None if row is None else EvalRunItem.model_validate(dict(row))
             except Exception as exc:
                 span.record_exception(exc)
-                EVAL_SERVICE_CALLS_TOTAL.labels(
-                    method="get_run_status", outcome="error"
-                ).inc()
+                EVAL_SERVICE_CALLS_TOTAL.labels(method="get_run_status", outcome="error").inc()
                 LOGGER.error(
                     "eval run status lookup failed",
                     extra={

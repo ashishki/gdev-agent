@@ -17,6 +17,7 @@ from app.services.eval_service import EvalService, InvalidCursorError
 
 UTC = timezone.utc
 
+
 @dataclass
 class _RecordedSpan:
     name: str
@@ -186,7 +187,10 @@ async def test_create_run_marks_budget_block_without_scheduling(monkeypatch) -> 
 
     assert response.eval_run_id is not None
     assert not scheduled
-    assert any("SET status = :status, completed_at = :completed_at" in sql for sql, _ in update_session.calls)
+    assert any(
+        "SET status = :status, completed_at = :completed_at" in sql
+        for sql, _ in update_session.calls
+    )
     assert tracer.spans[0].name == "service.eval.create_run"
 
 

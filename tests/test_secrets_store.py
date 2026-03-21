@@ -64,9 +64,7 @@ async def test_get_secret_decrypts_ciphertext() -> None:
 @pytest.mark.asyncio
 async def test_get_secret_raises_when_missing() -> None:
     key = Fernet.generate_key()
-    store = WebhookSecretStore(
-        _SessionFactoryStub([_SessionStub([None])]), key.decode("utf-8")
-    )
+    store = WebhookSecretStore(_SessionFactoryStub([_SessionStub([None])]), key.decode("utf-8"))
 
     with pytest.raises(WebhookSecretNotFoundError):
         await store.get_secret(uuid4())
@@ -75,9 +73,7 @@ async def test_get_secret_raises_when_missing() -> None:
 @pytest.mark.asyncio
 async def test_get_secret_by_slug_raises_when_tenant_missing() -> None:
     key = Fernet.generate_key()
-    store = WebhookSecretStore(
-        _SessionFactoryStub([_SessionStub([None])]), key.decode("utf-8")
-    )
+    store = WebhookSecretStore(_SessionFactoryStub([_SessionStub([None])]), key.decode("utf-8"))
 
     with pytest.raises(TenantNotFoundError):
         await store.get_secret_by_slug("unknown")

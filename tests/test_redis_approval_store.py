@@ -13,6 +13,7 @@ from app.schemas import PendingDecision, ProposedAction
 
 UTC = timezone.utc
 
+
 def _pending(pid: str, expires_delta: int = 60) -> PendingDecision:
     return PendingDecision(
         pending_id=pid,

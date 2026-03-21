@@ -16,8 +16,7 @@ def _approve_role_dependency():
     route = next(
         r
         for r in main.app.router.routes
-        if getattr(r, "path", None) == "/approve"
-        and "POST" in getattr(r, "methods", set())
+        if getattr(r, "path", None) == "/approve" and "POST" in getattr(r, "methods", set())
     )
     dependencies = route.dependant.dependencies
     assert dependencies, "Expected at least one dependency on /approve"
@@ -36,9 +35,7 @@ def test_support_agent_role_can_call_approve() -> None:
     dependency = _approve_role_dependency()
     dependency(SimpleNamespace(state=SimpleNamespace(role="support_agent")))
 
-    main.app.state.settings = Settings(
-        anthropic_api_key="k", approve_secret="approve-secret"
-    )
+    main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="approve-secret")
     main.app.state.agent = SimpleNamespace(
         approve=lambda _payload, jwt_tenant_id=None: {
             "status": "approved",
@@ -60,9 +57,7 @@ def test_tenant_admin_role_can_call_approve() -> None:
     dependency = _approve_role_dependency()
     dependency(SimpleNamespace(state=SimpleNamespace(role="tenant_admin")))
 
-    main.app.state.settings = Settings(
-        anthropic_api_key="k", approve_secret="approve-secret"
-    )
+    main.app.state.settings = Settings(anthropic_api_key="k", approve_secret="approve-secret")
     main.app.state.agent = SimpleNamespace(
         approve=lambda _payload, jwt_tenant_id=None: {
             "status": "approved",

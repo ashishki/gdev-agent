@@ -21,6 +21,4 @@ class DedupCache:
 
     def set(self, tenant_id: str, message_id: str, response_json: str) -> None:
         """Cache response JSON under dedup key."""
-        self.redis.set(
-            f"{tenant_id}:dedup:{message_id}", response_json, ex=self.ttl_seconds
-        )
+        self.redis.set(f"{tenant_id}:dedup:{message_id}", response_json, ex=self.ttl_seconds)

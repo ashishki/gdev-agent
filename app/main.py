@@ -130,9 +130,7 @@ async def lifespan(app: FastAPI):
             "approve endpoint authentication disabled",
             extra={
                 "event": "security_degraded",
-                "context": {
-                    "reason": "APPROVE_SECRET not set - approve endpoint auth skipped"
-                },
+                "context": {"reason": "APPROVE_SECRET not set - approve endpoint auth skipped"},
             },
         )
     if len(settings.jwt_secret) < 32:
@@ -163,9 +161,7 @@ async def lifespan(app: FastAPI):
         sqlite_path=settings.sqlite_log_path,
         db_session_factory=db_session_factory,
     )
-    embedding_service = EmbeddingService(
-        settings=settings, db_session_factory=db_session_factory
-    )
+    embedding_service = EmbeddingService(settings=settings, db_session_factory=db_session_factory)
     rca_clusterer = RCAClusterer(
         settings=settings,
         db_session_factory=db_session_factory,
@@ -185,13 +181,9 @@ async def lifespan(app: FastAPI):
         scheduler.start()
 
     telegram_client = (
-        TelegramClient(settings.telegram_bot_token)
-        if settings.telegram_bot_token
-        else None
+        TelegramClient(settings.telegram_bot_token) if settings.telegram_bot_token else None
     )
-    sheets_client = SheetsClient(
-        settings.google_sheets_credentials_json, settings.google_sheets_id
-    )
+    sheets_client = SheetsClient(settings.google_sheets_credentials_json, settings.google_sheets_id)
 
     app.state.settings = settings
     app.state.redis = redis_client
@@ -199,9 +191,7 @@ async def lifespan(app: FastAPI):
     app.state.db_session_factory = db_session_factory
     app.state.jwt_blocklist_redis = tenant_registry_redis
     app.state.webhook_secret_store = webhook_secret_store
-    app.state.tenant_registry = TenantRegistry(
-        tenant_registry_redis, db_session_factory
-    )
+    app.state.tenant_registry = TenantRegistry(tenant_registry_redis, db_session_factory)
     app.state.dedup = dedup_cache
     app.state.agent = AgentService(
         settings=settings,
@@ -240,6 +230,7 @@ app = FastAPI(title="gdev-agent", lifespan=lifespan)
 @app.exception_handler(AgentError)
 async def handle_agent_error(_request: Request, exc: AgentError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 
 # Starlette adds latest middleware first, so add reverse of desired runtime order.
 app.add_middleware(RequestIDMiddleware)
@@ -315,9 +306,7 @@ def approve(
     """Approve or reject a pending action."""
     request_state = getattr(request, "state", None)
     jwt_tenant_id = (
-        str(request_state.tenant_id)
-        if getattr(request_state, "tenant_id", None)
-        else None
+        str(request_state.tenant_id) if getattr(request_state, "tenant_id", None) else None
     )
     return _get_approval_service().handle(
         payload,

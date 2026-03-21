@@ -44,9 +44,7 @@ class WebhookSecretStore:
             row = result.mappings().first()
 
         if row is None:
-            raise WebhookSecretNotFoundError(
-                f"No active webhook secret for tenant {tenant_id}"
-            )
+            raise WebhookSecretNotFoundError(f"No active webhook secret for tenant {tenant_id}")
 
         ciphertext = row["secret_ciphertext"]
         if isinstance(ciphertext, str):
@@ -56,9 +54,7 @@ class WebhookSecretStore:
         try:
             return self._fernet.decrypt(token).decode("utf-8")
         except (InvalidToken, ValueError) as exc:
-            raise WebhookSecretNotFoundError(
-                "Unable to decrypt webhook secret"
-            ) from exc
+            raise WebhookSecretNotFoundError("Unable to decrypt webhook secret") from exc
 
     async def get_secret_by_slug(self, tenant_slug: str) -> str:
         tenant_id, secret = await self.get_secret_and_tenant_by_slug(tenant_slug)

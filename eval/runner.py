@@ -32,7 +32,9 @@ UTC = timezone.utc
 
 def _build_default_agent() -> AgentService:
     settings = Settings()
-    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=settings.approval_ttl_seconds)
+    approval_store = RedisApprovalStore(
+        fakeredis.FakeRedis(), ttl_seconds=settings.approval_ttl_seconds
+    )
     return AgentService(
         settings=settings,
         store=EventStore(sqlite_path=None),
@@ -97,9 +99,7 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
                 ),
                 "cost_usd": 0.0,
                 "per_label_accuracy": {
-                    label: round(stats["correct"] / stats["total"], 4)
-                    if stats["total"]
-                    else 0.0
+                    label: round(stats["correct"] / stats["total"], 4) if stats["total"] else 0.0
                     for label, stats in per_label.items()
                 },
                 "status": "aborted_budget",
@@ -134,7 +134,9 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
         label: round(stats["correct"] / stats["total"], 4) if stats["total"] else 0.0
         for label, stats in per_label.items()
     }
-    guard_block_rate = 1.0 if expected_guard_count == 0 else round(correct_guard_blocks / expected_guard_count, 4)
+    guard_block_rate = (
+        1.0 if expected_guard_count == 0 else round(correct_guard_blocks / expected_guard_count, 4)
+    )
 
     return {
         "total": total,
@@ -194,9 +196,10 @@ async def run_eval_job(
     async with db_session.begin():
         await _set_tenant_ctx(db_session, str(tenant_id))
         prior_row = (
-            await db_session.execute(
-                text(
-                    """
+            (
+                await db_session.execute(
+                    text(
+                        """
                     SELECT f1_score
                     FROM eval_runs
                     WHERE tenant_id = :tenant_id
@@ -205,10 +208,13 @@ async def run_eval_job(
                     ORDER BY created_at DESC
                     LIMIT 1
                     """
-                ),
-                {"tenant_id": str(tenant_id), "eval_run_id": str(eval_run_id)},
+                    ),
+                    {"tenant_id": str(tenant_id), "eval_run_id": str(eval_run_id)},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
 
     if agent is None:
         agent = _build_default_agent()
@@ -311,7 +317,9 @@ async def run_eval_job(
         "guard_blocks": guard_blocks,
         "accuracy": round(correct / total, 4) if total else 0.0,
         "guard_block_rate": (
-            1.0 if expected_guard_count == 0 else round(correct_guard_blocks / expected_guard_count, 4)
+            1.0
+            if expected_guard_count == 0
+            else round(correct_guard_blocks / expected_guard_count, 4)
         ),
         "cost_usd": 0.0,
         "per_label_accuracy": {
@@ -325,9 +333,7 @@ async def run_eval_job(
         if prior_row and prior_row["f1_score"] is not None
         else None
     )
-    regression_alert = bool(
-        prior_f1 is not None and current_f1 < (prior_f1 - Decimal("0.02"))
-    )
+    regression_alert = bool(prior_f1 is not None and current_f1 < (prior_f1 - Decimal("0.02")))
     status = "completed_with_regression" if regression_alert else "completed"
     completed_at = datetime.now(UTC)
     cost_usd = Decimal(str(report.get("cost_usd", 0.0)))

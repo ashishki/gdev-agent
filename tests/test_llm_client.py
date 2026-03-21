@@ -57,9 +57,7 @@ def test_lookup_faq_uses_configured_kb_base_url() -> None:
         anthropic_api_key="test-key", kb_base_url="https://support.mygame.com"
     )
 
-    result = client._dispatch_tool(
-        "lookup_faq", {"keywords": ["billing", "refund"]}, user_id="u1"
-    )
+    result = client._dispatch_tool("lookup_faq", {"keywords": ["billing", "refund"]}, user_id="u1")
 
     urls = [article["url"] for article in result["articles"]]
     assert urls == [
@@ -81,9 +79,7 @@ def test_classify_tool_invalid_category_falls_back_to_safe_default(caplog) -> No
 
     assert result["category"] == "other"
     assert result["confidence"] == 0.0
-    assert any(
-        getattr(r, "event", None) == "llm_invalid_response" for r in caplog.records
-    )
+    assert any(getattr(r, "event", None) == "llm_invalid_response" for r in caplog.records)
 
 
 def test_classify_tool_clamps_confidence_and_logs_warning(caplog) -> None:

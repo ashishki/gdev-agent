@@ -13,9 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class BudgetExhaustedError(Exception):
     """Raised when tenant's daily budget has been exhausted."""
 
-    def __init__(
-        self, tenant_id: UUID, current_usd: Decimal, budget_usd: Decimal
-    ) -> None:
+    def __init__(self, tenant_id: UUID, current_usd: Decimal, budget_usd: Decimal) -> None:
         super().__init__(f"Daily budget exhausted for tenant {tenant_id}")
         self.tenant_id = tenant_id
         self.current_usd = current_usd

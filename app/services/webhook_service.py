@@ -41,9 +41,7 @@ class _SpanProtocol(Protocol):
 
 
 class _TracerProtocol(Protocol):
-    def start_as_current_span(
-        self, name: str, **kwargs: object
-    ) -> _SpanProtocol: ...
+    def start_as_current_span(self, name: str, **kwargs: object) -> _SpanProtocol: ...
 
 
 class _AgentProtocol(Protocol):
@@ -56,8 +54,6 @@ class _DedupProtocol(Protocol):
     def check(self, tenant_id: str, message_id: str) -> str | None: ...
 
     def set(self, tenant_id: str, message_id: str, body: str) -> object: ...
-
-
 
 
 def _sha256_short(value: str) -> str:
@@ -85,9 +81,7 @@ class WebhookService:
         cacheable = payload.message_id is not None
         trace_context = getattr(getattr(request, "state", None), "trace_context", None)
 
-        root_cm = self._tracer.start_as_current_span(
-            "http.request", context=trace_context
-        )
+        root_cm = self._tracer.start_as_current_span("http.request", context=trace_context)
         with root_cm as root_span:
             root_span.set_attribute("http.method", "POST")
             root_span.set_attribute("http.route", "/webhook")
@@ -104,9 +98,7 @@ class WebhookService:
                 )
                 if cached is not None:
                     root_span.set_attribute("http.status_code", 200)
-                    WEBHOOK_SERVICE_CALLS_TOTAL.labels(
-                        method="handle", outcome="dedup_hit"
-                    ).inc()
+                    WEBHOOK_SERVICE_CALLS_TOTAL.labels(method="handle", outcome="dedup_hit").inc()
                     LOGGER.info(
                         "webhook dedup hit",
                         extra={
@@ -116,15 +108,11 @@ class WebhookService:
                     )
                     return cached
 
-                response = self._agent.process_webhook(
-                    normalized_payload, message_id=message_id
-                )
+                response = self._agent.process_webhook(normalized_payload, message_id=message_id)
                 if cacheable:
                     self._dedup.set(tenant_id, message_id, response.model_dump_json())
                 root_span.set_attribute("http.status_code", 200)
-                WEBHOOK_SERVICE_CALLS_TOTAL.labels(
-                    method="handle", outcome="success"
-                ).inc()
+                WEBHOOK_SERVICE_CALLS_TOTAL.labels(method="handle", outcome="success").inc()
                 LOGGER.info(
                     "webhook handled",
                     extra={
@@ -162,9 +150,7 @@ class WebhookService:
                 tenant_uuid = UUID(str(resolved_tenant_id))
                 tenant_id = str(tenant_uuid)
                 span.set_attribute("tenant_id_hash", _sha256_short(tenant_id))
-                WEBHOOK_SERVICE_CALLS_TOTAL.labels(
-                    method="resolve_tenant", outcome="success"
-                ).inc()
+                WEBHOOK_SERVICE_CALLS_TOTAL.labels(method="resolve_tenant", outcome="success").inc()
                 LOGGER.info(
                     "webhook tenant resolved",
                     extra={
@@ -191,16 +177,17 @@ class WebhookService:
                     extra={"event": "webhook_tenant_invalid", "context": {}},
                     exc_info=True,
                 )
-                raise AgentError(
-                    "tenant_id must be a valid UUID", status_code=400
-                ) from exc
+                raise AgentError("tenant_id must be a valid UUID", status_code=400) from exc
             finally:
-                WEBHOOK_SERVICE_DURATION_SECONDS.labels(
-                    method="resolve_tenant"
-                ).observe(perf_counter() - started_at)
+                WEBHOOK_SERVICE_DURATION_SECONDS.labels(method="resolve_tenant").observe(
+                    perf_counter() - started_at
+                )
 
     def validate_payload(
-        self, payload: WebhookRequest, request, tenant_id: str  # noqa: ANN001
+        self,
+        payload: WebhookRequest,
+        request,
+        tenant_id: str,  # noqa: ANN001
     ) -> WebhookRequest:
         started_at = perf_counter()
         with self._tracer.start_as_current_span("service.webhook.validate_payload") as span:
@@ -237,9 +224,9 @@ class WebhookService:
                 )
                 raise
             finally:
-                WEBHOOK_SERVICE_DURATION_SECONDS.labels(
-                    method="validate_payload"
-                ).observe(perf_counter() - started_at)
+                WEBHOOK_SERVICE_DURATION_SECONDS.labels(method="validate_payload").observe(
+                    perf_counter() - started_at
+                )
 
     def check_dedup(
         self, *, tenant_id: str, message_id: str, cacheable: bool
@@ -255,9 +242,7 @@ class WebhookService:
             span.set_attribute("tenant_id_hash", _sha256_short(tenant_id))
             try:
                 if not cacheable:
-                    WEBHOOK_SERVICE_CALLS_TOTAL.labels(
-                        method="check_dedup", outcome="skip"
-                    ).inc()
+                    WEBHOOK_SERVICE_CALLS_TOTAL.labels(method="check_dedup", outcome="skip").inc()
                     return None
                 cached = self._dedup.check(tenant_id, message_id)
                 hit = cached is not None
@@ -277,9 +262,7 @@ class WebhookService:
                 return WebhookResponse.model_validate_json(cached)
             except Exception as exc:
                 span.record_exception(exc)
-                WEBHOOK_SERVICE_CALLS_TOTAL.labels(
-                    method="check_dedup", outcome="error"
-                ).inc()
+                WEBHOOK_SERVICE_CALLS_TOTAL.labels(method="check_dedup", outcome="error").inc()
                 LOGGER.error(
                     "webhook dedup lookup failed",
                     extra={"event": "webhook_dedup_lookup_failed", "context": {}},

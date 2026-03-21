@@ -24,12 +24,11 @@ from app.store import EventStore
 
 UTC = timezone.utc
 
+
 class FakeLLMClient:
     """Deterministic LLM client used for unit tests."""
 
-    def run_agent(
-        self, text: str, user_id: str | None = None, max_turns: int = 5
-    ) -> TriageResult:
+    def run_agent(self, text: str, user_id: str | None = None, max_turns: int = 5) -> TriageResult:
         _ = (text, max_turns)
         return TriageResult(
             classification=ClassificationResult(
@@ -66,9 +65,7 @@ def test_approve_executes_with_original_user_id() -> None:
     assert response.pending.tenant_id == "tenant-a"
 
     approve_response = agent.approve(
-        ApproveRequest(
-            pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
-        ),
+        ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
         jwt_tenant_id="tenant-a",
     )
     assert approve_response.result is not None
@@ -115,15 +112,11 @@ def test_approve_forbidden_on_cross_tenant_pending() -> None:
 
     with pytest.raises(AgentError) as exc:
         agent.approve(
-            ApproveRequest(
-                pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
-            ),
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
             jwt_tenant_id="tenant-b",
         )
     assert exc.value.status_code == 404
-    assert (
-        approval_store.get_pending("tenant-a", response.pending.pending_id) is not None
-    )
+    assert approval_store.get_pending("tenant-a", response.pending.pending_id) is not None
 
 
 def test_approve_forbidden_when_jwt_tenant_missing() -> None:
@@ -147,9 +140,7 @@ def test_approve_forbidden_when_jwt_tenant_missing() -> None:
 
     with pytest.raises(AgentError) as exc:
         agent.approve(
-            ApproveRequest(
-                pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
-            ),
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
             jwt_tenant_id=None,
         )
     assert exc.value.status_code == 403
@@ -175,18 +166,14 @@ def test_double_approve_returns_404() -> None:
     assert response.pending is not None
 
     first = agent.approve(
-        ApproveRequest(
-            pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
-        ),
+        ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
         jwt_tenant_id="tenant-a",
     )
     assert first.status == "approved"
 
     with pytest.raises(AgentError) as exc:
         agent.approve(
-            ApproveRequest(
-                pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"
-            ),
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
             jwt_tenant_id="tenant-a",
         )
     assert exc.value.status_code == 404

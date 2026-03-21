@@ -26,6 +26,7 @@ from app.store import EventStore
 
 UTC = timezone.utc
 
+
 class _FakeLLMClient:
     def run_agent(
         self,
@@ -36,9 +37,7 @@ class _FakeLLMClient:
     ) -> TriageResult:
         _ = (text, max_turns, tenant_id)
         return TriageResult(
-            classification=ClassificationResult(
-                category="other", urgency="low", confidence=0.95
-            ),
+            classification=ClassificationResult(category="other", urgency="low", confidence=0.95),
             extracted=ExtractedFields(user_id=user_id),
             draft_text="draft",
             input_tokens=100,

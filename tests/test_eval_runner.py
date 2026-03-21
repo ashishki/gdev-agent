@@ -61,9 +61,7 @@ class _AgentStub:
         self.calls += 1
         return WebhookResponse(
             status="executed",
-            classification=ClassificationResult(
-                category="billing", urgency="low", confidence=0.9
-            ),
+            classification=ClassificationResult(category="billing", urgency="low", confidence=0.9),
             extracted=ExtractedFields(user_id="eval-user"),
             action=ProposedAction(tool="create_ticket_and_reply", payload={}),
             draft_response=payload.text,
@@ -71,9 +69,7 @@ class _AgentStub:
 
 
 @pytest.mark.asyncio
-async def test_run_eval_job_aborts_when_budget_exhausted(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_run_eval_job_aborts_when_budget_exhausted(monkeypatch, tmp_path: Path) -> None:
     cases = [
         {"id": 1, "text": "charged twice", "expected_category": "billing"},
         {"id": 2, "text": "charged again", "expected_category": "billing"},

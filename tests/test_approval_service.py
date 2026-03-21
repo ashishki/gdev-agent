@@ -48,10 +48,9 @@ def test_handle_successful_approve() -> None:
     calls: list[tuple[ApproveRequest, str | None]] = []
     service = ApprovalService(
         agent=SimpleNamespace(
-            approve=lambda payload, jwt_tenant_id=None: calls.append(
-                (payload, jwt_tenant_id)
+            approve=lambda payload, jwt_tenant_id=None: (
+                calls.append((payload, jwt_tenant_id)) or expected
             )
-            or expected
         ),
         settings=Settings(anthropic_api_key="k", approve_secret="secret"),
         tracer=_TracerStub(),

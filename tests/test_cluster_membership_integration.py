@@ -109,8 +109,10 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
     finally:
         await engine.dispose()
 
-    return make_url(database_url).set(username=role, password=password).render_as_string(
-        hide_password=False
+    return (
+        make_url(database_url)
+        .set(username=role, password=password)
+        .render_as_string(hide_password=False)
     )
 
 
@@ -178,12 +180,8 @@ def test_cluster_membership_persists_and_cluster_detail_reads_from_db(
             )
         )
 
-    app_url = asyncio.run(
-        _enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass")
-    )
-    admin_url = asyncio.run(
-        _enable_role_login(migrated_postgres, "gdev_admin", "gdev-admin-pass")
-    )
+    app_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_app", "gdev-app-pass"))
+    admin_url = asyncio.run(_enable_role_login(migrated_postgres, "gdev_admin", "gdev-admin-pass"))
 
     app_engine = create_async_engine(app_url, poolclass=NullPool)
     admin_engine = create_async_engine(admin_url, poolclass=NullPool)
@@ -208,39 +206,33 @@ def test_cluster_membership_persists_and_cluster_detail_reads_from_db(
             async with session.begin():
                 await _set_tenant_ctx(session, str(tenant_id))
                 cluster_row = (
-                    (
-                        await session.execute(
-                            text(
-                                """
+                    await session.execute(
+                        text(
+                            """
                                 SELECT cluster_id
                                 FROM cluster_summaries
                                 WHERE tenant_id = :tenant_id
                                 LIMIT 1
                                 """
-                            ),
-                            {"tenant_id": str(tenant_id)},
-                        )
+                        ),
+                        {"tenant_id": str(tenant_id)},
                     )
-                    .first()
-                )
+                ).first()
                 assert cluster_row is not None
                 cluster_id = cluster_row[0]
 
                 member_count = (
-                    (
-                        await session.execute(
-                            text(
-                                """
+                    await session.execute(
+                        text(
+                            """
                                 SELECT COUNT(*)
                                 FROM rca_cluster_members
                                 WHERE cluster_id = :cluster_id
                                 """
-                            ),
-                            {"cluster_id": str(cluster_id)},
-                        )
+                        ),
+                        {"cluster_id": str(cluster_id)},
                     )
-                    .scalar_one()
-                )
+                ).scalar_one()
                 assert int(member_count) == 3
 
                 await session.execute(
