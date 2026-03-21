@@ -121,15 +121,22 @@ def test_tenant_create_command(monkeypatch) -> None:  # noqa: ANN001
     tenant_id = uuid4()
     session = _SessionStub(
         [
-            [],
             [{"tenant_id": str(tenant_id), "slug": "studio-a", "is_active": True, "daily_budget_usd": "12.5"}],
+            [],
         ]
     )
     engine = _EngineStub()
     redis = _RedisStub()
+    tenant_ctx_calls: list[str] = []
     _patch_settings(monkeypatch)
     _patch_session_bundle(monkeypatch, session, engine)
+    monkeypatch.setattr(cli, "uuid4", lambda: tenant_id)
     monkeypatch.setattr(cli, "_redis_client_from_settings", lambda settings: redis)
+    async def _fake_set_tenant_ctx(session, tenant_id):  # noqa: ANN001
+        _ = session
+        tenant_ctx_calls.append(str(tenant_id))
+
+    monkeypatch.setattr(cli, "_set_tenant_ctx", _fake_set_tenant_ctx)
 
     result = runner.invoke(
         cli.app,
@@ -140,6 +147,8 @@ def test_tenant_create_command(monkeypatch) -> None:  # noqa: ANN001
     assert f"Created tenant {tenant_id}" in result.output
     assert redis.deleted_keys == [f"tenant:{tenant_id}:config"]
     assert redis.closed is True
+    assert "INSERT INTO tenants" in session.calls[0][0]
+    assert tenant_ctx_calls == [str(tenant_id)]
 
 
 def test_tenant_disable_command(monkeypatch) -> None:  # noqa: ANN001
@@ -159,6 +168,23 @@ def test_tenant_disable_command(monkeypatch) -> None:  # noqa: ANN001
     assert redis.deleted_keys == [f"tenant:{tenant_id}:config"]
 
 
+def test_tenant_disable_command_not_found(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    tenant_id = uuid4()
+    session = _SessionStub([[]])
+    engine = _EngineStub()
+    redis = _RedisStub()
+    _patch_settings(monkeypatch)
+    _patch_session_bundle(monkeypatch, session, engine)
+    monkeypatch.setattr(cli, "_redis_client_from_settings", lambda settings: redis)
+
+    result = runner.invoke(cli.app, ["tenant", "disable", str(tenant_id)])
+
+    assert result.exit_code != 0
+    assert f"Tenant not found: {tenant_id}" in result.output
+    assert redis.deleted_keys == []
+
+
 def test_budget_check_command(monkeypatch) -> None:  # noqa: ANN001
     runner = CliRunner()
     tenant_id = uuid4()
@@ -172,6 +198,34 @@ def test_budget_check_command(monkeypatch) -> None:  # noqa: ANN001
     assert result.exit_code == 0
     assert f"tenant_id={tenant_id}" in result.output
     assert "status=ok" in result.output
+
+
+def test_budget_check_command_exhausted(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    tenant_id = uuid4()
+    session = _SessionStub([[], [{"budget_usd": "10.0", "current_usd": "10.0"}]])
+    engine = _EngineStub()
+    _patch_settings(monkeypatch)
+    _patch_session_bundle(monkeypatch, session, engine)
+
+    result = runner.invoke(cli.app, ["budget", "check", str(tenant_id)])
+
+    assert result.exit_code == 0
+    assert "status=exhausted" in result.output
+
+
+def test_budget_check_command_not_found(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    tenant_id = uuid4()
+    session = _SessionStub([[], []])
+    engine = _EngineStub()
+    _patch_settings(monkeypatch)
+    _patch_session_bundle(monkeypatch, session, engine)
+
+    result = runner.invoke(cli.app, ["budget", "check", str(tenant_id)])
+
+    assert result.exit_code != 0
+    assert f"Tenant not found: {tenant_id}" in result.output
 
 
 def test_budget_reset_command(monkeypatch) -> None:  # noqa: ANN001

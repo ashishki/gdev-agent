@@ -82,7 +82,6 @@ async def _create_tenant(
     try:
         async with session_factory() as session:
             async with session.begin():
-                await _set_tenant_ctx(session, str(tenant_id))
                 result = await session.execute(
                     text(
                         """
@@ -99,6 +98,8 @@ async def _create_tenant(
                     },
                 )
                 row = result.mappings().one()
+            async with session.begin():
+                await _set_tenant_ctx(session, str(tenant_id))
         await _invalidate_tenant_cache(redis_client, UUID(str(row["tenant_id"])))
         return dict(row)
     finally:
