@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-
 from uuid import UUID
 
 from fastapi import Request

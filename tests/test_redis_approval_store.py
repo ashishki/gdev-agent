@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-
 from uuid import uuid4
 
-import fakeredis
-
 import app.approval_store
+import fakeredis
 from app.approval_store import RedisApprovalStore
 from app.schemas import PendingDecision, ProposedAction
-
 
 UTC = timezone.utc
 

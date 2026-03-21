@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
-
+from decimal import Decimal
 from uuid import uuid4
 
-import fakeredis
 from prometheus_client import REGISTRY
 
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
@@ -24,7 +23,6 @@ from app.schemas import (
     WebhookRequest,
 )
 from app.store import EventStore
-
 
 UTC = timezone.utc
 

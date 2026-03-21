@@ -6,7 +6,6 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
-
 from typing import Any
 from uuid import UUID
 
@@ -22,7 +21,6 @@ from app.schemas import (
     WebhookRequest,
 )
 from app.utils import run_blocking
-
 
 UTC = timezone.utc
 

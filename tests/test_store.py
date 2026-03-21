@@ -10,13 +10,14 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
+import app.store
+from alembic import command
 from app.config import get_settings
 from app.db import _set_tenant_ctx, make_session_factory
 from app.schemas import (
@@ -26,7 +27,6 @@ from app.schemas import (
     ProposedAction,
     WebhookRequest,
 )
-import app.store
 from app.store import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fakeredis
-
 from app.dedup import DedupCache
 
 

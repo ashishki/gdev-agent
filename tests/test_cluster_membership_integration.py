@@ -10,13 +10,13 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from alembic import command
 from app.config import Settings, get_settings
 from app.db import _set_tenant_ctx, make_session_factory
 from app.jobs.rca_clusterer import RCAClusterer

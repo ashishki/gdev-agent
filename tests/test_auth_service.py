@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-
 from uuid import uuid4
 
 import pytest
@@ -20,7 +19,6 @@ from app.services.auth_service import (
     LogoutRequest,
     RefreshTokenRequest,
 )
-
 
 UTC = timezone.utc
 

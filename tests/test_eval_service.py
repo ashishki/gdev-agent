@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -15,7 +14,6 @@ import pytest
 from app.cost_ledger import BudgetExhaustedError
 from app.services import eval_service as eval_service_module
 from app.services.eval_service import EvalService, InvalidCursorError
-
 
 UTC = timezone.utc
 

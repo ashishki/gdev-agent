@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from time import perf_counter
 from datetime import datetime
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.dependencies import require_role
-from app.tracing import get_tracer
 from app.schemas import (
     ClusterDetailItem,
     ClusterDetailResponse,
@@ -26,6 +25,7 @@ from app.schemas import (
     ErrorResponse,
     TicketListItem,
 )
+from app.tracing import get_tracer
 
 router = APIRouter()
 TRACER = get_tracer(__name__)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
-
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -30,7 +29,6 @@ from app.services.auth_service import (
     RefreshTokenRequest,
     RefreshTokenResult,
 )
-
 
 UTC = timezone.utc
 

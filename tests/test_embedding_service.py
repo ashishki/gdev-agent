@@ -7,9 +7,9 @@ import time
 from decimal import Decimal
 from uuid import uuid4
 
-import fakeredis
 import pytest
 
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings

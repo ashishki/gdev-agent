@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import fakeredis
 import pytest
 
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
@@ -21,7 +21,6 @@ from app.schemas import (
     WebhookRequest,
 )
 from app.store import EventStore
-
 
 UTC = timezone.utc
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -15,7 +14,6 @@ from app import main
 from app.agent_registry import AgentConfigNotFoundError, AgentRegistryService
 from app.routers import agents as agents_router
 from app.schemas import AgentConfigUpdate
-
 
 UTC = timezone.utc
 

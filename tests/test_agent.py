@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 import asyncio
 import hashlib
-from pathlib import Path
-import fakeredis
 import logging
+from decimal import Decimal
+from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 
 import app.agent
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings

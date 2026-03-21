@@ -6,7 +6,6 @@ import json
 import logging
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
-
 from typing import Any
 
 UTC = timezone.utc

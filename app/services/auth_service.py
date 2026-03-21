@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
-
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4

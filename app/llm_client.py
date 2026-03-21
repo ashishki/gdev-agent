@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import hashlib
+import json
 import logging
 import re
 import time
@@ -22,13 +22,13 @@ from tenacity import (
 
 from app.config import Settings
 from app.metrics import LLM_DURATION_SECONDS, LLM_REQUESTS_TOTAL, LLM_RETRY_TOTAL
-from app.tracing import get_tracer
 from app.schemas import (
     ClassificationResult,
     ClassifyToolResult,
-    ExtractToolResult,
     ExtractedFields,
+    ExtractToolResult,
 )
+from app.tracing import get_tracer
 
 LOGGER = logging.getLogger(__name__)
 TRACER = get_tracer(__name__)

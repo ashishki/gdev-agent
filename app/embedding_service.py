@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from typing import Literal
 from uuid import UUID
 
 import httpx
@@ -12,7 +13,6 @@ from prometheus_client import Counter
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from typing import Literal
 
 from app.config import Settings
 from app.db import _set_tenant_ctx

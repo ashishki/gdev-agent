@@ -6,20 +6,19 @@ import asyncio
 import os
 import re
 from datetime import date, datetime, timezone
-
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import fakeredis
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
+import fakeredis
+from alembic import command
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings, get_settings

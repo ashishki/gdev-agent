@@ -21,9 +21,9 @@ except Exception:  # pragma: no cover - scheduler remains disabled
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import get_settings
-from app.dependencies import require_role
 from app.db import make_engine, make_session_factory
 from app.dedup import DedupCache
+from app.dependencies import require_role
 from app.embedding_service import EmbeddingService
 from app.exceptions import AgentError
 from app.integrations.sheets import SheetsClient
@@ -47,9 +47,9 @@ from app.schemas import (
     WebhookRequest,
     WebhookResponse,
 )
+from app.secrets_store import WebhookSecretStore
 from app.services.approval_service import ApprovalService
 from app.services.webhook_service import WebhookService
-from app.secrets_store import WebhookSecretStore
 from app.store import EventStore
 from app.tenant_registry import TenantRegistry
 

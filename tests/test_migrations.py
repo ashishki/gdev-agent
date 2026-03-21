@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from app.config import get_settings
 
 EXPECTED_TABLES = {
@@ -145,8 +146,9 @@ def _docker_available() -> bool:
 
 def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Core logic: upgrade → assert tables → downgrade → assert empty."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     monkeypatch.setenv("DATABASE_URL", async_url)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")

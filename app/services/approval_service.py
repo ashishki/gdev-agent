@@ -8,13 +8,12 @@ import logging
 from time import perf_counter
 from typing import Literal, Protocol
 
-from app.tracing import NoopTracer
-
 from prometheus_client import Counter, Histogram
 
 from app.config import Settings
 from app.exceptions import AgentError
 from app.schemas import ApproveRequest, ApproveResponse
+from app.tracing import NoopTracer
 
 LOGGER = logging.getLogger(__name__)
 APPROVAL_SERVICE_CALLS_TOTAL = Counter(

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import fakeredis
 import pytest
 
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings

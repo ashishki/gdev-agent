@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +13,6 @@ import pytest
 from app.routers import eval as eval_router
 from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
 from eval import runner as eval_runner
-
 
 UTC = timezone.utc
 

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
-import fakeredis
 import pytest
 
+import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings

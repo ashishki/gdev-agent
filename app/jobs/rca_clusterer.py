@@ -24,13 +24,13 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import Settings
 from app.db import _set_tenant_ctx
-from app.tracing import get_tracer
 from app.llm_client import LLMClient
 from app.metrics import (
     RCA_CLUSTERS_ACTIVE,
     RCA_RUN_DURATION_SECONDS,
     RCA_TICKETS_SCANNED_TOTAL,
 )
+from app.tracing import get_tracer
 
 LOGGER = logging.getLogger(__name__)
 TRACER = get_tracer(__name__)

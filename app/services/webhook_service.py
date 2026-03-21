@@ -7,8 +7,6 @@ import logging
 from contextlib import nullcontext
 from time import perf_counter
 from typing import Literal, Protocol
-
-from app.tracing import NoopSpan, NoopTracer
 from uuid import UUID, uuid4
 
 from prometheus_client import Counter, Histogram
@@ -17,6 +15,7 @@ from app.config import Settings
 from app.exceptions import AgentError
 from app.logging import REQUEST_ID
 from app.schemas import WebhookRequest, WebhookResponse
+from app.tracing import NoopSpan, NoopTracer
 
 LOGGER = logging.getLogger(__name__)
 WEBHOOK_SERVICE_CALLS_TOTAL = Counter(
