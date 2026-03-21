@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from datetime import date, datetime, timezone
-
-UTC = timezone.utc
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,8 @@ from app.store import EventStore
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+UTC = timezone.utc
 
 
 def _build_default_agent() -> AgentService:
@@ -64,6 +65,7 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
     correct_guard_blocks = 0
 
     for case in load_cases(cases_path):
+        tenant_id_value = case.get("tenant_id")
         expected_guard = case.get("expected_guard")
         expected_category = case.get("expected_category")
 
@@ -71,9 +73,41 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
             expected_guard_count += 1
 
         try:
-            response = agent.process_webhook(WebhookRequest(text=str(case["text"]), user_id="eval-user"))
+            if tenant_id_value is not None:
+                _run_sync_budget_check(agent, tenant_id_value)
+            response = agent.process_webhook(
+                WebhookRequest(
+                    text=str(case["text"]),
+                    user_id="eval-user",
+                    tenant_id=str(tenant_id_value) if tenant_id_value is not None else None,
+                )
+            )
             predicted = response.classification.category
             blocked = False
+        except BudgetExhaustedError as exc:
+            return {
+                "total": total,
+                "correct": correct,
+                "guard_blocks": guard_blocks,
+                "accuracy": round(correct / total, 4) if total else 0.0,
+                "guard_block_rate": (
+                    1.0
+                    if expected_guard_count == 0
+                    else round(correct_guard_blocks / expected_guard_count, 4)
+                ),
+                "cost_usd": 0.0,
+                "per_label_accuracy": {
+                    label: round(stats["correct"] / stats["total"], 4)
+                    if stats["total"]
+                    else 0.0
+                    for label, stats in per_label.items()
+                },
+                "status": "aborted_budget",
+                "explanation": (
+                    f"Daily budget exhausted at ${exc.current_usd} of ${exc.budget_usd}; "
+                    "eval run aborted before the next LLM call."
+                ),
+            }
         except ValueError:
             predicted = None
             blocked = True
@@ -110,7 +144,23 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
         "guard_block_rate": guard_block_rate,
         "cost_usd": 0.0,
         "per_label_accuracy": per_label_accuracy,
+        "status": "completed",
     }
+
+
+def _run_sync_budget_check(agent: AgentService, tenant_id_value: object) -> None:
+    tenant_id = UUID(str(tenant_id_value))
+    session_factory = getattr(agent.store, "_db_session_factory", None)
+    if session_factory is None:
+        return
+
+    async def _check_budget() -> None:
+        async with session_factory() as session:
+            async with session.begin():
+                await _set_tenant_ctx(session, str(tenant_id))
+                await agent.cost_ledger.check_budget(tenant_id, session)
+
+    asyncio.run(_check_budget())
 
 
 async def run_eval_job(

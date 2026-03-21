@@ -80,6 +80,51 @@ class _AgentStub:
         )
 
 
+class _SyncBeginStub:
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+
+class _SyncBudgetSessionStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def __aenter__(self) -> "_SyncBudgetSessionStub":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def begin(self) -> _SyncBeginStub:
+        return _SyncBeginStub()
+
+    async def execute(self, statement, params):  # noqa: ANN001
+        self.calls.append((str(statement), params))
+        return _ResultStub()
+
+
+class _SyncBudgetAgentStub:
+    def __init__(self, session: _SyncBudgetSessionStub) -> None:
+        self.process_calls = 0
+        self.store = SimpleNamespace(_db_session_factory=lambda: session)
+        self.cost_ledger = SimpleNamespace(check_budget=self._check_budget)
+
+    async def _check_budget(self, tenant_id, db) -> None:  # noqa: ANN001
+        _ = db
+        raise eval_runner.BudgetExhaustedError(
+            tenant_id=tenant_id,
+            current_usd=Decimal("10.00"),
+            budget_usd=Decimal("10.00"),
+        )
+
+    def process_webhook(self, payload):  # noqa: ANN001
+        self.process_calls += 1
+        raise AssertionError(f"LLM call should be skipped for {payload}")
+
+
 @pytest.mark.asyncio
 async def test_run_eval_job_marks_regression_and_records_cost(
     monkeypatch, tmp_path: Path
@@ -208,3 +253,21 @@ def test_run_eval_default_agent_uses_non_persistent_store(
 
     store = created["store"]
     assert getattr(store, "_db_session_factory", None) is None
+
+
+def test_run_eval_aborts_on_budget_before_llm_call(tmp_path: Path) -> None:
+    tenant_id = uuid4()
+    session = _SyncBudgetSessionStub()
+    agent = _SyncBudgetAgentStub(session)
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        f'{{"text":"charged twice","expected_category":"billing","tenant_id":"{tenant_id}"}}\n',
+        encoding="utf-8",
+    )
+
+    report = eval_runner.run_eval(cases_path=cases_path, agent=agent)
+
+    assert report["status"] == "aborted_budget"
+    assert "budget exhausted" in report["explanation"].lower()
+    assert agent.process_calls == 0
+    assert any("SET LOCAL app.current_tenant_id" in sql for sql, _ in session.calls)
