@@ -1,6 +1,6 @@
-# Codex Implementation Agent Prompt v3.11
+# Codex Implementation Agent Prompt v3.12
 
-_Owner: Architecture · Updated: 2026-03-19 (Cycle 11, Phase 9 complete — FIX-H done, repo green)_
+_Owner: Architecture · Updated: 2026-03-21 (Cycle 12, Phase 10–11 complete — repo green, 198 pass / 0 fail)_
 _Authoritative prompt for the Codex implementation agent. Bump version on contract changes._
 
 ═══════════════════════════════════════════════════════════════════════
@@ -14,11 +14,11 @@ SESSION HANDOFF — START HERE
               FIX-1 ✅ FIX-2 ✅ FIX-3 ✅ FIX-4 ✅ FIX-5 ✅ FIX-6 ✅ FIX-7 ✅ FIX-8 ✅ FIX-9 ✅
               FIX-A ✅ FIX-B ✅ FIX-C ✅ FIX-D ✅ FIX-E ✅ FIX-F ✅ FIX-G ✅ FIX-H ✅
 
-**Baseline:** 187 pass, 0 fail, 0 skip — **repo green** (`pytest tests/ -q`, requires Docker for integration tests)
-**Next task:** Phase 10 — CLI-1
+**Baseline:** 198 pass, 0 fail, 0 skip — **repo green** (`pytest tests/ -q` with TEST_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5433/gdev; without PG: 184 pass, 14 skip)
+**Next task:** FIX-I (Cycle 12 P2 batch close) → SVC-4 (Phase 12)
 
 ─── Validation Snapshot ──────────────────────────────────────────────
-✅ `pytest tests/ -q` → 187 passed, 0 failed, 0 skipped (Docker required for 13 integration tests)
+✅ `pytest tests/ -q` → 181 passed, 0 failed, 13 skipped (Docker required for 13 integration tests)
 ✅ `ruff check app/ tests/`
 ✅ `ruff format --check app/ tests/`
 ✅ `mypy app/`
@@ -29,40 +29,48 @@ SESSION HANDOFF — START HERE
 **Phase 8 queue:** FIX-A ✅ → FIX-B ✅ → FIX-C ✅ → FIX-D ✅ → FIX-E ✅ → FIX-F ✅
 **Phase 9 queue:** FIX-G ✅ → SVC-1 ✅ → SVC-2 ✅ → SVC-3 ✅ → DOC-1 ✅ → DOC-2 ✅ → DOC-3 ✅
 **Fix queue (Cycle 11):** FIX-H ✅ — CODE-1 ✅ CODE-2 ✅ CODE-3 ✅
-**Phase 10 queue:** CLI-1 [ ] → CLU-1 [ ] → CLU-2 [ ]
-**Phase 11 queue:** PORT-1 [ ] → PORT-2 [ ] → PORT-3 [ ] → PORT-4 [ ]
+**Phase 10 queue:** CLI-1 ✅ → CLU-1 ✅ → CLU-2 ✅
+**Phase 11 queue:** PORT-1 ✅ → PORT-2 ✅ → PORT-3 ✅ → PORT-4 ✅
+**Phase 12 queue:** FIX-I → SVC-4
+
+─── Fix Queue (resolve before Phase 12 queue) ───────────────────────
+(empty — no P0 or P1 findings; proceed to phase queue)
 
 ─── Open Findings (full detail: docs/audit/REVIEW_REPORT.md) ────────
 
 | ID | Sev | Status | Evidence / Note |
 |----|-----|--------|-----------------|
-| ARCH-1 / P1-1 | P1 | CLOSED | ADR-003 §Consequences documents HS256 as v1 choice; P1-1 was a misread — no conflict |
+| ARCH-1 / P1-1 | P1 | CLOSED ✅ | ADR-003 §Consequences documents HS256 as v1 choice; P1-1 was phantom — no conflict; ARCH-12 confirmed closure |
 | CODE-1 (Cycle 11) | P0 | CLOSED ✅ FIX-H | `_set_tenant_ctx()` helper extracted to `app/db.py`; f-string with UUID validation used at all SET LOCAL sites |
 | CODE-2 (Cycle 11) | P1 | CLOSED ✅ FIX-H | `JSONResponse` removed from `auth_service.py`; routers construct HTTP response |
 | CODE-3 (Cycle 11) | P1 | CLOSED ✅ FIX-H | `POST /auth/logout` and `POST /auth/refresh` added to `app/routers/auth.py` |
-| CODE-4 (Cycle 11) | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` — budget bypass via CLI (`eval/runner.py:51-110`) |
-| CODE-5 | P2 | OPEN | Silent broad fallback exception in `_fetch_embeddings` — no `LOGGER.warning` (`app/jobs/rca_clusterer.py:276`) |
-| CODE-6 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]` (`app/utils.py:34`) |
-| CODE-7 | P2 | OPEN | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion (`app/jobs/rca_clusterer.py:427-440`) |
-| CODE-8 | P2 | OPEN | `auth_ratelimit:{email_hash}` absent from data-map §3 (`app/middleware/rate_limit.py:129`) |
-| CODE-9 | P2 | OPEN | Import-time `get_settings()` coupling requires API key at import (`app/main.py:223`) |
-| CODE-10 | P2 | CLOSED | Key prefix order inverted to `{tenant_id}:prefix:id` — FIX-G resolved |
-| CODE-11 | P2 | CLOSED | Redis hot-path keys tenant-namespaced — FIX-A resolved |
-| CODE-12 | P3 | OPEN | No unit test for `_fetch_embeddings` ANN fallback exception branch (`tests/test_rca_clusterer.py`) |
-| ARCH-2 | P2 | CLOSED | ADR-002 updated to Voyage/1024-dim — DOC-2 resolved |
-| ARCH-3 | P2 | CLOSED | `eval/runner.py:184` calls `check_budget()` before LLM — FIX-E resolved |
-| ARCH-4 | P2 | CLOSED | `rca_clusterer.py` OTel spans added — FIX-D resolved |
-| ARCH-5 | P2 | OPEN (partial) | `/metrics` JWT exemption: code comment present (FIX-F); ADR-004 + ARCHITECTURE.md security section not yet updated |
-| ARCH-6 | P2 | OPEN | Cluster detail uses timestamp heuristic, not persisted membership (`app/routers/clusters.py:151-175`) → CLU-1 |
-| ARCH-7 | P2 | CLOSED | `app/agent.py` has zero fastapi imports — SVC-3 resolved |
+| CODE-4 / CODE-8 | P2 | OPEN | `auth_ratelimit:{email_hash}` absent from `docs/data-map.md §3`; global design (no tenant prefix) undocumented (`app/middleware/rate_limit.py:129`) → FIX-I |
+| CODE-5 | P2 | OPEN | Silent broad `except Exception:` in `_fetch_embeddings` — no `LOGGER.warning` or `exc_info` (`app/jobs/rca_clusterer.py:276`) → FIX-I |
+| CODE-6 | P2 | OPEN | `run_eval()` non-async path has no `check_budget()` — budget bypass via CLI (`eval/runner.py:51-110`) → FIX-I |
+| CODE-7 | P2 | CLOSED ✅ Cycle 12 | `_fetch_raw_texts_admin` cross-tenant guard confirmed present (`app/jobs/rca_clusterer.py:472-484`) |
+| CODE-9 | P2 | OPEN | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]`; no `BaseException` narrowing (`app/utils.py:34`) → FIX-I |
+| CODE-10 | P2 | CLOSED ✅ | Key prefix order inverted to `{tenant_id}:prefix:id` — FIX-G resolved |
+| CODE-11 | P2 | CLOSED ✅ | Redis hot-path keys tenant-namespaced — FIX-A resolved |
+| CODE-12 | P2 | CLOSED ✅ Cycle 12 | Module-level `get_settings()` coupling resolved — `app/main.py` lifespan confirmed |
+| CODE-12 (P3) | P3 | OPEN | No unit test for `_fetch_embeddings` ANN fallback exception branch (`tests/test_rca_clusterer.py`) → FIX-I |
+| CODE-13 | P2 | OPEN | `list_clusters` and `get_cluster` route handlers lack OTel span + Prometheus metrics (`app/routers/clusters.py:96-152`, `155-225`) → FIX-I |
+| CODE-14 | P2 | OPEN | `_create_tenant` calls `_set_tenant_ctx` before INSERT — RLS SET LOCAL references non-existent tenant UUID (`scripts/cli.py:83-101`) → FIX-I |
+| CODE-15 | P2 | OPEN | `test_cli.py` missing error-path tests: `tenant disable` not-found, `budget check` exhausted/not-found (`tests/test_cli.py`) → FIX-I |
+| ARCH-2 | P2 | CLOSED ✅ | ADR-002 updated to Voyage/1024-dim — DOC-2 resolved |
+| ARCH-3 | P2 | CLOSED ✅ | `eval/runner.py:184` calls `check_budget()` before LLM — FIX-E resolved |
+| ARCH-4 | P2 | CLOSED ✅ | `rca_clusterer.py` OTel spans added — FIX-D resolved |
+| ARCH-5 | P2 | OPEN (partial) | `/metrics` JWT exemption: code comment present (FIX-F); `docs/adr/004-observability-stack.md` + `ARCHITECTURE.md` security section not yet updated → FIX-I (DOC-PATCH-1) |
+| ARCH-6 | P2 | CLOSED ✅ CLU-1 | Cluster detail reads from `rca_cluster_members` via DB, not timestamp heuristic (`app/routers/clusters.py:203-220`) |
+| ARCH-7 | P2 | CLOSED ✅ | `app/agent.py` has zero fastapi imports — SVC-3 resolved |
 | ARCH-7 (new) | P2 | CLOSED ✅ FIX-H | `AuthService` imports `JSONResponse` — resolved, linked to CODE-2 |
-| ARCH-8 | P2 | CLOSED | Router business logic extracted — SVC-1/SVC-2 resolved |
+| ARCH-8 | P2 | CLOSED ✅ | Router business logic extracted — SVC-1/SVC-2 resolved |
 | ARCH-8 (new) | P2 | CLOSED ✅ FIX-H | `POST /auth/logout` and `POST /auth/refresh` not routed — resolved, linked to CODE-3 |
-| ARCH-9 (new) | P2 | OPEN | Business logic in `/webhook` and `/approve` handlers (`app/main.py:255-366`) — deferred Phase 10+ |
-| P2-9 | P2 | CLOSED | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
-| P2-10 | P2 | OPEN | Module-level settings access requires API key at import time (`app/main.py:223`) |
-| REG-1 | P1 | CLOSED | Cycle 8 regressions resolved — FIX-9 |
-| REG-2 | P1 | CLOSED ✅ FIX-H | 14 test failures resolved; root causes: CODE-1 (SET LOCAL), URL password redaction (str(url)→`***`), NullPool missing, fileConfig clobbering caplog |
+| ARCH-9 | P2 | OPEN | Business logic in `/webhook` and `/approve` handlers (`app/main.py:255-366`) — SVC-4 Phase 12 |
+| ARCH-11 | P3 | OPEN | `ARCHITECTURE.md §2.1/§2.2` not updated with Phase 10–11 deliverables → FIX-I (DOC-PATCH-3/4) |
+| P2-9 | P2 | CLOSED ✅ | `_run_blocking()` extracted to `app/utils.py` — FIX-B resolved |
+| P2-10 | P2 | CLOSED ✅ Cycle 12 | Module-level settings access — same as CODE-12; lifespan fix confirmed |
+| REG-1 | P1 | CLOSED ✅ | Cycle 8 regressions resolved — FIX-9 |
+| REG-2 | P1 | CLOSED ✅ FIX-H | 14 test failures resolved; root causes: CODE-1 (SET LOCAL), URL password redaction, NullPool missing, fileConfig clobbering caplog |
 
 ─── T13 ✅ · EmbeddingService — DONE ────────────────────────────────
 

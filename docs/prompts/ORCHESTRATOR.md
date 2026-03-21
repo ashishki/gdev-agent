@@ -24,7 +24,7 @@ The orchestrator reads all state from `docs/CODEX_PROMPT.md` and `docs/tasks.md`
 **Codex invocation — always via variable, never stdin:**
 ```bash
 PROMPT=$(cat /tmp/gdev_codex_prompt.txt)
-cd /home/artem/dev/ai-stack/projects/gdev-agent && codex exec -s workspace-write "$PROMPT"
+cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 ```
 
 ---
@@ -54,7 +54,7 @@ Your job: drive the full development cycle autonomously.
 Read current state → decide action → spawn agents → update state → loop.
 
 You do NOT write application code or review code yourself.
-Project root: `/home/artem/dev/ai-stack/projects/gdev-agent`
+Project root: `/home/gdev/gdev-agent`
 
 ---
 
@@ -113,7 +113,7 @@ Use **Agent tool** (`general-purpose`):
 
 ```
 You are the Strategy Reviewer for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 
 Read and execute docs/prompts/PROMPT_S_STRATEGY.md exactly as written.
 Inputs: docs/ARCHITECTURE.md, docs/CODEX_PROMPT.md, docs/adr/ (all), docs/tasks.md (upcoming phase)
@@ -136,7 +136,7 @@ For each FIX-N item in order:
 Write to `/tmp/gdev_codex_prompt.txt`:
 ```
 You are Codex, the implementation agent for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 
 Read before writing any code:
 1. docs/CODEX_PROMPT.md (full — IMPLEMENTATION CONTRACT section is mandatory)
@@ -147,7 +147,7 @@ Assignment: [FIX-N] — [Title]
 [paste Fix Queue entry verbatim]
 
 Rules: fix ONLY what is described. Every fix needs a failing→passing test.
-Run: cd /home/artem/dev/ai-stack/projects/gdev-agent && pytest tests/ -x -q
+Run: cd /home/gdev/gdev-agent && pytest tests/ -x -q
 
 Return:
 IMPLEMENTATION_RESULT: DONE | BLOCKED
@@ -159,7 +159,7 @@ Baseline: [N passed, N skipped, N failed]
 Execute:
 ```bash
 PROMPT=$(cat /tmp/gdev_codex_prompt.txt)
-cd /home/artem/dev/ai-stack/projects/gdev-agent && codex exec -s workspace-write "$PROMPT"
+cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 ```
 
 - `DONE` + 0 failures → next FIX item
@@ -176,7 +176,7 @@ Read the full task entry from `docs/tasks.md` (AC list + file scope).
 Write to `/tmp/gdev_codex_prompt.txt`:
 ```
 You are Codex, the implementation agent for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 
 Read before writing any code:
 1. docs/CODEX_PROMPT.md (full — SESSION HANDOFF + IMPLEMENTATION CONTRACT)
@@ -213,7 +213,7 @@ AC status: [AC-1: PASS | FAIL, ...]
 Execute:
 ```bash
 PROMPT=$(cat /tmp/gdev_codex_prompt.txt)
-cd /home/artem/dev/ai-stack/projects/gdev-agent && codex exec -s workspace-write "$PROMPT"
+cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 ```
 
 - `DONE` + all AC PASS + 0 failures → Step 4
@@ -236,7 +236,7 @@ Use **Agent tool** (`general-purpose`):
 
 ```
 You are the Light Reviewer for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 
 Phase [N] — task [T##] was just implemented. Verify it doesn't break contracts.
 
@@ -295,7 +295,7 @@ Parse result:
 Use **Agent tool** (`general-purpose`):
 ```
 You are the META Analyst for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read and execute docs/audit/PROMPT_0_META.md exactly.
 Inputs: docs/tasks.md, docs/CODEX_PROMPT.md, docs/audit/REVIEW_REPORT.md (may not exist)
 Output: write docs/audit/META_ANALYSIS.md
@@ -309,7 +309,7 @@ Verify `docs/audit/META_ANALYSIS.md` written.
 Use **Agent tool** (`general-purpose`):
 ```
 You are the Architecture Reviewer for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read and execute docs/audit/PROMPT_1_ARCH.md exactly.
 Inputs: docs/audit/META_ANALYSIS.md, docs/ARCHITECTURE.md, docs/spec.md, docs/adr/ (all)
 Output: write docs/audit/ARCH_REPORT.md
@@ -323,7 +323,7 @@ Verify `docs/audit/ARCH_REPORT.md` written.
 Use **Agent tool** (`general-purpose`):
 ```
 You are the Code Reviewer for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read and execute docs/audit/PROMPT_2_CODE.md exactly.
 Inputs: docs/audit/META_ANALYSIS.md, docs/audit/ARCH_REPORT.md,
         docs/dev-standards.md, docs/data-map.md,
@@ -339,7 +339,7 @@ Capture full findings output — pass to Step 4.3.
 Use **Agent tool** (`general-purpose`):
 ```
 You are the Consolidation Agent for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read and execute docs/audit/PROMPT_3_CONSOLIDATED.md exactly.
 
 CODE review findings (treat as your own — produced this cycle):
@@ -372,7 +372,7 @@ Done:
 Write to `/tmp/gdev_codex_prompt.txt`:
 ```
 You are Codex, the Fixer for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read docs/IMPLEMENTATION_CONTRACT.md.
 
 Light review found issues. Fix them exactly as described. Nothing else.
@@ -381,7 +381,7 @@ ISSUES:
 [paste ISSUES block verbatim from light reviewer]
 
 Rules: fix only what is listed. No refactoring. No extra changes.
-Run: cd /home/artem/dev/ai-stack/projects/gdev-agent && pytest tests/ -x -q
+Run: cd /home/gdev/gdev-agent && pytest tests/ -x -q
 
 Return:
 FIXES_RESULT: DONE | PARTIAL
@@ -392,7 +392,7 @@ Baseline: [N passed, N skipped, N failed]
 Execute:
 ```bash
 PROMPT=$(cat /tmp/gdev_codex_prompt.txt)
-cd /home/artem/dev/ai-stack/projects/gdev-agent && codex exec -s workspace-write "$PROMPT"
+cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 ```
 
 Re-run light reviewer on fixed files only.
@@ -406,11 +406,11 @@ Re-run light reviewer on fixed files only.
 Write to `/tmp/gdev_codex_prompt.txt`:
 ```
 You are Codex, the Fix agent for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 Read: docs/audit/REVIEW_REPORT.md (P0 section), docs/CODEX_PROMPT.md (Fix Queue), docs/IMPLEMENTATION_CONTRACT.md
 
 Fix every P0. Each fix needs a failing→passing test.
-Run: cd /home/artem/dev/ai-stack/projects/gdev-agent && pytest tests/ -q — must be green.
+Run: cd /home/gdev/gdev-agent && pytest tests/ -q — must be green.
 
 Return:
 FIXES_RESULT: DONE | PARTIAL
@@ -421,7 +421,7 @@ Baseline: [N passed, N skipped, N failed]
 Execute:
 ```bash
 PROMPT=$(cat /tmp/gdev_codex_prompt.txt)
-cd /home/artem/dev/ai-stack/projects/gdev-agent && codex exec -s workspace-write "$PROMPT"
+cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 ```
 
 Re-run Steps 4.2 + 4.3 (targeted at fixed files).
@@ -458,7 +458,7 @@ Use **Agent tool** (`general-purpose`):
 
 ```
 You are the Doc Updater for gdev-agent.
-Project root: /home/artem/dev/ai-stack/projects/gdev-agent
+Project root: /home/gdev/gdev-agent
 
 A phase just completed. Update all project documentation to match current code state.
 
@@ -509,9 +509,9 @@ Next: Ph[N+1] [Name]
 
 Telegram delivery:
 ```bash
-if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_APPROVAL_CHAT_ID" ]; then
   curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-    -d chat_id="${TELEGRAM_CHAT_ID}" \
+    -d chat_id="${TELEGRAM_APPROVAL_CHAT_ID}" \
     --data-urlencode "text=SUMMARY_HERE" > /dev/null
   echo "Phase report sent to Telegram."
 fi
@@ -523,7 +523,7 @@ fi
 
 **Before looping back — always save checkpoint to memory:**
 
-Write to `/tmp/gdev_checkpoint.md` (read by dev_loop.sh on resume):
+Write to `/tmp/gdev_checkpoint.md` (read on resume):
 ```
 Last completed: [T## — Title] at [timestamp]
 Baseline: [N] pass / [N] skip
@@ -543,7 +543,13 @@ Stop when:
 - All tasks `✅` → generate final completion report (same format as Phase Report, titled "PROJECT COMPLETE") → send Telegram → stop.
 - Task `[!]` → save checkpoint → print blocker → stop.
 - P0 unresolved after 2 attempts → save checkpoint → print findings → stop.
-- API rate limit (429 / "overloaded") → save checkpoint → print "RATE_LIMIT_HIT" → stop cleanly.
+- API rate limit (429 / "overloaded") → save checkpoint → send Telegram notification with suggested restart time (current time + 60 min) → print "RATE_LIMIT_HIT" → stop cleanly.
+  Telegram format:
+  ```
+  ⏸ Rate limit hit. Resume at: [HH:MM UTC+3]
+  Next: [T## — Title]
+  Run: paste ORCHESTRATOR.md into Claude Code
+  ```
 
 ---
 

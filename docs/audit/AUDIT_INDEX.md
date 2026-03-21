@@ -43,3 +43,5 @@ Reviews run at phase boundaries, not between individual tasks.
 | `archive/PHASE6_REVIEW.md` | 6–7 | 2026-03-09 |
 | `archive/PHASE8_REVIEW.md` | 9 | 2026-03-18 |
 | `archive/PHASE9_REVIEW.md` | 11 | 2026-03-18 |
+| 12 | Phase 10–11 | CLI-1, CLU-1, CLU-2, PORT-1–4 | Phase 10–11 gate | ✅ Closed 2026-03-21 (Cycle 12) · Stop-Ship: No |
+| `archive/PHASE10_REVIEW.md` | 12 | 2026-03-21 |

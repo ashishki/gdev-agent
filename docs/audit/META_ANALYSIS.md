@@ -1,60 +1,63 @@
 ---
-# META_ANALYSIS — Cycle 11
-_Date: 2026-03-18 · Type: full_
+# META_ANALYSIS — Cycle 12
+_Date: 2026-03-20 · Type: full_
 
 ## Project State
 
-Phase 9 (FIX-G, SVC-1, SVC-2, SVC-3, DOC-1, DOC-2, DOC-3) complete. Next: CLI-1 — Typer admin CLI (Phase 10 start).
-Documented baseline: 168 pass, 13 skip. Actual measured baseline: 167 pass, 14 fail, 0 skip — **14 regressions detected** (test_cost_ledger ×3, test_isolation ×5, test_llm_client ×3, test_store ×3, 1 error). Delta from Cycle 9: -1 pass, +14 fail, -13 skip. This is a stop-ship candidate; must be confirmed before Phase 10 begins.
+Phase 11 (PORT-1, PORT-2, PORT-3, PORT-4) complete. All tasks through Phase 11 done.
+Next: deep review — no new implementation tasks queued; pending Phase 12 scope definition or external release.
+Baseline: 198 pass, 0 fail, 0 skip (with Docker/PG); 184 pass, 14 skip (without PG).
+Delta from Cycle 11: +31 pass, -14 fail, +14 skip → **repo green** (FIX-H resolved all REG-2 regressions, CODE-1/CODE-2/CODE-3 closed).
 
 ## Open Findings
 
 | ID | Sev | Description | Files | Status |
 |----|-----|-------------|-------|--------|
-| REG-2 | P1 | 14 test failures in test_cost_ledger, test_isolation, test_llm_client, test_store — repo NOT green despite CODEX_PROMPT claiming 168 pass / 13 skip | `tests/test_cost_ledger.py`, `tests/test_isolation.py`, `tests/test_llm_client.py`, `tests/test_store.py` | **NEW — open, must fix before CLI-1** |
-| CODE-4 | P2 | `auth_ratelimit:{email_hash}` has no tenant prefix; global by design but absent from data-map §3 | `app/middleware/rate_limit.py:129`, `docs/data-map.md §3` | Open — document or add to data-map |
-| CODE-5 | P2 | Silent `except Exception:` in `_fetch_embeddings` swallows ANN fallback — no `LOGGER.warning` or `exc_info` | `app/jobs/rca_clusterer.py:276` | Open (carry-forward Cycles 8–10) |
-| CODE-7 | P2 | `_fetch_raw_texts_admin` uses `gdev_admin` session with no defence-in-depth guard or `tenant_id` assertion | `app/jobs/rca_clusterer.py:427-440` | Open |
-| CODE-8 | P3 | No direct unit test for `_fetch_embeddings` ANN fallback exception branch | `tests/test_rca_clusterer.py` | Open (carry-forward Cycles 8–10) |
-| CODE-9 | P2 | `run_blocking` raises untyped `data` value — `raise data  # type: ignore[misc]`; no narrow `BaseException` re-raise | `app/utils.py:34` | Open (carry-forward) |
-| CODE-10 | P2 | `run_eval()` non-async path has no `check_budget()` call — budget bypass via CLI/direct invocation | `eval/runner.py:51-110` | Open |
+| CODE-4 | P2 | `auth_ratelimit:{email_hash}` absent from data-map §3; key is intentionally global (no tenant prefix) but undocumented | `app/middleware/rate_limit.py:129`, `docs/data-map.md §3` | Open — add to data-map |
+| CODE-5 | P2 | Silent broad `except Exception:` in `_fetch_embeddings` swallows ANN fallback with no `LOGGER.warning` or `exc_info` | `app/jobs/rca_clusterer.py:276` | Open (carry-forward Cycles 8–11) |
+| CODE-6 | P2 | `run_eval()` non-async path has no `check_budget()` call — budget bypass via CLI or direct invocation | `eval/runner.py:51-110` | Open (carry-forward) |
+| CODE-7 | P2 | `_fetch_raw_texts_admin` uses `gdev_admin` session with no tenant_id assertion guard | `app/jobs/rca_clusterer.py:427-440` | Open (carry-forward) |
+| CODE-8 | P2 | `auth_ratelimit:{email_hash}` absent from data-map §3 | `app/middleware/rate_limit.py:129` | Open — see CODE-4 |
+| CODE-9 | P2 | `run_blocking` raises untyped `data` — `raise data  # type: ignore[misc]`; no `BaseException` narrowing | `app/utils.py:34` | Open (carry-forward) |
 | CODE-12 | P2 | Module-level `get_settings()` coupling requires `ANTHROPIC_API_KEY` at import time | `app/main.py:223` | Open (carry-forward as P2-10) |
-| ARCH-2 | P2 | ADR-002 specifies `text-embedding-3-small` (OpenAI) / VECTOR(1536); runtime uses `voyage-3-lite` / VECTOR(1024) | `docs/adr/002-vector-database.md:32`, `app/config.py:29` | Open — DOC-2 updated ADR but mismatch persists |
-| ARCH-5 | P2 | `/metrics` exempt from JWT auth; policy absent from ARCHITECTURE.md and any ADR | `app/main.py:364-366`, `app/middleware/auth.py:55` | Open (partial — inline comments added by FIX-F; ARCHITECTURE.md update done in DOC-1) |
-| ARCH-6 | P2 | `GET /clusters/{cluster_id}` returns tickets via time-window heuristic, not persisted membership | `app/routers/clusters.py:151-175` | Open → CLU-1 (Phase 10) |
+| ARCH-5 | P2 | `/metrics` JWT exemption: inline comment present (FIX-F); ADR-004 and ARCHITECTURE.md security section not updated | `app/main.py:371`, `docs/adr/004-observability-stack.md` | Open (partial) |
+| ARCH-6 | P2 | `GET /clusters/{cluster_id}` returns members via timestamp heuristic, not persisted membership — CLU-1 marked ✅ but finding should be re-verified | `app/routers/clusters.py:151-175` | Open — verify CLU-1 acceptance criteria met |
+| ARCH-9 | P2 | Business logic embedded in `/webhook` and `/approve` handlers in `app/main.py` | `app/main.py:255-366` | Open — deferred Phase 10+ |
+| CODE-12 / P2-10 | P2 | Import-time `get_settings()` requires API key at import | `app/main.py:223` | Open — no change |
+| CODE-12 (P3) | P3 | No unit test for `_fetch_embeddings` ANN fallback exception branch | `tests/test_rca_clusterer.py` | Open (carry-forward Cycles 8–11) |
 
 ## PROMPT_1 Scope (architecture)
 
-- Regression root cause: 14 failing tests span cost_ledger, isolation, llm_client, store — likely a Phase 9 interface or schema change broke existing contracts; identify before Phase 10 work begins
-- Service layer (Phase 9 complete): verify AuthService + EvalService extraction is clean — no transport imports in `app/agent.py`, no business logic in router layer; confirm SVC-1/SVC-2/SVC-3 acceptance criteria met at runtime
-- CLI-1 design: Typer CLI at `scripts/cli.py` covers tenant + budget operations and triggers RCA job; assess whether CLI shares service layer (app/services/) or bypasses it (direct DB access)
-- CLU-1 design: new `rca_cluster_members` table + migration 0003; assess RLS policy placement and whether clusterer admin session write pattern matches existing patterns in `app/jobs/rca_clusterer.py`
-- ARCH-6 (heuristic membership): CLU-1 is the Phase 10 fix; confirm no other callers of the timestamp heuristic path remain after CLU-1
+- Phase 10 delivery (CLI-1, CLU-1, CLU-2): verify `scripts/cli.py` Typer CLI exists and satisfies acceptance criteria; confirm `rca_cluster_members` migration 0003 exists and CLU-1 actually replaced the timestamp heuristic in `app/routers/clusters.py`
+- Phase 11 delivery (PORT-1–PORT-4): verify README Mermaid diagram renders, `docs/WORKFLOW.md` exists, `scripts/demo.py` exits 0, ADR-006 MCP evaluation decision documented
+- ARCH-9 (webhook/approve business logic in main.py): assess scope and risk for extracting to a service layer; estimate as a Phase 12 SVC-4 task
+- ARCH-5 (metrics JWT exemption docs gap): confirm whether ADR-004 and ARCHITECTURE.md were updated by DOC-1/DOC-2 or remain stale
+- Contract rules A–L in CODEX_PROMPT v3.11: verify no new call sites have introduced `SET LOCAL` parameterized binding, session-level SET, or other contract violations introduced during Phase 10–11 work
 
 ## PROMPT_2 Scope (code, priority order)
 
-1. `tests/test_cost_ledger.py`, `tests/test_isolation.py`, `tests/test_llm_client.py`, `tests/test_store.py` — diagnose 14 failures; REG-2 (new P1)
-2. `app/services/auth_service.py` (new — SVC-1 Phase 9)
-3. `app/services/eval_service.py` (new — SVC-2 Phase 9)
-4. `app/routers/auth.py` (changed — SVC-1 extraction)
-5. `app/routers/eval.py` (changed — SVC-2 extraction)
-6. `app/agent.py` (changed — SVC-3 HTTPException removal)
-7. `app/exceptions.py` (new or changed — SVC-3 domain exceptions)
-8. `eval/runner.py` (CODE-10 — budget bypass in non-async path; regression check)
-9. `app/utils.py` (CODE-9 — untyped re-raise; regression check)
-10. `app/jobs/rca_clusterer.py` (CODE-5 silent exception, CODE-7 admin session guard — carry-forward)
-11. `app/middleware/rate_limit.py` (CODE-4 — auth_ratelimit key absent from data-map)
-12. `app/main.py` (CODE-12 import-time settings coupling — regression check)
+1. `app/routers/clusters.py` (CLU-1 closure — verify heuristic replaced; ARCH-6 re-check)
+2. `scripts/cli.py` (new — Phase 10 CLI-1; full review: command coverage, mocked DB/Redis, no real API calls)
+3. `tests/test_cli.py` (new — verify CliRunner tests for all commands)
+4. `alembic/versions/0003_cluster_membership.py` (new — verify upgrade/downgrade complete, RLS policy correct)
+5. `app/jobs/rca_clusterer.py` (changed — CLU-1 membership write; CODE-5 silent exception; CODE-7 admin session guard)
+6. `app/main.py` (ARCH-9 webhook/approve logic; CODE-12 import-time coupling — regression check)
+7. `eval/runner.py` (CODE-6 — budget bypass in non-async path; still open)
+8. `app/utils.py` (CODE-9 — untyped re-raise; still open)
+9. `docs/adr/004-observability-stack.md` (ARCH-5 — verify metrics JWT exemption documented)
+10. `docs/data-map.md §3` (CODE-4/CODE-8 — verify auth_ratelimit key documented)
+11. `app/middleware/rate_limit.py` (CODE-4 — cross-reference with data-map)
+12. `scripts/demo.py` (PORT-3 — verify script is runnable and exits 0 against Docker Compose)
 
 ## Cycle Type
 
-Full — Phase 9 complete, next phase boundary (Phase 10 CLI-1). However, 14 test regressions discovered; cycle must resolve REG-2 before Phase 10 tasks begin. Treat as full cycle with mandatory regression triage.
+Full — Phase 11 complete, all implementation tasks done. This is a post-completion review cycle; no new feature tasks are queued. Focus is on verifying Phase 10–11 deliverables meet acceptance criteria and confirming remaining P2 findings from Cycles 8–11 that have been carried forward without resolution. Any newly discovered issues should be catalogued as Phase 12 candidates.
 
 ## Notes for PROMPT_3
 
-- REG-2 is the critical blocker: 14 failures across 4 test files. Root cause likely in Phase 9 service-layer extraction (SVC-1/SVC-2) or FIX-G key reordering changing expected values in tests. PROMPT_3 must confirm whether these are fixable in a single FIX-H or require a broader regression sweep.
-- CODE-10 (budget bypass in `run_eval()` non-async path) remains open and is high-impact for CLI-1 since the new CLI will have a direct `rca run` command — same bypass risk applies to any new CLI-triggered eval path.
-- ARCH-6 (heuristic cluster membership) is the P2 driver for CLU-1; PROMPT_3 should confirm no integration tests depend on the heuristic behaviour before CLU-1 replaces it.
-- CODE-9 (`run_blocking` untyped re-raise) is a low-effort fix; PROMPT_3 should recommend bundling into FIX-H if a regression fix task is created.
-- Documented baseline (168 pass, 13 skip) in CODEX_PROMPT v3.10 does not match measured baseline (167 pass, 14 fail). PROMPT_3 should flag the discrepancy and update CODEX_PROMPT after REG-2 is resolved.
+- All P0 and P1 findings from Cycle 11 (CODE-1/REG-2, CODE-2/ARCH-7-new, CODE-3/ARCH-8-new) are confirmed CLOSED per CODEX_PROMPT v3.11; do not re-open without fresh evidence.
+- ARCH-6 (CLU-1 heuristic → persisted membership) is marked ✅ in tasks.md but the finding table in CODEX_PROMPT still shows it as OPEN. PROMPT_3 must confirm CLU-1 acceptance criterion 4 ("GET /clusters/{id} returns tickets from DB, not timestamp heuristic") is satisfied in the actual code before closing.
+- The six P2 carry-forwards (CODE-4, CODE-5, CODE-6, CODE-7, CODE-9, CODE-12) have survived 3+ cycles with no resolution; PROMPT_3 should recommend either a targeted FIX-I to close them in batch or formally defer to a hypothetical v2 scope with an explicit rationale.
+- ARCH-9 (business logic in /webhook and /approve in app/main.py) is a clear SVC-4 candidate for Phase 12; PROMPT_3 should scope it as a new task if architecture review confirms the pattern matches the prior SVC-1/SVC-2 extraction model.
+- Baseline is now 198 pass / 0 fail / 0 skip (PG) and 184 pass / 14 skip (no PG). PROMPT_3 should confirm this matches pytest output from the current HEAD and update CODEX_PROMPT if a discrepancy is found.
 ---

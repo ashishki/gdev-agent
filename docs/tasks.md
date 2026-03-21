@@ -1779,7 +1779,7 @@ _Goal: operational tooling for tenant admins; persist RCA cluster membership for
 **Owner:** Codex
 **Priority:** P2
 **Depends-on:** T10, T14, T15
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 No CLI tooling exists. Add a Typer-based admin CLI at `scripts/cli.py` covering tenant and budget operations.
@@ -1804,7 +1804,7 @@ No CLI tooling exists. Add a Typer-based admin CLI at `scripts/cli.py` covering 
 **Owner:** Codex
 **Priority:** P2 (ARCH-6 — timestamp heuristic)
 **Depends-on:** T14, T15
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 `GET /clusters/{id}` reconstructs membership from a timestamp heuristic rather than stored data (ARCH-6). Persist cluster membership to Postgres so cluster detail is stable and auditable.
@@ -1831,7 +1831,7 @@ No CLI tooling exists. Add a Typer-based admin CLI at `scripts/cli.py` covering 
 **Owner:** Codex
 **Priority:** P2
 **Depends-on:** CLU-1
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 No endpoint exists to list tickets in a specific cluster. Add `GET /clusters/{id}/tickets`.
@@ -1857,7 +1857,7 @@ _Goal: make the project externally presentable for demo and portfolio purposes w
 **Owner:** Codex
 **Priority:** P3
 **Depends-on:** DOC-1, DOC-3
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 Current README is minimal. Redesign for external audiences: architecture diagram (Mermaid), quick-start, feature list, deployment guide.
@@ -1877,7 +1877,7 @@ Current README is minimal. Redesign for external audiences: architecture diagram
 **Owner:** Codex
 **Priority:** P3
 **Depends-on:** docs/DEVELOPMENT_METHOD.md (✅ exists)
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 External readers need a concise explanation of the AI-assisted development workflow used in this project.
@@ -1897,7 +1897,7 @@ External readers need a concise explanation of the AI-assisted development workf
 **Owner:** Codex
 **Priority:** P3
 **Depends-on:** T03, T07, T14, T15
-**Status:** [ ]
+**Status:** ✅
 
 **Scope:**
 No runnable demo exists. Add a self-contained demo script that exercises the full happy path end-to-end.
@@ -1918,7 +1918,7 @@ No runnable demo exists. Add a self-contained demo script that exercises the ful
 **Owner:** Codex
 **Priority:** P3
 **Depends-on:** PORT-1, DOC-1
-**Status:** [ ]
+**Status:** ✅ (decision: skip — see docs/adr/006-mcp-server-evaluation.md)
 
 **Scope:**
 Evaluate whether exposing gdev-agent tools as an MCP server adds value for portfolio/integration signal. Produce a brief design note; no implementation unless evaluation is positive.
@@ -1930,6 +1930,91 @@ Evaluate whether exposing gdev-agent tools as an MCP server adds value for portf
 1. ADR-005 exists with decision: implement or skip, with rationale.
 2. If decision = implement: skeleton task added to tasks.md as PORT-5.
 3. If decision = skip: rationale documented; no further action.
+
+---
+
+## Cycle 12 Review Findings (2026-03-21) — Phase 12 Candidates
+
+Full review: `docs/audit/REVIEW_REPORT.md` (Cycle 12)
+
+| ID | Severity | Summary | Fix In |
+|----|----------|---------|--------|
+| CODE-13 [P2] | P2 | `list_clusters` and `get_cluster` route handlers lack OTel span and Prometheus metrics | FIX-I |
+| CODE-14 [P2] | P2 | `_create_tenant` calls `_set_tenant_ctx` before INSERT — RLS SET LOCAL references non-existent tenant UUID | FIX-I |
+| CODE-15 [P2] | P2 | `test_cli.py` missing error-path tests for `tenant disable` not-found and `budget check` exhausted/not-found | FIX-I |
+
+---
+
+## Phase 12 — Architecture Hardening + Doc Completion
+
+_Goal: close all carry-forward P2 findings in a single batch; extract webhook/approve business logic to service layer; complete outstanding doc patches._
+
+### FIX-I · Batch-close Cycle 12 P2 findings + carry-forward P2s
+
+**Owner:** Codex
+**Priority:** P2
+**Depends-on:** CLI-1, CLU-1, CLU-2
+**Status:** pending
+
+**Scope:**
+Close CODE-13, CODE-14, CODE-15 (new Cycle 12 findings) plus the six carry-forward P2 findings
+(CODE-4/CODE-8, CODE-5, CODE-6, CODE-9, ARCH-5 doc patches) that have survived 3–5 cycles
+without resolution.
+
+**Files to MODIFY:**
+- `app/routers/clusters.py` — add OTel child span and Prometheus counter/histogram to `list_clusters()` (lines 96-152) and `get_cluster()` (lines 155-225) [CODE-13]
+- `scripts/cli.py` — move `_set_tenant_ctx` call in `_create_tenant` to after the INSERT so the tenant UUID exists before RLS SET LOCAL (lines 83-101) [CODE-14]
+- `tests/test_cli.py` — add negative-path tests: `tenant disable` with unknown tenant_id (expect non-zero exit / error message), `budget check` with exhausted budget (expect appropriate output), `budget check` with unknown tenant_id (expect error) [CODE-15]
+- `app/jobs/rca_clusterer.py:276` — replace bare `except Exception:` with `except Exception as exc: LOGGER.warning("ANN fallback failed", exc_info=True)` [CODE-5]
+- `eval/runner.py:51-110` — add `check_budget()` call in `run_eval()` non-async path before LLM invocation; catch `BudgetExhaustedError` and abort [CODE-6]
+- `app/utils.py:34` — narrow `raise data` with `isinstance(data, BaseException)` guard; replace `type: ignore[misc]` with explicit `BaseException` check [CODE-9]
+- `docs/adr/004-observability-stack.md` — add §Security Note: "`GET /metrics` is exempt from JWT middleware. Prometheus pull model requires unauthenticated access. Mitigation: restrict at network layer (Docker bridge / VPC security group)." [ARCH-5 / DOC-PATCH-1]
+- `docs/adr/003-rbac-design.md` — add note in §Consequences: "RS256 with JWKS endpoint deferred to v2. HS256 is the accepted v1 algorithm per this ADR. Finding P1-1 in CODEX_PROMPT is superseded by this decision." [DOC-PATCH-2]
+- `docs/ARCHITECTURE.md` — §2.1: add rows for `scripts/cli.py` (CLI-1, Phase 10 ✅), `scripts/demo.py` (PORT-3, Phase 11 ✅), `docs/WORKFLOW.md` (PORT-2, Phase 11 ✅), `docs/adr/006-mcp-server-evaluation.md` (PORT-4, Phase 11 ✅); §2.2: add `scripts/` subtree and new docs entries [DOC-PATCH-3/4 / ARCH-11]
+- `docs/data-map.md §3` — add row: `auth_ratelimit:{email_hash}` / STRING / 60 s / Login attempt counter (global — intentionally no tenant prefix; rate-limits by email hash across all tenants) [DOC-PATCH-5 / CODE-4/CODE-8]
+
+**Acceptance Criteria:**
+1. `list_clusters` and `get_cluster` each emit an OTel child span and increment a Prometheus counter.
+2. `_create_tenant` does not call `_set_tenant_ctx` until after the tenant INSERT commits.
+3. `tests/test_cli.py` includes: `tenant disable` not-found path, `budget check` exhausted path, `budget check` not-found path.
+4. `_fetch_embeddings` fallback logs `LOGGER.warning` with `exc_info=True` on ANN exception.
+5. `run_eval()` non-async path calls `check_budget()` before any LLM call; aborts with status `"aborted_budget"` on `BudgetExhaustedError`.
+6. `app/utils.py:34` raises `BaseException` (or re-raises typed); `type: ignore[misc]` removed.
+7. `docs/adr/004-observability-stack.md` documents `/metrics` JWT exemption with network-layer mitigation note.
+8. `docs/adr/003-rbac-design.md §Consequences` documents RS256 deferral and closes P1-1.
+9. `docs/ARCHITECTURE.md §2.1` and `§2.2` reflect all Phase 10–11 deliverables.
+10. `docs/data-map.md §3` contains `auth_ratelimit:{email_hash}` row with global-scope rationale.
+11. `pytest tests/ -q` passes with 0 failures.
+12. `ruff check app/ tests/ scripts/` — zero errors.
+
+---
+
+### SVC-4 · Extract WebhookService and ApprovalService
+
+**Owner:** Codex
+**Priority:** P2 (ARCH-9)
+**Depends-on:** SVC-1, SVC-2, SVC-3
+**Status:** pending
+
+**Scope:**
+`/webhook` and `/approve` handlers in `app/main.py` (lines 255-366) contain orchestration logic
+that violates the router-as-thin-adapter principle established by SVC-1/SVC-2.
+
+**Files to CREATE:**
+- `app/services/webhook_service.py` — `WebhookService` with methods: `resolve_tenant()`, `check_dedup()`, `validate_payload()`; OTel span + Prometheus counter per method; no HTTPException imports
+- `app/services/approval_service.py` — `ApprovalService` with methods: `verify_hmac()`, `get_tenant()`, `dispatch_approve()`; OTel span + Prometheus counter per method; no HTTPException imports
+- `tests/test_webhook_service.py` — unit tests for `WebhookService` (mocked DB/Redis)
+- `tests/test_approval_service.py` — unit tests for `ApprovalService` (mocked DB)
+
+**Files to MODIFY:**
+- `app/main.py` — `/webhook` and `/approve` handlers delegate to `WebhookService` and `ApprovalService`; handlers contain only HTTP boundary code (HTTPException, response construction)
+
+**Acceptance Criteria:**
+1. `app/services/webhook_service.py` and `app/services/approval_service.py` have zero `from fastapi import` statements.
+2. `/webhook` and `/approve` handlers contain no business logic — only call service methods and return HTTP responses.
+3. HMAC check in `/approve` is unit-testable without ASGI test client.
+4. `pytest tests/ -q` passes with 0 failures.
+5. `ruff check app/ tests/` — zero errors.
 
 ---
 
