@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,8 @@ from app.schemas import (
 )
 from app.utils import run_blocking
 
+
+UTC = timezone.utc
 
 class EventStore:
     """Persists events to SQLite and pipeline runs to Postgres when configured."""

@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -33,6 +34,8 @@ from app.schemas import (
     WebhookRequest,
 )
 from app.store import EventStore
+
+UTC = timezone.utc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.integration

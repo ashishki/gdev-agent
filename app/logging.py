@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import logging
 from contextvars import ContextVar, Token
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
 from typing import Any
+
+UTC = timezone.utc
 
 try:  # pragma: no cover - optional dependency in minimal local envs
     from opentelemetry.trace import (  # type: ignore[import-not-found]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import fakeredis
 import pytest
@@ -22,6 +22,8 @@ from app.schemas import (
 )
 from app.store import EventStore
 
+
+UTC = timezone.utc
 
 class FakeLLMClient:
     """Deterministic LLM client used for unit tests."""

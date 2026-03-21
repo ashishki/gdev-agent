@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import hashlib
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from app.db import _set_tenant_ctx
 from app.metrics import APPROVAL_QUEUE_DEPTH
 from app.schemas import PendingDecision
 from app.utils import run_blocking
+
+UTC = timezone.utc
 
 LOGGER = logging.getLogger(__name__)
 

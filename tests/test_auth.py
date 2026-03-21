@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -30,6 +31,8 @@ from app.services.auth_service import (
     RefreshTokenResult,
 )
 
+
+UTC = timezone.utc
 
 class _AsyncRedisStub:
     def __init__(self) -> None:

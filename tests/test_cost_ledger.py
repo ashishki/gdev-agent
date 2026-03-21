@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -28,6 +29,8 @@ from app.exceptions import BudgetError
 from app.llm_client import TriageResult
 from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
 from app.store import EventStore
+
+UTC = timezone.utc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.integration

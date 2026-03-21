@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4
@@ -18,6 +19,8 @@ from sqlalchemy import text
 
 from app.config import Settings
 from app.schemas import AuthTokenRequest, AuthTokenResponse, ErrorDetail, ErrorResponse
+
+UTC = timezone.utc
 
 LOGGER = logging.getLogger(__name__)
 _DUMMY_PASSWORD_HASH = b"$2b$12$u6v1GZz.C7Djv7x50j0fAe9s4qjIicqW0ShC0f9f0rYidlnxOS4qm"

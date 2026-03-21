@@ -8,7 +8,8 @@ import logging
 from decimal import Decimal
 import threading
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -55,6 +56,8 @@ from app.schemas import (
 from app.store import EventStore
 from app.tools import TOOL_REGISTRY
 from app.utils import run_blocking
+
+UTC = timezone.utc
 
 LOGGER = logging.getLogger(__name__)
 try:  # pragma: no cover - optional dependency in minimal local envs

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+UTC = timezone.utc
 from decimal import Decimal
 from pathlib import Path
 from typing import Any

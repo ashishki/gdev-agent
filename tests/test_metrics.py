@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from decimal import Decimal
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from uuid import uuid4
 
 import fakeredis
@@ -24,6 +25,8 @@ from app.schemas import (
 )
 from app.store import EventStore
 
+
+UTC = timezone.utc
 
 class _FakeLLMClient:
     def run_agent(

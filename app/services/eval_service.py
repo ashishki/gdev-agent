@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
 from pathlib import Path
 from time import perf_counter
 from typing import Literal
@@ -19,6 +20,8 @@ from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import _set_tenant_ctx
 from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
 from eval.runner import run_eval_job
+
+UTC = timezone.utc
 
 LOGGER = logging.getLogger(__name__)
 EVAL_SERVICE_CALLS_TOTAL = Counter(

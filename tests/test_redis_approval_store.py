@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from uuid import uuid4
 
 import fakeredis
@@ -12,6 +13,8 @@ import app.approval_store
 from app.approval_store import RedisApprovalStore
 from app.schemas import PendingDecision, ProposedAction
 
+
+UTC = timezone.utc
 
 def _pending(pid: str, expires_delta: int = 60) -> PendingDecision:
     return PendingDecision(

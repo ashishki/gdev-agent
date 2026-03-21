@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from uuid import uuid4
 
 import pytest
@@ -20,6 +21,8 @@ from app.services.auth_service import (
     RefreshTokenRequest,
 )
 
+
+UTC = timezone.utc
 
 @dataclass
 class _RecordedSpan:
