@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hmac
-import hashlib
 import logging
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import redis
 import redis.asyncio as aioredis
@@ -31,7 +29,7 @@ from app.exceptions import AgentError
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
 from app.jobs.rca_clusterer import RCAClusterer
-from app.logging import REQUEST_ID, clear_request_id, configure_logging, set_request_id
+from app.logging import clear_request_id, configure_logging, set_request_id
 from app.metrics import render_metrics
 from app.middleware.auth import JWTMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -49,6 +47,8 @@ from app.schemas import (
     WebhookRequest,
     WebhookResponse,
 )
+from app.services.approval_service import ApprovalService
+from app.services.webhook_service import WebhookService
 from app.secrets_store import WebhookSecretStore
 from app.store import EventStore
 from app.tenant_registry import TenantRegistry
@@ -211,6 +211,17 @@ async def lifespan(app: FastAPI):
         sheets_client=sheets_client,
         embedding_service=embedding_service,
     )
+    app.state.webhook_service = WebhookService(
+        agent=app.state.agent,
+        dedup=dedup_cache,
+        tracer=TRACER,
+        settings=settings,
+    )
+    app.state.approval_service = ApprovalService(
+        agent=app.state.agent,
+        settings=settings,
+        tracer=TRACER,
+    )
     app.state.rca_clusterer = rca_clusterer
     app.state.rca_scheduler = scheduler
     try:
@@ -252,98 +263,52 @@ def health() -> HealthResponse:
     return HealthResponse(app=app.state.settings.app_name)
 
 
+def _get_webhook_service() -> WebhookService:
+    settings = getattr(app.state, "settings", None)
+    if settings is None:
+        settings = getattr(getattr(app.state, "agent", None), "settings", None)
+    if settings is None:
+        settings = get_settings()
+    return getattr(
+        app.state,
+        "webhook_service",
+        WebhookService(
+            agent=app.state.agent,
+            dedup=app.state.dedup,
+            tracer=TRACER,
+            settings=settings,
+        ),
+    )
+
+
+def _get_approval_service() -> ApprovalService:
+    settings = getattr(app.state, "settings", None)
+    if settings is None:
+        settings = getattr(getattr(app.state, "agent", None), "settings", None)
+    if settings is None:
+        settings = get_settings()
+    return getattr(
+        app.state,
+        "approval_service",
+        ApprovalService(
+            agent=app.state.agent,
+            settings=settings,
+            tracer=TRACER,
+        ),
+    )
+
+
 @app.post("/webhook", response_model=WebhookResponse)
 def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
     """Main webhook endpoint used by n8n/Make."""
-    message_id = payload.message_id or uuid4().hex
-    cacheable = payload.message_id is not None
-
-    trace_context = None
     if OTEL_PROPAGATE is not None:
-        trace_context = OTEL_PROPAGATE.extract(dict(request.headers))
-    root_cm = (
-        TRACER.start_as_current_span("http.request", context=trace_context)
-        if TRACER is not None
-        else nullcontext()
-    )
-    with root_cm as root_span:
-        if root_span is not None:
-            root_span.set_attribute("http.method", "POST")
-            root_span.set_attribute("http.route", "/webhook")
-            root_span.set_attribute("request_id", REQUEST_ID.get() or "")
-        try:
-            request_tenant_id = getattr(request.state, "tenant_id", None)
-            resolved_tenant_id = request_tenant_id or payload.tenant_id
-            if not resolved_tenant_id:
-                raise HTTPException(status_code=400, detail="tenant_id is required")
-            try:
-                resolved_tenant_uuid = UUID(str(resolved_tenant_id))
-            except (ValueError, TypeError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="tenant_id must be a valid UUID"
-                ) from exc
-
-            if root_span is not None:
-                root_span.set_attribute(
-                    "tenant_id_hash",
-                    hashlib.sha256(
-                        str(resolved_tenant_uuid).encode("utf-8")
-                    ).hexdigest()[:16],
-                )
-
-            if request_tenant_id is not None:
-                payload_tenant_id = payload.tenant_id
-                if payload_tenant_id is not None and payload_tenant_id != str(
-                    request_tenant_id
-                ):
-                    raise HTTPException(status_code=401, detail="Unauthorized")
-            payload = payload.model_copy(
-                update={"tenant_id": str(resolved_tenant_uuid)}
-            )
-
-            dedup_cm = (
-                TRACER.start_as_current_span("middleware.dedup")
-                if TRACER is not None
-                else nullcontext()
-            )
-            with dedup_cm as dedup_span:
-                if dedup_span is not None:
-                    dedup_span.set_attribute("cacheable", cacheable)
-                if cacheable:
-                    cached = app.state.dedup.check(
-                        str(resolved_tenant_uuid), message_id
-                    )
-                    if dedup_span is not None:
-                        dedup_span.set_attribute("dedup.hit", cached is not None)
-                    if cached is not None:
-                        LOGGER.info(
-                            "dedup hit",
-                            extra={
-                                "event": "dedup_hit",
-                                "context": {"message_id": message_id},
-                            },
-                        )
-                        if root_span is not None:
-                            root_span.set_attribute("http.status_code", 200)
-                        return WebhookResponse.model_validate_json(cached)
-
-            response = app.state.agent.process_webhook(payload, message_id=message_id)
-
-            if cacheable:
-                app.state.dedup.set(
-                    str(resolved_tenant_uuid), message_id, response.model_dump_json()
-                )
-            if root_span is not None:
-                root_span.set_attribute("http.status_code", 200)
-            return response
-        except AgentError as exc:
-            if root_span is not None:
-                root_span.set_attribute("http.status_code", exc.status_code)
+        request.state.trace_context = OTEL_PROPAGATE.extract(dict(request.headers))
+    try:
+        return _get_webhook_service().handle(payload, request)
+    except AgentError as exc:
+        if exc.__class__ is not AgentError:
             raise
-        except HTTPException as exc:
-            if root_span is not None:
-                root_span.set_attribute("http.status_code", exc.status_code)
-            raise
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.post("/approve", response_model=ApproveResponse)
@@ -353,17 +318,20 @@ def approve(
     _: None = require_role("support_agent", "tenant_admin"),
 ) -> ApproveResponse:
     """Approve or reject a pending action."""
-    provided = request.headers.get("X-Approve-Secret", "")
-    if app.state.settings.approve_secret and not hmac.compare_digest(
-        app.state.settings.approve_secret, provided
-    ):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    jwt_tenant_id = None
-    if hasattr(request, "state"):
-        tenant_id = getattr(request.state, "tenant_id", None)
-        if tenant_id is not None:
-            jwt_tenant_id = str(tenant_id)
-    return app.state.agent.approve(payload, jwt_tenant_id=jwt_tenant_id)
+    request_state = getattr(request, "state", None)
+    jwt_tenant_id = (
+        str(request_state.tenant_id)
+        if getattr(request_state, "tenant_id", None)
+        else None
+    )
+    try:
+        return _get_approval_service().handle(
+            payload,
+            jwt_tenant_id=jwt_tenant_id,
+            approve_secret_header=request.headers.get("X-Approve-Secret"),
+        )
+    except AgentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.get("/metrics")
