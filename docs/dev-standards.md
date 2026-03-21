@@ -257,6 +257,49 @@ Never make real Anthropic API calls in tests. The eval harness is the only place
 - Sleep for more than 100 ms.
 - Use `time.sleep()`. Use `pytest-anyio` timeouts.
 
+### 4.7 CI Must Be Set Up in Phase 1
+
+**Rule:** The GitHub Actions CI workflow (`.github/workflows/ci.yml`) must be created in Phase 1 of any project — at the same time as the first tests are written. It must not be deferred to a later phase.
+
+**Required CI steps (minimum):**
+1. Install dependencies
+2. Lint (`ruff check`)
+3. Format check (`ruff format --check`)
+4. Run tests (`pytest -q`)
+
+**Why Phase 1, not later:**
+
+- If CI is added in Phase 12 (as happened in this project), 12 phases of commits have never been automatically verified. The badge in README is a lie. Errors accumulate silently.
+- CI catches baseline drift: every commit that breaks a test is flagged immediately, not 3 months later.
+- CI establishes the "green baseline" discipline from day one. Engineers cannot merge if tests fail.
+- Setting up CI takes < 30 minutes. The cost of not having it is measured in hours of debugging regressions that a single CI run would have caught.
+
+**Template (copy this into new projects — adjust service images as needed):**
+
+```yaml
+name: CI
+on:
+  push:
+    branches: ["master", "main"]
+  pull_request:
+    branches: ["master", "main"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - run: pip install -r requirements-dev.txt -e .
+      - run: ruff check app/ tests/
+      - run: ruff format --check app/ tests/
+      - run: pytest tests/ -q --tb=short
+```
+
+**Note on dependency install:** Use `pip install -r requirements-dev.txt -e .`, not `pip install -e ".[dev]"`. The latter requires `extras_require` in `setup.cfg` / `pyproject.toml`. If those are absent, CI silently installs only the base package and fails mysteriously.
+
 ---
 
 ## 5. Migration Discipline
