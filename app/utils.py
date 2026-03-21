@@ -31,4 +31,6 @@ def run_blocking(coroutine: Coroutine[Any, Any, T]) -> T:
     thread.join()
     if ok:
         return cast(T, data)
-    raise data  # type: ignore[misc]
+    if isinstance(data, BaseException):
+        raise data
+    raise RuntimeError("run_blocking thread returned a non-exception error payload")
