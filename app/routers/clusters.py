@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from time import perf_counter
-from typing import Literal
 from datetime import datetime
 from uuid import UUID
 
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.dependencies import require_role
+from app.tracing import get_tracer
 from app.schemas import (
     ClusterDetailItem,
     ClusterDetailResponse,
@@ -28,31 +28,7 @@ from app.schemas import (
 )
 
 router = APIRouter()
-
-try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry import trace  # type: ignore[import-not-found]
-
-    TRACER = trace.get_tracer(__name__)
-except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
-
-    class _NoopSpan:
-        def __enter__(self) -> "_NoopSpan":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
-            return False
-
-        def set_attribute(self, _name: str, _value: object) -> None:
-            return None
-
-        def record_exception(self, _exc: BaseException) -> None:
-            return None
-
-    class _NoopTracer:
-        def start_as_current_span(self, _name: str) -> _NoopSpan:
-            return _NoopSpan()
-
-    TRACER = _NoopTracer()
+TRACER = get_tracer(__name__)
 
 CLUSTER_TICKETS_REQUESTS_TOTAL = Counter(
     "gdev_cluster_tickets_requests_total",

@@ -5,39 +5,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any, Literal
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
+from app.tracing import get_tracer
 
 LOGGER = logging.getLogger(__name__)
-try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry import trace  # type: ignore[import-not-found]
-
-    TRACER = trace.get_tracer(__name__)
-except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
-
-    class _NoopSpan:
-        def __enter__(self) -> "_NoopSpan":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
-            return False
-
-        def set_attribute(self, _name: str, _value: object) -> None:
-            return None
-
-        def record_exception(self, _exc: BaseException) -> None:
-            return None
-
-    class _NoopTracer:
-        def start_as_current_span(self, _name: str, **_kwargs: Any) -> _NoopSpan:
-            return _NoopSpan()
-
-    TRACER = _NoopTracer()
+TRACER = get_tracer(__name__)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

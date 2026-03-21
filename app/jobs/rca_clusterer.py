@@ -10,7 +10,7 @@ import math
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Literal, cast
+from typing import cast
 from uuid import UUID, uuid5
 
 from sqlalchemy import bindparam, text
@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import Settings
 from app.db import _set_tenant_ctx
+from app.tracing import get_tracer
 from app.llm_client import LLMClient
 from app.metrics import (
     RCA_CLUSTERS_ACTIVE,
@@ -32,30 +33,7 @@ from app.metrics import (
 )
 
 LOGGER = logging.getLogger(__name__)
-try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry import trace  # type: ignore[import-not-found]
-
-    TRACER = trace.get_tracer(__name__)
-except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
-
-    class _NoopSpan:
-        def __enter__(self) -> "_NoopSpan":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
-            return False
-
-        def set_attribute(self, _name: str, _value: object) -> None:
-            return None
-
-        def record_exception(self, _exc: BaseException) -> None:
-            return None
-
-    class _NoopTracer:
-        def start_as_current_span(self, _name: str) -> _NoopSpan:
-            return _NoopSpan()
-
-    TRACER = _NoopTracer()
+TRACER = get_tracer(__name__)
 
 _RCA_CLUSTER_NAMESPACE = UUID("9f0fd1bc-5310-4ae3-a721-68d1327ec244")
 UTC = timezone.utc

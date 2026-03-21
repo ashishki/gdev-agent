@@ -9,7 +9,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import ValidationError
 from tenacity import (
@@ -22,6 +22,7 @@ from tenacity import (
 
 from app.config import Settings
 from app.metrics import LLM_DURATION_SECONDS, LLM_REQUESTS_TOTAL, LLM_RETRY_TOTAL
+from app.tracing import get_tracer
 from app.schemas import (
     ClassificationResult,
     ClassifyToolResult,
@@ -30,30 +31,7 @@ from app.schemas import (
 )
 
 LOGGER = logging.getLogger(__name__)
-try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry import trace  # type: ignore[import-not-found]
-
-    TRACER = trace.get_tracer(__name__)
-except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
-
-    class _NoopSpan:
-        def __enter__(self) -> "_NoopSpan":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
-            return False
-
-        def set_attribute(self, _name: str, _value: object) -> None:
-            return None
-
-        def record_exception(self, _exc: BaseException) -> None:
-            return None
-
-    class _NoopTracer:
-        def start_as_current_span(self, _name: str, **_kwargs: Any) -> _NoopSpan:
-            return _NoopSpan()
-
-    TRACER = _NoopTracer()
+TRACER = get_tracer(__name__)
 
 SYSTEM_PROMPT = (
     "You are a game support triage assistant. "

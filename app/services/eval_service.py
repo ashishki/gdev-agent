@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 from pathlib import Path
 from time import perf_counter
-from typing import Literal
 from uuid import UUID, uuid4
 
 from prometheus_client import Counter, Histogram
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import _set_tenant_ctx
 from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
+from app.tracing import get_tracer
 from eval.runner import run_eval_job
 
 UTC = timezone.utc
@@ -34,31 +34,7 @@ EVAL_SERVICE_DURATION_SECONDS = Histogram(
     "Eval service method latency",
     ["method"],
 )
-
-try:  # pragma: no cover - optional dependency in minimal local envs
-    from opentelemetry import trace  # type: ignore[import-not-found]
-
-    TRACER = trace.get_tracer(__name__)
-except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
-
-    class _NoopSpan:
-        def __enter__(self) -> "_NoopSpan":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
-            return False
-
-        def set_attribute(self, _name: str, _value: object) -> None:
-            return None
-
-        def record_exception(self, _exc: BaseException) -> None:
-            return None
-
-    class _NoopTracer:
-        def start_as_current_span(self, _name: str) -> _NoopSpan:
-            return _NoopSpan()
-
-    TRACER = _NoopTracer()
+TRACER = get_tracer(__name__)
 
 
 class InvalidCursorError(ValueError):

@@ -7,6 +7,8 @@ import logging
 from contextlib import nullcontext
 from time import perf_counter
 from typing import Literal, Protocol
+
+from app.tracing import NoopSpan, NoopTracer
 from uuid import UUID, uuid4
 
 from prometheus_client import Counter, Histogram
@@ -57,23 +59,6 @@ class _DedupProtocol(Protocol):
     def set(self, tenant_id: str, message_id: str, body: str) -> object: ...
 
 
-class _NoopSpan:
-    def __enter__(self) -> "_NoopSpan":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> Literal[False]:  # noqa: ANN001
-        return False
-
-    def set_attribute(self, _name: str, _value: object) -> None:
-        return None
-
-    def record_exception(self, _exc: BaseException) -> None:
-        return None
-
-
-class _NoopTracer:
-    def start_as_current_span(self, _name: str, **_kwargs: object) -> _NoopSpan:
-        return _NoopSpan()
 
 
 def _sha256_short(value: str) -> str:
@@ -92,7 +77,7 @@ class WebhookService:
     ) -> None:
         self._agent = agent
         self._dedup = dedup
-        self._tracer = tracer or _NoopTracer()
+        self._tracer = tracer or NoopTracer()
         self._settings = settings
 
     def handle(self, payload: WebhookRequest, request) -> WebhookResponse:  # noqa: ANN001
@@ -264,7 +249,7 @@ class WebhookService:
         span_cm = (
             self._tracer.start_as_current_span("middleware.dedup")
             if cacheable
-            else nullcontext(_NoopSpan())
+            else nullcontext(NoopSpan())
         )
         with span_cm as span:
             span.set_attribute("cacheable", cacheable)

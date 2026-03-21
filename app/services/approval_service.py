@@ -8,6 +8,8 @@ import logging
 from time import perf_counter
 from typing import Literal, Protocol
 
+from app.tracing import NoopTracer
+
 from prometheus_client import Counter, Histogram
 
 from app.config import Settings
@@ -49,25 +51,6 @@ class _AgentProtocol(Protocol):
     ) -> ApproveResponse: ...
 
 
-class _NoopSpan:
-    def __enter__(self) -> "_NoopSpan":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> Literal[False]:  # noqa: ANN001
-        return False
-
-    def set_attribute(self, _name: str, _value: object) -> None:
-        return None
-
-    def record_exception(self, _exc: BaseException) -> None:
-        return None
-
-
-class _NoopTracer:
-    def start_as_current_span(self, _name: str, **_kwargs: object) -> _NoopSpan:
-        return _NoopSpan()
-
-
 def _sha256_short(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
@@ -80,7 +63,7 @@ class ApprovalService:
     ) -> None:
         self._agent = agent
         self._settings = settings
-        self._tracer = tracer or _NoopTracer()
+        self._tracer = tracer or NoopTracer()
 
     def handle(
         self,
