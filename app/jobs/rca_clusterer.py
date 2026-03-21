@@ -273,6 +273,7 @@ class RCAClusterer:
                         .all()
                     )
             except Exception:
+                LOGGER.warning("ANN fallback failed", exc_info=True)
                 async with session.begin():
                     await _set_tenant_ctx(session, tenant_id)
                     rows = (

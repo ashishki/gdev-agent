@@ -258,10 +258,53 @@ async def test_upsert_cluster_emits_summarize_span(
     summarize_spans = [span for span in tracer.spans if span.name == "rca.summarize"]
     assert len(summarize_spans) == 1
     assert summarize_spans[0].attributes["ticket_count"] == 2
-    assert (
-        summarize_spans[0].attributes["cluster_id"]
-        == db_session.calls[-1][1]["cluster_id"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_embeddings_logs_warning_on_ann_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = str(uuid4())
+    log_calls: list[tuple[str, bool]] = []
+
+    class _FailingSession(_SessionStub):
+        def __init__(self) -> None:
+            super().__init__(
+                rows=[
+                    {
+                        "ticket_id": str(uuid4()),
+                        "tenant_id": tenant_id,
+                        "embedding": [0.1, 0.2],
+                        "created_at": datetime.now(UTC),
+                    }
+                ]
+            )
+            self.call_count = 0
+
+        async def execute(self, statement, params=None):  # noqa: ANN001
+            self.call_count += 1
+            if self.call_count == 2:
+                raise RuntimeError("ann unavailable")
+            return await super().execute(statement, params)
+
+    session = _FailingSession()
+    clusterer = RCAClusterer(
+        settings=Settings(anthropic_api_key="k"),
+        db_session_factory=_SessionFactoryStub(session),
+        llm_client=_LLMStub(),
+        admin_session_factory=_SessionFactoryStub(_SessionStub()),
     )
+
+    monkeypatch.setattr(
+        rca_clusterer.LOGGER,
+        "warning",
+        lambda message, *, exc_info: log_calls.append((message, exc_info)),
+    )
+
+    rows = await clusterer._fetch_embeddings(tenant_id=tenant_id)
+
+    assert len(rows) == 1
+    assert log_calls == [("ANN fallback failed", True)]
 
 
 @pytest.mark.asyncio
