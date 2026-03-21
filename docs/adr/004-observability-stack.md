@@ -134,3 +134,9 @@ gdev_budget_utilization_ratio{tenant}  (gauge, 0.0–1.0)
 - Cardinality risk: `tenant_id` label on all metrics. Cap at 100 tenants for Prometheus.
   Beyond that, use metric aggregation or migrate to AMP.
 - OpenTelemetry Python SDK adds ≈20 MB to dependencies. Acceptable.
+
+## Security Note
+
+`GET /metrics` is exempt from JWT middleware because Prometheus uses an unauthenticated pull
+model. Mitigation: restrict reachability at the network layer only (for example Docker bridge
+scope in development and VPC security groups or internal load balancers in production).

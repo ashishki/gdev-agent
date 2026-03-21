@@ -66,6 +66,10 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Eval API endpoints | `app/routers/eval.py` | ✅ Implemented |
 | Eval runner + persistence | `eval/runner.py`, `app/services/eval_service.py` | ✅ Implemented |
 | RCA clusterer background job | `app/jobs/rca_clusterer.py` | ✅ Implemented |
+| Admin CLI for tenant/budget/RCA operations | `scripts/cli.py` | ✅ CLI-1 (Phase 10) |
+| Workflow operations guide | `docs/WORKFLOW.md` | ✅ PORT-2 (Phase 11) |
+| Demo harness | `scripts/demo.py` | ✅ PORT-3 (Phase 11) |
+| MCP server evaluation ADR | `docs/adr/006-mcp-server-evaluation.md` | ✅ PORT-4 (Phase 11) |
 | Eval dataset (25 cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
@@ -124,6 +128,9 @@ gdev-agent/
 ├── eval/
 │   ├── runner.py            # run_eval(): accuracy + per-label + guard_block_rate
 │   └── cases.jsonl          # 25 labelled test cases
+├── scripts/
+│   ├── cli.py               # Admin CLI for tenant, budget, and RCA operations
+│   └── demo.py              # Local/demo runner for end-to-end showcase flows
 ├── tests/                   # 17 test modules (fakeredis, httpx mocks, testcontainers)
 ├── n8n/
 │   ├── workflow_triage.json
@@ -132,6 +139,8 @@ gdev-agent/
 ├── docs/
 │   ├── ARCHITECTURE.md      # this file
 │   ├── N8N.md               # n8n workflow blueprint and integration contract
+│   ├── WORKFLOW.md          # Operations workflow and demo runbook
+│   ├── adr/006-mcp-server-evaluation.md  # MCP deployment/evaluation decision record
 │   ├── tasks.md             # task graph and phase queue (active work)
 │   └── archive/PLAN_v3.md   # delivered history (archived)
 ├── Dockerfile

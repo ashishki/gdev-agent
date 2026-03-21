@@ -177,6 +177,7 @@ All keys are namespaced by `{tenant_id}` to prevent cross-tenant collision.
 | `{tenant_id}:pending:{pending_id}` | STRING (JSON) | `APPROVAL_TTL_SECONDS` | Serialized `PendingDecision` |
 | `tenant:{tenant_id}:config` | STRING (JSON) | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
 | `jwt:blocklist:{jti}` | STRING | Token expiry | `"1"` (revoked flag) |
+| `auth_ratelimit:{email_hash}` | STRING | 60 s | Login attempt counter. Global scope by design, so it intentionally omits a tenant prefix and rate-limits the same email hash across all tenants. |
 
 ---
 

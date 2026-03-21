@@ -125,3 +125,5 @@ Postgres (RLS)
   a tenant. Deferred to v2.
 - HS256 key rotation requires coordinated `JWT_SECRET` rollout across token issuer and verifier.
   Rotation window and emergency rotation procedure are documented in ops runbooks.
+- RS256 with a JWKS endpoint is deferred to v2. HS256 remains the accepted v1 signing algorithm
+  for this ADR, which supersedes the former P1-1 review concern.
