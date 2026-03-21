@@ -46,7 +46,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -r requirements-dev.txt -e .
 
       - name: Lint (ruff)
         run: ruff check app/ tests/ scripts/ eval/
