@@ -180,3 +180,23 @@ def test_handle_surfaces_agent_error() -> None:
 
     assert exc.value.status_code == 422
     assert exc.value.detail == "bad agent"
+
+
+def test_handle_uses_request_tenant_when_payload_has_none() -> None:
+    """Request-state tenant_id is used when payload omits tenant_id."""
+    request_tenant_id = str(uuid4())
+    response = _response()
+    calls: list[WebhookRequest] = []
+
+    agent = SimpleNamespace(
+        process_webhook=lambda payload, message_id=None: calls.append(payload) or response
+    )
+    service = WebhookService(agent, _DedupStub(), _TracerStub(), Settings(anthropic_api_key="k"))
+
+    result = service.handle(
+        WebhookRequest(text="hello", message_id="msg-r"),
+        _request(request_tenant_id),
+    )
+
+    assert result == response
+    assert calls[0].tenant_id == request_tenant_id

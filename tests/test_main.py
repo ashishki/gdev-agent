@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI
-from fastapi import HTTPException
 
 from app import main
 from app.config import Settings
@@ -105,21 +104,18 @@ def test_approve_rejects_when_secret_missing_or_wrong() -> None:
     )
     payload = ApproveRequest(pending_id="p1", approved=True)
 
-    try:
-        main.approve(payload, request=SimpleNamespace(headers={}))
-        assert False, "Expected HTTPException for missing X-Approve-Secret"
-    except HTTPException as exc:
-        assert exc.status_code == 401
-        assert exc.detail == "Unauthorized"
+    with pytest.raises(AgentError) as exc:
+        main.approve(payload, request=SimpleNamespace(headers={}, state=SimpleNamespace()))
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Unauthorized"
 
-    try:
+    with pytest.raises(AgentError) as exc:
         main.approve(
-            payload, request=SimpleNamespace(headers={"X-Approve-Secret": "wrong"})
+            payload,
+            request=SimpleNamespace(headers={"X-Approve-Secret": "wrong"}, state=SimpleNamespace()),
         )
-        assert False, "Expected HTTPException for invalid X-Approve-Secret"
-    except HTTPException as exc:
-        assert exc.status_code == 401
-        assert exc.detail == "Unauthorized"
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Unauthorized"
 
 
 def test_approve_allows_when_secret_matches() -> None:
@@ -163,7 +159,7 @@ def test_webhook_rejects_missing_tenant_id() -> None:
         process_webhook=lambda *_args, **_kwargs: None
     )
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AgentError) as exc:
         main.webhook(
             WebhookRequest(text="hello"),
             request=SimpleNamespace(state=SimpleNamespace()),
@@ -179,7 +175,7 @@ def test_webhook_rejects_non_uuid_tenant_id() -> None:
         process_webhook=lambda *_args, **_kwargs: None
     )
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AgentError) as exc:
         main.webhook(
             WebhookRequest(text="hello", tenant_id="not-a-uuid"),
             request=SimpleNamespace(state=SimpleNamespace()),

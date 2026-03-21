@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import redis
 import redis.asyncio as aioredis
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -303,12 +303,7 @@ def webhook(payload: WebhookRequest, request: Request) -> WebhookResponse:
     """Main webhook endpoint used by n8n/Make."""
     if OTEL_PROPAGATE is not None:
         request.state.trace_context = OTEL_PROPAGATE.extract(dict(request.headers))
-    try:
-        return _get_webhook_service().handle(payload, request)
-    except AgentError as exc:
-        if exc.__class__ is not AgentError:
-            raise
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return _get_webhook_service().handle(payload, request)
 
 
 @app.post("/approve", response_model=ApproveResponse)
@@ -324,14 +319,11 @@ def approve(
         if getattr(request_state, "tenant_id", None)
         else None
     )
-    try:
-        return _get_approval_service().handle(
-            payload,
-            jwt_tenant_id=jwt_tenant_id,
-            approve_secret_header=request.headers.get("X-Approve-Secret"),
-        )
-    except AgentError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return _get_approval_service().handle(
+        payload,
+        jwt_tenant_id=jwt_tenant_id,
+        approve_secret_header=request.headers.get("X-Approve-Secret"),
+    )
 
 
 @app.get("/metrics")
