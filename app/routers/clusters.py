@@ -64,6 +64,26 @@ CLUSTER_TICKETS_DURATION_SECONDS = Histogram(
     "Cluster ticket list request latency",
     ["tenant_hash"],
 )
+CLUSTER_LIST_REQUESTS_TOTAL = Counter(
+    "gdev_cluster_list_requests_total",
+    "Cluster list requests by outcome",
+    ["tenant_hash", "outcome"],
+)
+CLUSTER_LIST_DURATION_SECONDS = Histogram(
+    "gdev_cluster_list_duration_seconds",
+    "Cluster list request latency",
+    ["tenant_hash"],
+)
+CLUSTER_DETAIL_REQUESTS_TOTAL = Counter(
+    "gdev_cluster_detail_requests_total",
+    "Cluster detail requests by outcome",
+    ["tenant_hash", "outcome"],
+)
+CLUSTER_DETAIL_DURATION_SECONDS = Histogram(
+    "gdev_cluster_detail_duration_seconds",
+    "Cluster detail request latency",
+    ["tenant_hash"],
+)
 
 
 def _sha256_short(value: str) -> str:
@@ -104,52 +124,76 @@ async def list_clusters(
     _: None = require_role("viewer", "support_agent", "tenant_admin"),
 ) -> ClusterListResponse | JSONResponse:
     """List RCA clusters for current tenant."""
-    parsed_cursor = _parse_cursor(cursor)
-    if isinstance(parsed_cursor, JSONResponse):
-        return parsed_cursor
+    tenant_id = str(request.state.tenant_id)
+    tenant_hash = _sha256_short(tenant_id)
+    started_at = perf_counter()
 
-    params: dict[str, object] = {
-        "tenant_id": str(request.state.tenant_id),
-        "limit": limit + 1,
-        "is_active": is_active,
-        "severity": severity,
-        "cursor": parsed_cursor,
-    }
-    rows = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT
-                    cluster_id,
-                    label,
-                    summary,
-                    ticket_count,
-                    severity,
-                    first_seen,
-                    last_seen,
-                    is_active,
-                    updated_at
-                FROM cluster_summaries
-                WHERE tenant_id = :tenant_id
-                  AND (:is_active IS NULL OR is_active = :is_active)
-                  AND (:severity IS NULL OR severity = :severity)
-                  AND (:cursor IS NULL OR updated_at < :cursor)
-                ORDER BY updated_at DESC
-                LIMIT :limit
-                """
-                ),
-                params,
+    with TRACER.start_as_current_span("router.clusters.list_clusters") as span:
+        span.set_attribute("tenant_id_hash", tenant_hash)
+        span.set_attribute("limit", limit)
+        try:
+            parsed_cursor = _parse_cursor(cursor)
+            if isinstance(parsed_cursor, JSONResponse):
+                CLUSTER_LIST_REQUESTS_TOTAL.labels(
+                    tenant_hash=tenant_hash, outcome="invalid_cursor"
+                ).inc()
+                return parsed_cursor
+
+            params: dict[str, object] = {
+                "tenant_id": tenant_id,
+                "limit": limit + 1,
+                "is_active": is_active,
+                "severity": severity,
+                "cursor": parsed_cursor,
+            }
+            rows = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                        SELECT
+                            cluster_id,
+                            label,
+                            summary,
+                            ticket_count,
+                            severity,
+                            first_seen,
+                            last_seen,
+                            is_active,
+                            updated_at
+                        FROM cluster_summaries
+                        WHERE tenant_id = :tenant_id
+                          AND (:is_active IS NULL OR is_active = :is_active)
+                          AND (:severity IS NULL OR severity = :severity)
+                          AND (:cursor IS NULL OR updated_at < :cursor)
+                        ORDER BY updated_at DESC
+                        LIMIT :limit
+                        """
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .all()
             )
-        )
-        .mappings()
-        .all()
-    )
 
-    page_rows = rows[:limit]
-    data = [ClusterListItem.model_validate(dict(row)) for row in page_rows]
-    next_cursor = data[-1].updated_at.isoformat() if len(rows) > limit else None
-    return ClusterListResponse(data=data, cursor=next_cursor, total=None)
+            page_rows = rows[:limit]
+            data = [ClusterListItem.model_validate(dict(row)) for row in page_rows]
+            next_cursor = data[-1].updated_at.isoformat() if len(rows) > limit else None
+            CLUSTER_LIST_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="success"
+            ).inc()
+            return ClusterListResponse(data=data, cursor=next_cursor, total=None)
+        except Exception as exc:
+            CLUSTER_LIST_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="error"
+            ).inc()
+            span.record_exception(exc)
+            raise
+        finally:
+            CLUSTER_LIST_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
+                perf_counter() - started_at
+            )
 
 
 @router.get("/clusters/{cluster_id}", response_model=ClusterDetailResponse)
@@ -160,69 +204,93 @@ async def get_cluster(
     _: None = require_role("viewer", "support_agent", "tenant_admin"),
 ) -> ClusterDetailResponse | JSONResponse:
     """Fetch cluster details plus up to 10 member ticket IDs."""
-    row = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT
-                    cluster_id,
-                    label,
-                    summary,
-                    ticket_count,
-                    severity,
-                    first_seen,
-                    last_seen,
-                    is_active,
-                    updated_at
-                FROM cluster_summaries
-                WHERE cluster_id = :cluster_id AND tenant_id = :tenant_id
-                LIMIT 1
-                """
-                ),
-                {
-                    "cluster_id": str(cluster_id),
-                    "tenant_id": str(request.state.tenant_id),
-                },
-            )
-        )
-        .mappings()
-        .first()
-    )
-    if row is None:
-        return JSONResponse(
-            status_code=404,
-            content=ErrorResponse(
-                error=ErrorDetail(
-                    code="cluster_not_found",
-                    message="Cluster not found",
-                )
-            ).model_dump(mode="json"),
-        )
+    tenant_id = str(request.state.tenant_id)
+    tenant_hash = _sha256_short(tenant_id)
+    started_at = perf_counter()
 
-    ticket_rows = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT ticket_id
-                FROM rca_cluster_members
-                WHERE cluster_id = :cluster_id
-                ORDER BY created_at DESC, ticket_id DESC
-                LIMIT 10
-                """
-                ),
-                {"cluster_id": str(cluster_id)},
+    with TRACER.start_as_current_span("router.clusters.get_cluster") as span:
+        span.set_attribute("tenant_id_hash", tenant_hash)
+        span.set_attribute("cluster_id", str(cluster_id))
+        try:
+            row = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                        SELECT
+                            cluster_id,
+                            label,
+                            summary,
+                            ticket_count,
+                            severity,
+                            first_seen,
+                            last_seen,
+                            is_active,
+                            updated_at
+                        FROM cluster_summaries
+                        WHERE cluster_id = :cluster_id AND tenant_id = :tenant_id
+                        LIMIT 1
+                        """
+                        ),
+                        {
+                            "cluster_id": str(cluster_id),
+                            "tenant_id": tenant_id,
+                        },
+                    )
+                )
+                .mappings()
+                .first()
             )
-        )
-        .mappings()
-        .all()
-    )
-    detail = dict(row)
-    detail["ticket_ids"] = [item["ticket_id"] for item in ticket_rows[:10]]
-    return ClusterDetailResponse(
-        data=[ClusterDetailItem.model_validate(detail)], cursor=None, total=None
-    )
+            if row is None:
+                CLUSTER_DETAIL_REQUESTS_TOTAL.labels(
+                    tenant_hash=tenant_hash, outcome="not_found"
+                ).inc()
+                return JSONResponse(
+                    status_code=404,
+                    content=ErrorResponse(
+                        error=ErrorDetail(
+                            code="cluster_not_found",
+                            message="Cluster not found",
+                        )
+                    ).model_dump(mode="json"),
+                )
+
+            ticket_rows = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                        SELECT ticket_id
+                        FROM rca_cluster_members
+                        WHERE cluster_id = :cluster_id
+                        ORDER BY created_at DESC, ticket_id DESC
+                        LIMIT 10
+                        """
+                        ),
+                        {"cluster_id": str(cluster_id)},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            detail = dict(row)
+            detail["ticket_ids"] = [item["ticket_id"] for item in ticket_rows[:10]]
+            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="success"
+            ).inc()
+            return ClusterDetailResponse(
+                data=[ClusterDetailItem.model_validate(detail)], cursor=None, total=None
+            )
+        except Exception as exc:
+            CLUSTER_DETAIL_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="error"
+            ).inc()
+            span.record_exception(exc)
+            raise
+        finally:
+            CLUSTER_DETAIL_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
+                perf_counter() - started_at
+            )
 
 
 @router.get("/clusters/{cluster_id}/tickets", response_model=ClusterTicketsResponse)

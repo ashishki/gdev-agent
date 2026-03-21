@@ -25,6 +25,58 @@ from app.services.auth_service import LogoutRequest, RefreshTokenRequest
 
 UTC = timezone.utc
 
+
+class _MetricChildStub:
+    def __init__(self) -> None:
+        self.increments: list[float] = []
+        self.observations: list[float] = []
+
+    def inc(self, value: float = 1.0) -> None:
+        self.increments.append(value)
+
+    def observe(self, value: float) -> None:
+        self.observations.append(value)
+
+
+class _MetricStub:
+    def __init__(self) -> None:
+        self.children: list[tuple[dict[str, object], _MetricChildStub]] = []
+
+    def labels(self, **labels: object) -> _MetricChildStub:
+        child = _MetricChildStub()
+        self.children.append((labels, child))
+        return child
+
+
+class _SpanStub:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.attributes: dict[str, object] = {}
+        self.exceptions: list[BaseException] = []
+
+    def __enter__(self) -> "_SpanStub":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def set_attribute(self, name: str, value: object) -> None:
+        self.attributes[name] = value
+
+    def record_exception(self, exc: BaseException) -> None:
+        self.exceptions.append(exc)
+
+
+class _TracerStub:
+    def __init__(self) -> None:
+        self.spans: list[_SpanStub] = []
+
+    def start_as_current_span(self, name: str) -> _SpanStub:
+        span = _SpanStub(name)
+        self.spans.append(span)
+        return span
+
+
 class _ResultStub:
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self._rows = rows
@@ -500,6 +552,52 @@ async def test_list_clusters_filters_active_and_severity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_clusters_emits_span_and_counter(monkeypatch) -> None:
+    from app.routers import clusters as clusters_module
+
+    tracer = _TracerStub()
+    counter = _MetricStub()
+    histogram = _MetricStub()
+    tenant_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SessionStub(
+        [
+            {
+                "cluster_id": uuid4(),
+                "label": "Payment timeout",
+                "summary": "Checkout failures",
+                "ticket_count": 5,
+                "severity": "high",
+                "first_seen": now - timedelta(hours=1),
+                "last_seen": now,
+                "is_active": True,
+                "updated_at": now,
+            }
+        ]
+    )
+
+    monkeypatch.setattr(clusters_module, "TRACER", tracer)
+    monkeypatch.setattr(clusters_module, "CLUSTER_LIST_REQUESTS_TOTAL", counter)
+    monkeypatch.setattr(clusters_module, "CLUSTER_LIST_DURATION_SECONDS", histogram)
+
+    response = await list_clusters(
+        request=_request(tenant_id),
+        cursor=None,
+        limit=50,
+        is_active=True,
+        severity="high",
+        db=session,
+    )
+
+    assert response.data[0].label == "Payment timeout"
+    assert tracer.spans[0].name == "router.clusters.list_clusters"
+    assert "tenant_id_hash" in tracer.spans[0].attributes
+    assert counter.children[0][0]["outcome"] == "success"
+    assert counter.children[0][1].increments == [1.0]
+    assert len(histogram.children[0][1].observations) == 1
+
+
+@pytest.mark.asyncio
 async def test_get_cluster_returns_ticket_ids_up_to_10() -> None:
     tenant_id = uuid4()
     cluster_id = uuid4()
@@ -531,6 +629,51 @@ async def test_get_cluster_returns_ticket_ids_up_to_10() -> None:
     assert str(response.data[0].cluster_id) == str(cluster_id)
     assert "FROM rca_cluster_members" in session.calls[1][0]
     assert "ticket_embeddings" not in session.calls[1][0]
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_emits_span_and_counter(monkeypatch) -> None:
+    from app.routers import clusters as clusters_module
+
+    tracer = _TracerStub()
+    counter = _MetricStub()
+    histogram = _MetricStub()
+    tenant_id = uuid4()
+    cluster_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SequencedSessionStub(
+        [
+            [
+                {
+                    "cluster_id": cluster_id,
+                    "label": "Payment timeout",
+                    "summary": "Checkout failures",
+                    "ticket_count": 12,
+                    "severity": "high",
+                    "first_seen": now - timedelta(hours=1),
+                    "last_seen": now,
+                    "is_active": True,
+                    "updated_at": now,
+                }
+            ],
+            [{"ticket_id": uuid4()}],
+        ]
+    )
+
+    monkeypatch.setattr(clusters_module, "TRACER", tracer)
+    monkeypatch.setattr(clusters_module, "CLUSTER_DETAIL_REQUESTS_TOTAL", counter)
+    monkeypatch.setattr(clusters_module, "CLUSTER_DETAIL_DURATION_SECONDS", histogram)
+
+    response = await get_cluster(
+        cluster_id=cluster_id, request=_request(tenant_id), db=session
+    )
+
+    assert str(response.data[0].cluster_id) == str(cluster_id)
+    assert tracer.spans[0].name == "router.clusters.get_cluster"
+    assert tracer.spans[0].attributes["cluster_id"] == str(cluster_id)
+    assert counter.children[0][0]["outcome"] == "success"
+    assert counter.children[0][1].increments == [1.0]
+    assert len(histogram.children[0][1].observations) == 1
 
 
 @pytest.mark.asyncio
