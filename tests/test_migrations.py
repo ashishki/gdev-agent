@@ -31,6 +31,7 @@ EXPECTED_TABLES = {
     "audit_log",
     "ticket_embeddings",
     "cluster_summaries",
+    "rca_cluster_members",
     "agent_configs",
     "cost_ledger",
     "eval_runs",
@@ -104,6 +105,33 @@ async def _column_exists(database_url: str, table_name: str, column_name: str) -
         await engine.dispose()
 
 
+async def _policy_uses_current_setting(database_url: str, table_name: str) -> bool:
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT qual
+                    FROM pg_policies
+                    WHERE schemaname = 'public'
+                      AND tablename = :table_name
+                    LIMIT 1
+                    """
+                ),
+                {"table_name": table_name},
+            )
+            row = result.first()
+            if row is None:
+                return False
+            return "current_setting('app.current_tenant_id'" in str(row[0]).lower()
+    finally:
+        await engine.dispose()
+
+
 def _docker_available() -> bool:
     """Return True if Docker daemon is reachable."""
     try:
@@ -129,6 +157,9 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     # Ensure a clean slate for the downgrade assertion
     command.downgrade(cfg, "base")
 
+    assert (
+        _root_dir() / "alembic" / "versions" / "0005_cluster_membership.py"
+    ).exists()
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
     assert EXPECTED_TABLES.issubset(upgraded), (
@@ -140,6 +171,10 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
         _column_exists(async_url, "tenant_users", "password_hash")
     )
     assert tenant_users_has_password_hash is True
+    membership_policy_uses_current_setting = asyncio.run(
+        _policy_uses_current_setting(async_url, "rca_cluster_members")
+    )
+    assert membership_policy_uses_current_setting is True
 
     command.downgrade(cfg, "base")
     downgraded = asyncio.run(_public_tables(async_url))

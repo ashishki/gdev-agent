@@ -8,8 +8,8 @@ import json
 import logging
 import math
 import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 from uuid import UUID, uuid5
 
@@ -58,6 +58,7 @@ except Exception:  # pragma: no cover - fallback when opentelemetry is unavailab
     TRACER = _NoopTracer()
 
 _RCA_CLUSTER_NAMESPACE = UUID("9f0fd1bc-5310-4ae3-a721-68d1327ec244")
+UTC = timezone.utc
 
 
 def _sha256_short(value: str) -> str:
@@ -397,6 +398,44 @@ class RCAClusterer:
                         "first_seen": first_seen,
                         "last_seen": last_seen,
                     },
+                )
+        await self._replace_cluster_members_admin(
+            cluster_id=cluster_id,
+            ticket_ids=ticket_ids,
+        )
+
+    async def _replace_cluster_members_admin(
+        self,
+        *,
+        cluster_id: str,
+        ticket_ids: list[str],
+    ) -> None:
+        if self._admin_session_factory is None:
+            return
+        async with self._admin_session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        """
+                        DELETE FROM rca_cluster_members
+                        WHERE cluster_id = :cluster_id
+                        """
+                    ),
+                    {"cluster_id": cluster_id},
+                )
+                if not ticket_ids:
+                    return
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO rca_cluster_members (cluster_id, ticket_id)
+                        VALUES (:cluster_id, :ticket_id)
+                        """
+                    ),
+                    [
+                        {"cluster_id": cluster_id, "ticket_id": ticket_id}
+                        for ticket_id in ticket_ids
+                    ],
                 )
 
     async def _fetch_raw_texts_admin(

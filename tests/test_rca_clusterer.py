@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -12,6 +12,7 @@ from app.config import Settings
 from app.jobs import rca_clusterer
 from app.jobs.rca_clusterer import RCAClusterer
 
+UTC = timezone.utc
 
 class _ResultStub:
     def __init__(self, rows: list[dict[str, object]]) -> None:
@@ -27,7 +28,7 @@ class _ResultStub:
 class _SessionStub:
     def __init__(self, rows: list[dict[str, object]] | None = None) -> None:
         self.rows = rows or []
-        self.calls: list[tuple[str, dict[str, object] | None]] = []
+        self.calls: list[tuple[str, object | None]] = []
 
     async def __aenter__(self) -> "_SessionStub":
         return self
@@ -199,13 +200,14 @@ async def test_upsert_cluster_calls_llm_and_writes_summary() -> None:
     db_session = _SessionStub()
     llm = _LLMStub(fail=False)
     tenant_id = str(uuid4())
+    admin_session = _SessionStub(
+        rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}]
+    )
     clusterer = RCAClusterer(
         settings=Settings(anthropic_api_key="k"),
         db_session_factory=_SessionFactoryStub(db_session),
         llm_client=llm,
-        admin_session_factory=_SessionFactoryStub(
-            _SessionStub(rows=[{"tenant_id": tenant_id, "raw_text": "payment failed"}])
-        ),
+        admin_session_factory=_SessionFactoryStub(admin_session),
     )
     await clusterer._upsert_cluster(
         tenant_id=tenant_id,
@@ -220,6 +222,10 @@ async def test_upsert_cluster_calls_llm_and_writes_summary() -> None:
     upsert_params = db_session.calls[-1][1]
     assert upsert_params is not None
     assert upsert_params["label"] == "Payment issue"
+    assert any(
+        "INSERT INTO rca_cluster_members" in statement
+        for statement, _ in admin_session.calls
+    )
 
 
 @pytest.mark.asyncio
