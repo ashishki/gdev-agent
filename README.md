@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![215 tests](https://img.shields.io/badge/tests-215%20passing-brightgreen)
 
 `gdev-agent` is a multi-tenant AI triage service for game-studio player support: it receives support webhooks, blocks unsafe input before any model call, classifies and extracts structured data with an LLM, routes risky actions into human approval, and records the resulting audit, cost, and analytics trail behind one HTTP API.
 
@@ -25,20 +25,21 @@ flowchart LR
     execute --> result[HTTP response + audit trail\nlogs, metrics, cost ledger]
 ```
 
-The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, pgvector-backed embeddings, service-layer auth/eval APIs, RCA clustering jobs, and an n8n integration path for orchestration and approvals. Architecture detail lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, pgvector-backed embeddings, a clean service layer (WebhookService, ApprovalService, AuthService, EvalService), RCA clustering jobs, and an n8n integration path for orchestration and approvals. Architecture detail lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Feature Snapshot
 
 | Area | What ships today |
 | --- | --- |
-| Ingress | `POST /webhook` entrypoint, per-tenant HMAC verification, request correlation, Redis-backed rate limiting |
+| Ingress | `POST /webhook` entrypoint with `WebhookService` (tenant resolution, dedup, OTel tracing); per-tenant HMAC verification, rate limiting |
 | AI pipeline | Claude `tool_use` classification and extraction, guarded draft generation, configurable auto-approve threshold |
-| Safety | Input injection guard, output secret scan, URL allowlist enforcement, approval workflow for risky actions |
+| Safety | Input injection guard, output secret scan, URL allowlist enforcement, approval workflow with `ApprovalService` (HMAC + cross-tenant enforcement) |
 | Execution | Tool registry for ticketing and reply actions, dedup cache for idempotent replays, pending approval storage with TTL |
-| Multi-tenancy | PostgreSQL schema managed by Alembic, tenant registry, per-tenant secrets, RLS on tenant-scoped tables |
-| Operations | Cost ledger, structured JSON logs, Prometheus metrics, OTLP tracing, Grafana/Loki/Tempo compose stack |
-| Analytics | Eval runner and eval API, RCA clustering job, cluster read endpoints, ticket/audit/cost read APIs |
-| Platform | Docker Compose stack with Postgres, Redis, agent, observability services, and n8n |
+| Multi-tenancy | PostgreSQL RLS on all tables (Alembic migrations), tenant registry, per-tenant encrypted secrets |
+| Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
+| Analytics | Eval runner with budget check, eval API, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
+| Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
+| Platform | Docker Compose full stack; 215 tests (unit + integration) passing; ruff-clean |
 
 ## Quick Start
 
@@ -185,4 +186,8 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 ## Current State
 
-The repository includes the multi-tenant storage foundation, JWT/RBAC boundary, approval hardening, eval APIs, auth service flows, embedding persistence, RCA clustering, Dockerized observability, and the n8n workflow artifacts needed for demo or pilot-style setups. The codebase is structured for external integrations, but the main value is the governed request pipeline: webhook in, guardrails first, LLM-assisted triage second, human approval where needed, and auditable execution throughout.
+The platform is feature-complete for a pilot deployment. It includes the multi-tenant storage foundation, JWT/RBAC boundary, approval hardening, eval APIs with budget enforcement, auth service flows, embedding persistence, RCA clustering with persisted cluster membership, full service-layer separation (no FastAPI imports in business logic), Dockerized observability, admin CLI, and the n8n workflow artifacts needed for demo or pilot-style setups.
+
+**215 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, and cluster membership persistence). All P0 and P1 findings from 13 review cycles have been resolved.
+
+The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.

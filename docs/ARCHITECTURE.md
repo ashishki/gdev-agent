@@ -62,7 +62,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Google Sheets async audit log | `app/integrations/sheets.py` | ✅ Implemented |
 | n8n workflow artifacts | `/n8n/` | ✅ Committed |
 | Docker Compose full stack | `docker-compose.yml` | ✅ Implemented |
-| Service layer (`AuthService`, `EvalService`) | `app/services/` | ✅ Implemented |
+| Service layer (`AuthService`, `EvalService`, `WebhookService`, `ApprovalService`) | `app/services/` | ✅ Implemented |
 | Eval API endpoints | `app/routers/eval.py` | ✅ Implemented |
 | Eval runner + persistence | `eval/runner.py`, `app/services/eval_service.py` | ✅ Implemented |
 | RCA clusterer background job | `app/jobs/rca_clusterer.py` | ✅ Implemented |
@@ -112,8 +112,10 @@ gdev-agent/
 │   │   ├── eval.py          # Eval API handlers; delegates to EvalService
 │   │   └── clusters.py      # RCA cluster read endpoints
 │   ├── services/
-│   │   ├── auth_service.py  # AuthService: login/logout/refresh token flows
-│   │   └── eval_service.py  # EvalService: queue/list/status eval runs
+│   │   ├── auth_service.py     # AuthService: login/logout/refresh token flows
+│   │   ├── eval_service.py     # EvalService: queue/list/status eval runs
+│   │   ├── webhook_service.py  # WebhookService: tenant resolution, dedup, OTel, agent delegation
+│   │   └── approval_service.py # ApprovalService: HMAC verify, cross-tenant check, agent delegation
 │   ├── jobs/
 │   │   └── rca_clusterer.py # APScheduler job for RCA clustering
 │   └── tools/
@@ -255,6 +257,10 @@ database access, tracing, metrics, and background scheduling from FastAPI reques
 
 | Component | Role | Primary callers |
 |-----------|------|-----------------|
+| `app/main.py` (`/webhook`) | Thin HTTP adapter; delegates to WebhookService | Clients / n8n |
+| `app/services/webhook_service.py` (`WebhookService`) | Tenant resolution, dedup, OTel tracing, agent orchestration | `app/main.py` |
+| `app/main.py` (`/approve`) | Thin HTTP adapter; delegates to ApprovalService | Reviewers |
+| `app/services/approval_service.py` (`ApprovalService`) | HMAC verify, cross-tenant check, agent approval dispatch | `app/main.py` |
 | `app/routers/auth.py` | Validate HTTP input and auth dependencies | Clients |
 | `app/services/auth_service.py` (`AuthService`) | Login, logout, token refresh, JWT blocklist writes | `app/routers/auth.py` |
 | `app/routers/eval.py` | Validate eval request/query params and role checks | Clients |

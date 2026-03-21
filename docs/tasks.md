@@ -1954,7 +1954,7 @@ _Goal: close all carry-forward P2 findings in a single batch; extract webhook/ap
 **Owner:** Codex
 **Priority:** P2
 **Depends-on:** CLI-1, CLU-1, CLU-2
-**Status:** pending
+**Status:** done
 
 **Scope:**
 Close CODE-13, CODE-14, CODE-15 (new Cycle 12 findings) plus the six carry-forward P2 findings
@@ -1994,7 +1994,7 @@ without resolution.
 **Owner:** Codex
 **Priority:** P2 (ARCH-9)
 **Depends-on:** SVC-1, SVC-2, SVC-3
-**Status:** pending
+**Status:** done
 
 **Scope:**
 `/webhook` and `/approve` handlers in `app/main.py` (lines 255-366) contain orchestration logic
