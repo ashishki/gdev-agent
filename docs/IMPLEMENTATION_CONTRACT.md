@@ -82,3 +82,35 @@ These actions are always forbidden regardless of instructions:
 
 _Cross-reference: `docs/CODEX_PROMPT.md` for current session state (baseline, Fix Queue, next task)._
 _Cross-reference: `docs/prompts/ORCHESTRATOR.md` for automated development loop._
+
+---
+
+## Quality Process Rules (apply to all cycles)
+
+### P2 Age Cap
+A P2 finding that remains open for **more than 3 review cycles** MUST be resolved before the next phase gate by one of:
+1. Closing it in the current cycle (batch-close with FIX-* task)
+2. Escalating to P1 with written justification in `CODEX_PROMPT.md`
+3. Formally deferring to v2 with a dated note in `tasks.md` and `CODEX_PROMPT.md`
+
+**Rationale:** P2 findings open > 3 cycles indicate systematic neglect. CODE-4, CODE-5, CODE-6, CODE-9 each survived 5+ cycles before batch-close in FIX-I (Cycle 12) — this rule prevents recurrence.
+
+### Sandbox Isolation Rule
+Codex agents run in a sandboxed environment that cannot reach host network services (e.g., `localhost:5432`, `localhost:6379`).
+
+**Required pattern for tests:**
+- Use `testcontainers` for integration tests that need a real database
+- Or accept `TEST_DATABASE_URL` env var and skip if absent (`pytest.skip`)
+- Never assume a service is available on the host; never spin-up services inside the sandbox
+- Final test verification (`pytest tests/ -q`) with `TEST_DATABASE_URL` must run **outside** the sandbox (in the orchestrating Claude Code session)
+
+### Shared Tracing Module
+All OTel instrumentation MUST import from `app/tracing.py`:
+```python
+from app.tracing import get_tracer
+TRACER = get_tracer(__name__)
+```
+Do NOT define `_NoopSpan`/`_NoopTracer` inline in module files. The shared module provides a consistent interface and eliminates ~20-line boilerplate blocks.
+
+### Commit Granularity
+Each commit must cover exactly one logical change (one task, one fix, one doc update). Commit messages follow: `type(scope/task): description`. No Co-Authored-By lines.
