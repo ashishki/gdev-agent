@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+from time import perf_counter
+from typing import Literal
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
+from prometheus_client import Counter, Histogram
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,9 +24,56 @@ from app.schemas import (
     ClusterListResponse,
     ErrorDetail,
     ErrorResponse,
+    TicketListItem,
 )
 
 router = APIRouter()
+
+try:  # pragma: no cover - optional dependency in minimal local envs
+    from opentelemetry import trace  # type: ignore[import-not-found]
+
+    TRACER = trace.get_tracer(__name__)
+except Exception:  # pragma: no cover - fallback when opentelemetry is unavailable
+
+    class _NoopSpan:
+        def __enter__(self) -> "_NoopSpan":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> Literal[False]:
+            return False
+
+        def set_attribute(self, _name: str, _value: object) -> None:
+            return None
+
+        def record_exception(self, _exc: BaseException) -> None:
+            return None
+
+    class _NoopTracer:
+        def start_as_current_span(self, _name: str) -> _NoopSpan:
+            return _NoopSpan()
+
+    TRACER = _NoopTracer()
+
+CLUSTER_TICKETS_REQUESTS_TOTAL = Counter(
+    "gdev_cluster_tickets_requests_total",
+    "Cluster ticket list requests by outcome",
+    ["tenant_hash", "outcome"],
+)
+CLUSTER_TICKETS_DURATION_SECONDS = Histogram(
+    "gdev_cluster_tickets_duration_seconds",
+    "Cluster ticket list request latency",
+    ["tenant_hash"],
+)
+
+
+def _sha256_short(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+class ClusterTicketsResponse(BaseModel):
+    tickets: list[TicketListItem]
+    total: int
+    page: int
 
 
 def _parse_cursor(cursor: str | None):
@@ -154,20 +206,13 @@ async def get_cluster(
                 text(
                     """
                 SELECT ticket_id
-                FROM ticket_embeddings
-                WHERE
-                    tenant_id = :tenant_id
-                    AND created_at >= COALESCE(:first_seen, created_at)
-                    AND created_at <= COALESCE(:last_seen, created_at)
-                ORDER BY created_at DESC
+                FROM rca_cluster_members
+                WHERE cluster_id = :cluster_id
+                ORDER BY created_at DESC, ticket_id DESC
                 LIMIT 10
                 """
                 ),
-                {
-                    "tenant_id": str(request.state.tenant_id),
-                    "first_seen": row["first_seen"],
-                    "last_seen": row["last_seen"],
-                },
+                {"cluster_id": str(cluster_id)},
             )
         )
         .mappings()
@@ -178,3 +223,120 @@ async def get_cluster(
     return ClusterDetailResponse(
         data=[ClusterDetailItem.model_validate(detail)], cursor=None, total=None
     )
+
+
+@router.get("/clusters/{cluster_id}/tickets", response_model=ClusterTicketsResponse)
+async def get_cluster_tickets(
+    cluster_id: UUID,
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db_session),
+    _: None = require_role("viewer", "support_agent", "tenant_admin"),
+) -> ClusterTicketsResponse | JSONResponse:
+    """Fetch paginated tickets for a tenant cluster."""
+    tenant_id = str(request.state.tenant_id)
+    tenant_hash = _sha256_short(tenant_id)
+    started_at = perf_counter()
+
+    with TRACER.start_as_current_span("router.clusters.get_cluster_tickets") as span:
+        span.set_attribute("tenant_id_hash", tenant_hash)
+        span.set_attribute("page", page)
+        try:
+            cluster_row = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT cluster_id
+                            FROM cluster_summaries
+                            WHERE cluster_id = :cluster_id AND tenant_id = :tenant_id
+                            LIMIT 1
+                            """
+                        ),
+                        {"cluster_id": str(cluster_id), "tenant_id": tenant_id},
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if cluster_row is None:
+                CLUSTER_TICKETS_REQUESTS_TOTAL.labels(
+                    tenant_hash=tenant_hash, outcome="not_found"
+                ).inc()
+                return JSONResponse(
+                    status_code=404,
+                    content=ErrorResponse(
+                        error=ErrorDetail(
+                            code="cluster_not_found",
+                            message="Cluster not found",
+                        )
+                    ).model_dump(mode="json"),
+                )
+
+            total = int(
+                (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT COUNT(*) AS total
+                            FROM rca_cluster_members AS m
+                            JOIN tickets AS t ON t.ticket_id = m.ticket_id
+                            WHERE m.cluster_id = :cluster_id AND t.tenant_id = :tenant_id
+                            """
+                        ),
+                        {"cluster_id": str(cluster_id), "tenant_id": tenant_id},
+                    )
+                )
+                .mappings()
+                .first()["total"]
+            )
+            rows = (
+                (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT
+                                t.ticket_id,
+                                t.message_id,
+                                t.platform,
+                                t.game_title,
+                                t.created_at
+                            FROM rca_cluster_members AS m
+                            JOIN tickets AS t ON t.ticket_id = m.ticket_id
+                            WHERE m.cluster_id = :cluster_id AND t.tenant_id = :tenant_id
+                            ORDER BY t.created_at DESC, t.ticket_id DESC
+                            LIMIT :limit
+                            OFFSET :offset
+                            """
+                        ),
+                        {
+                            "cluster_id": str(cluster_id),
+                            "tenant_id": tenant_id,
+                            "limit": limit,
+                            "offset": (page - 1) * limit,
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+
+            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="success"
+            ).inc()
+            return ClusterTicketsResponse(
+                tickets=[TicketListItem.model_validate(dict(row)) for row in rows],
+                total=total,
+                page=page,
+            )
+        except Exception as exc:
+            span.record_exception(exc)
+            CLUSTER_TICKETS_REQUESTS_TOTAL.labels(
+                tenant_hash=tenant_hash, outcome="error"
+            ).inc()
+            raise
+        finally:
+            CLUSTER_TICKETS_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
+                perf_counter() - started_at
+            )

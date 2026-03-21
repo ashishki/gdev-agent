@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -18,11 +18,12 @@ from app.middleware.auth import JWTMiddleware
 from app.routers import auth as auth_module
 from app.routers.agents import list_agents
 from app.routers.analytics import list_audit, list_cost_metrics
-from app.routers.clusters import get_cluster, list_clusters
+from app.routers.clusters import get_cluster, get_cluster_tickets, list_clusters
 from app.routers.eval import list_eval_runs
 from app.routers.tickets import get_ticket, list_tickets
 from app.services.auth_service import LogoutRequest, RefreshTokenRequest
 
+UTC = timezone.utc
 
 class _ResultStub:
     def __init__(self, rows: list[dict[str, object]]) -> None:
@@ -528,6 +529,8 @@ async def test_get_cluster_returns_ticket_ids_up_to_10() -> None:
 
     assert len(response.data[0].ticket_ids) == 10
     assert str(response.data[0].cluster_id) == str(cluster_id)
+    assert "FROM rca_cluster_members" in session.calls[1][0]
+    assert "ticket_embeddings" not in session.calls[1][0]
 
 
 @pytest.mark.asyncio
@@ -541,12 +544,74 @@ async def test_get_cluster_cross_tenant_returns_404() -> None:
     assert b'"code":"cluster_not_found"' in response.body
 
 
+@pytest.mark.asyncio
+async def test_get_cluster_tickets_returns_paginated_payload() -> None:
+    tenant_id = uuid4()
+    cluster_id = uuid4()
+    now = datetime.now(UTC)
+    session = _SequencedSessionStub(
+        [
+            [{"cluster_id": cluster_id}],
+            [{"total": 2}],
+            [
+                {
+                    "ticket_id": uuid4(),
+                    "message_id": "m1",
+                    "platform": "telegram",
+                    "game_title": "G1",
+                    "created_at": now,
+                }
+            ],
+        ]
+    )
+
+    response = await get_cluster_tickets(
+        cluster_id=cluster_id,
+        request=_request(tenant_id),
+        page=2,
+        limit=1,
+        db=session,
+    )
+
+    assert response.total == 2
+    assert response.page == 2
+    assert response.tickets[0].message_id == "m1"
+    assert "FROM rca_cluster_members AS m" in session.calls[2][0]
+    assert session.calls[2][1]["offset"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_tickets_cross_tenant_returns_404() -> None:
+    session = _SequencedSessionStub([[]])
+
+    response = await get_cluster_tickets(
+        cluster_id=uuid4(),
+        request=_request(uuid4()),
+        page=1,
+        limit=50,
+        db=session,
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 404
+    assert b'"code":"cluster_not_found"' in response.body
+
+
 def test_wrong_role_is_rejected_for_tenant_admin_endpoints() -> None:
     for path in ("/audit", "/metrics/cost", "/agents"):
         dependency = _route_dependency(path)
         with pytest.raises(HTTPException) as exc:
             dependency(SimpleNamespace(state=SimpleNamespace(role="viewer")))
         assert exc.value.status_code == 403
+
+
+def test_cluster_tickets_requires_viewer_role() -> None:
+    dependency = _route_dependency("/clusters/{cluster_id}/tickets")
+
+    with pytest.raises(HTTPException) as exc:
+        dependency(SimpleNamespace(state=SimpleNamespace(role="operator")))
+
+    assert exc.value.status_code == 403
 
 
 def test_reader_roles_allowed_for_jwt_read_endpoints() -> None:
@@ -556,6 +621,7 @@ def test_reader_roles_allowed_for_jwt_read_endpoints() -> None:
         "/eval/runs",
         "/clusters",
         "/clusters/{cluster_id}",
+        "/clusters/{cluster_id}/tickets",
     ):
         dependency = _route_dependency(path)
         dependency(SimpleNamespace(state=SimpleNamespace(role="viewer")))
