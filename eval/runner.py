@@ -21,6 +21,7 @@ from app.config import Settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import _set_tenant_ctx
 from app.schemas import WebhookRequest
+from app.services.learning_metrics import fetch_learning_metrics
 from app.store import EventStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -337,6 +338,9 @@ async def run_eval_job(
     status = "completed_with_regression" if regression_alert else "completed"
     completed_at = datetime.now(UTC)
     cost_usd = Decimal(str(report.get("cost_usd", 0.0)))
+    async with db_session.begin():
+        await _set_tenant_ctx(db_session, str(tenant_id))
+        learning_metrics = await fetch_learning_metrics(db=db_session, tenant_id=tenant_id)
 
     async with db_session.begin():
         await _set_tenant_ctx(db_session, str(tenant_id))
@@ -348,6 +352,12 @@ async def run_eval_job(
                     f1_score = :f1_score,
                     guard_block_rate = :guard_block_rate,
                     cost_usd = :cost_usd,
+                    reviewed_count = :reviewed_count,
+                    approval_latency_p50_ms = :approval_latency_p50_ms,
+                    approval_latency_p95_ms = :approval_latency_p95_ms,
+                    override_rate = :override_rate,
+                    rejection_rate = :rejection_rate,
+                    learning_sample_size_warning = :learning_sample_size_warning,
                     status = :status
                 WHERE eval_run_id = :eval_run_id AND tenant_id = :tenant_id
                 """
@@ -357,6 +367,12 @@ async def run_eval_job(
                 "f1_score": current_f1,
                 "guard_block_rate": Decimal(str(report["guard_block_rate"])),
                 "cost_usd": cost_usd,
+                "reviewed_count": learning_metrics.reviewed_count,
+                "approval_latency_p50_ms": learning_metrics.approval_latency_p50_ms,
+                "approval_latency_p95_ms": learning_metrics.approval_latency_p95_ms,
+                "override_rate": learning_metrics.override_rate,
+                "rejection_rate": learning_metrics.rejection_rate,
+                "learning_sample_size_warning": learning_metrics.sample_size_warning,
                 "status": status,
                 "eval_run_id": str(eval_run_id),
                 "tenant_id": str(tenant_id),
@@ -374,6 +390,7 @@ async def run_eval_job(
     report["eval_run_id"] = str(eval_run_id)
     report["status"] = status
     report["regression_alert"] = regression_alert
+    report["learning_metrics"] = learning_metrics.model_dump(mode="json")
     return report
 
 

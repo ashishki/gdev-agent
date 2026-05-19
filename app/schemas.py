@@ -119,6 +119,10 @@ class ApproveRequest(BaseModel):
     pending_id: str
     approved: bool = True
     reviewer: str | None = None
+    override_reason: str | None = None
+    corrected_category: Category | None = None
+    corrected_urgency: Urgency | None = None
+    corrected_action_tool: str | None = None
 
 
 class ApproveResponse(BaseModel):
@@ -276,8 +280,28 @@ class EvalRunItem(BaseModel):
     f1_score: Decimal | None = None
     guard_block_rate: Decimal | None = None
     cost_usd: Decimal | None = None
+    reviewed_count: int | None = None
+    approval_latency_p50_ms: int | None = None
+    approval_latency_p95_ms: int | None = None
+    override_rate: Decimal | None = None
+    rejection_rate: Decimal | None = None
+    learning_sample_size_warning: bool | None = None
     status: str
     created_at: datetime
+
+
+class LearningMetricsResponse(BaseModel):
+    """Tenant learning/adoption metrics over a recent approval window."""
+
+    window_days: int
+    min_sample_size: int
+    reviewed_count: int
+    approval_latency_p50_ms: int | None = None
+    approval_latency_p95_ms: int | None = None
+    approval_rate: Decimal
+    rejection_rate: Decimal
+    override_rate: Decimal
+    sample_size_warning: bool
 
 
 class ClusterListItem(BaseModel):

@@ -180,6 +180,12 @@ class EvalService:
                             f1_score,
                             guard_block_rate,
                             cost_usd,
+                            reviewed_count,
+                            approval_latency_p50_ms,
+                            approval_latency_p95_ms,
+                            override_rate,
+                            rejection_rate,
+                            learning_sample_size_warning,
                             status,
                             created_at
                         FROM eval_runs
@@ -199,6 +205,12 @@ class EvalService:
                             f1_score,
                             guard_block_rate,
                             cost_usd,
+                            reviewed_count,
+                            approval_latency_p50_ms,
+                            approval_latency_p95_ms,
+                            override_rate,
+                            rejection_rate,
+                            learning_sample_size_warning,
                             status,
                             created_at
                         FROM eval_runs
@@ -272,6 +284,12 @@ class EvalService:
                                 f1_score,
                                 guard_block_rate,
                                 cost_usd,
+                                reviewed_count,
+                                approval_latency_p50_ms,
+                                approval_latency_p95_ms,
+                                override_rate,
+                                rejection_rate,
+                                learning_sample_size_warning,
                                 status,
                                 created_at
                             FROM eval_runs

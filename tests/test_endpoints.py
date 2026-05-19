@@ -17,7 +17,7 @@ from app.config import Settings
 from app.middleware.auth import JWTMiddleware
 from app.routers import auth as auth_module
 from app.routers.agents import list_agents
-from app.routers.analytics import list_audit, list_cost_metrics
+from app.routers.analytics import get_learning_metrics, list_audit, list_cost_metrics
 from app.routers.clusters import get_cluster, get_cluster_tickets, list_clusters
 from app.routers.eval import list_eval_runs
 from app.routers.tickets import get_ticket, list_tickets
@@ -382,6 +382,37 @@ async def test_list_cost_metrics_pagination_sets_cursor() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_learning_metrics_happy_path() -> None:
+    tenant_id = uuid4()
+    session = _SessionStub(
+        [
+            {
+                "reviewed_count": 25,
+                "approval_latency_p50_ms": 1200,
+                "approval_latency_p95_ms": 5000,
+                "approval_rate": Decimal("0.720"),
+                "rejection_rate": Decimal("0.200"),
+                "override_rate": Decimal("0.280"),
+            }
+        ]
+    )
+
+    response = await get_learning_metrics(
+        request=_request(tenant_id),
+        window_days=7,
+        min_sample_size=20,
+        db=session,
+    )
+
+    assert response.reviewed_count == 25
+    assert response.approval_latency_p95_ms == 5000
+    assert response.override_rate == Decimal("0.280")
+    assert response.sample_size_warning is False
+    assert "FROM approval_events" in session.last_statement
+    assert session.last_params["tenant_id"] == str(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_list_agents_happy_path() -> None:
     tenant_id = uuid4()
     session = _SessionStub(
@@ -737,6 +768,7 @@ def test_reader_roles_allowed_for_jwt_read_endpoints() -> None:
         "/tickets",
         "/tickets/{ticket_id}",
         "/eval/runs",
+        "/metrics/learning",
         "/clusters",
         "/clusters/{cluster_id}",
         "/clusters/{cluster_id}/tickets",

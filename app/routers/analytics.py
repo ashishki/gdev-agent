@@ -18,7 +18,9 @@ from app.schemas import (
     CostMetricResponse,
     ErrorDetail,
     ErrorResponse,
+    LearningMetricsResponse,
 )
+from app.services.learning_metrics import fetch_learning_metrics
 
 router = APIRouter()
 
@@ -174,3 +176,20 @@ async def list_cost_metrics(
     data = [CostMetricItem.model_validate(dict(row)) for row in page_rows]
     next_cursor = data[-1].created_at.isoformat() if len(rows) > limit else None
     return CostMetricResponse(data=data, cursor=next_cursor, total=None)
+
+
+@router.get("/metrics/learning", response_model=LearningMetricsResponse)
+async def get_learning_metrics(
+    request: Request,
+    window_days: int = Query(default=7, ge=1, le=90),
+    min_sample_size: int = Query(default=20, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db_session),
+    _: None = require_role("viewer", "support_agent", "tenant_admin"),
+) -> LearningMetricsResponse:
+    """Return tenant learning/adoption metrics from approval events."""
+    return await fetch_learning_metrics(
+        db=db,
+        tenant_id=request.state.tenant_id,
+        window_days=window_days,
+        min_sample_size=min_sample_size,
+    )

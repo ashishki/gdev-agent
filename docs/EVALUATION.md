@@ -97,9 +97,22 @@ This separation matches the code structure:
 | `guard_block_rate` | Correctly blocked guard cases / expected guard cases | Should remain near 1.0 for known attack patterns. |
 | `guard_blocks` | Count of blocked inputs | Raw blocked volume; interpret with dataset mix. |
 | `cost_usd` | Eval run cost | Currently persisted with each run for budgeting/regression review. |
+| `reviewed_count` | Approval decisions in the recent tenant window | Sample size for team-learning metrics. |
+| `approval_latency_p50_ms` / `approval_latency_p95_ms` | Time from pending creation to human decision | Lower latency means the team is closing the AI-assisted loop faster. |
+| `override_rate` | Share of reviewed decisions with an explicit override/correction marker | Rising values suggest tenant policy/prompt/model mismatch. |
+| `rejection_rate` | Share of reviewed decisions rejected by humans | Useful proxy for trust until richer correction feedback is available. |
+| `learning_sample_size_warning` | `true` when reviewed volume is below the configured sample threshold | Avoid over-reading noisy early data. |
 | `status` | Run lifecycle state | `completed_with_regression` indicates a meaningful drop versus the prior run. |
 
 Regression behavior:
 - `run_eval_job()` compares the current score to the previous stored `f1_score` for the tenant.
 - A drop greater than `0.02` marks the run as `completed_with_regression`.
 - `aborted_budget` means the eval stopped before the next LLM call because the tenant budget was exhausted.
+
+Operational learning metrics:
+- `GET /metrics/learning` returns live tenant approval/adoption metrics for a configurable window.
+- Persisted eval runs snapshot the same signal at completion time, so offline quality and team
+  adaptation can be reviewed together.
+- Rejections are tracked separately from explicit overrides. A rejected action is an override, but
+  an approved action with `corrected_category`, `corrected_urgency`, `corrected_action_tool`, or
+  `override_reason` is also counted as override feedback.

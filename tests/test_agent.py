@@ -363,6 +363,8 @@ def test_approve_persists_approval_event_and_updates_pending_status() -> None:
             pending_id=response.pending.pending_id,
             approved=True,
             reviewer="rev-1",
+            corrected_category="billing",
+            override_reason="tenant policy prefers billing",
         ),
         jwt_tenant_id=tenant_id,
     )
@@ -371,3 +373,9 @@ def test_approve_persists_approval_event_and_updates_pending_status() -> None:
     statements = [sql.lower() for sql, _ in store.sql_calls]
     assert any("insert into approval_events" in sql for sql in statements)
     assert any("update pending_decisions" in sql for sql in statements)
+    assert any("resolved_at = now()" in sql for sql in statements)
+    insert_params = next(
+        params for sql, params in store.sql_calls if "INSERT INTO approval_events" in sql
+    )
+    assert insert_params["override_kind"] == "corrected_classification"
+    assert insert_params["override_reason"] == "tenant policy prefers billing"

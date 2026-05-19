@@ -10,10 +10,11 @@ import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
+from app.exceptions import AgentError
 from app.llm_client import TOOLS
 from app.schemas import ProposedAction
 from app.store import EventStore
-from app.tools import TOOL_REGISTRY, ToolHandler
+from app.tools import TOOL_REGISTRY, ToolSpec
 
 
 class FakeLLMClient:
@@ -51,9 +52,51 @@ def test_unknown_tool_raises_value_error() -> None:
         agent.execute_action(action, "u1", "hello")
 
 
+def test_destructive_tool_requires_approval_even_when_action_not_risky(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent()
+
+    def _delete_stub(_payload, _user_id):  # noqa: ANN001
+        return {"deleted": True}
+
+    monkeypatch.setitem(
+        TOOL_REGISTRY,
+        "delete_tenant_data",
+        ToolSpec(handler=_delete_stub, side_effect="destructive"),
+    )
+    action = ProposedAction(tool="delete_tenant_data", payload={}, risky=False)
+
+    assert agent.needs_approval("delete it", action=action, classification=None) is True  # type: ignore[arg-type]
+    with pytest.raises(AgentError) as exc:
+        agent.execute_action(action, "u1", "approved later")
+    assert exc.value.status_code == 403
+
+    result = agent.execute_action(action, "u1", "approved now", approved=True)
+    assert result == {"deleted": True}
+
+
+def test_bulk_write_tool_requires_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = _agent()
+
+    def _bulk_update_stub(_payload, _user_id):  # noqa: ANN001
+        return {"updated": 10}
+
+    monkeypatch.setitem(
+        TOOL_REGISTRY,
+        "bulk_update_tickets",
+        ToolSpec(handler=_bulk_update_stub, side_effect="bulk_write"),
+    )
+    action = ProposedAction(tool="bulk_update_tickets", payload={}, risky=False)
+
+    assert agent.needs_approval("bulk update", action=action, classification=None) is True  # type: ignore[arg-type]
+    with pytest.raises(AgentError):
+        agent.execute_action(action, "u1", "approved later")
+
+
 def test_registry_annotation() -> None:
     hints = get_type_hints(__import__("app.tools", fromlist=["TOOL_REGISTRY"]))
-    assert hints["TOOL_REGISTRY"] == dict[str, ToolHandler]
+    assert hints["TOOL_REGISTRY"] == dict[str, ToolSpec]
     assert isinstance(TOOL_REGISTRY, dict)
 
 

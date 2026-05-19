@@ -53,7 +53,7 @@ from app.schemas import (
     WebhookResponse,
 )
 from app.store import EventStore
-from app.tools import TOOL_REGISTRY
+from app.tools import TOOL_REGISTRY, ToolSpec
 from app.utils import run_blocking
 
 UTC = timezone.utc
@@ -443,6 +443,8 @@ class AgentService:
                 tenant_id=str(tenant_id),
                 decision="rejected",
                 reviewer_hash=reviewer_hash,
+                override_kind=self._approval_override_kind(request),
+                override_reason=request.override_reason,
             )
             REJECTED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
             self.store.log_event(
@@ -461,6 +463,7 @@ class AgentService:
             pending.user_id,
             pending.draft_response,
             tenant_id=str(tenant_id) if tenant_id is not None else None,
+            approved=True,
         )
         latency_ms = round((time.monotonic() - started) * 1000)
         self.store.log_event(
@@ -497,9 +500,22 @@ class AgentService:
             tenant_id=str(tenant_id),
             decision="approved",
             reviewer_hash=reviewer_hash,
+            override_kind=self._approval_override_kind(request),
+            override_reason=request.override_reason,
         )
         APPROVED_TOTAL.labels(tenant_hash=_sha256_short(str(tenant_id))).inc()
         return ApproveResponse(status="approved", pending_id=request.pending_id, result=result)
+
+    def _approval_override_kind(self, request: ApproveRequest) -> str | None:
+        if not request.approved:
+            return "rejected_action"
+        if request.corrected_action_tool:
+            return "corrected_action"
+        if request.corrected_category or request.corrected_urgency:
+            return "corrected_classification"
+        if request.override_reason:
+            return "operator_note"
+        return None
 
     def propose_action(
         self,
@@ -548,7 +564,14 @@ class AgentService:
     ) -> bool:
         """Determine if action must go through manual approval."""
         _ = (text, classification)
-        return action.risky
+        tool_spec = self._tool_spec(action.tool)
+        if tool_spec is None:
+            return action.risky
+        return (
+            action.risky
+            or tool_spec.approval_required
+            or tool_spec.side_effect in {"bulk_write", "destructive"}
+        )
 
     def execute_action(
         self,
@@ -557,21 +580,33 @@ class AgentService:
         draft_response: str,
         tenant_id: str | None = None,
         event_context: dict[str, object] | None = None,
+        approved: bool = False,
     ) -> dict[str, object]:
         """Execute tool handlers from the tool registry."""
-        handler = TOOL_REGISTRY.get(action.tool)
-        if handler is None:
+        tool_spec = self._tool_spec(action.tool)
+        if tool_spec is None:
             raise ValueError(f"Unknown tool: {action.tool!r}")
+        if self._requires_human_approval(tool_spec) and not approved:
+            raise AgentError("Tool requires human approval", status_code=403)
 
         payload = dict(action.payload)
         payload["draft_response"] = draft_response
-        result = handler(payload, user_id)
+        result = tool_spec.handler(payload, user_id)
         event_payload = dict(result)
         if event_context:
             event_payload.update(event_context)
         event_payload["tenant_id"] = tenant_id
         self.store.log_event("action_executed", event_payload)
         return result
+
+    def _tool_spec(self, tool_name: str) -> ToolSpec | None:
+        return TOOL_REGISTRY.get(tool_name)
+
+    def _requires_human_approval(self, tool_spec: ToolSpec) -> bool:
+        return tool_spec.approval_required or tool_spec.side_effect in {
+            "bulk_write",
+            "destructive",
+        }
 
     def _ticket_id_from_result(self, result: dict[str, object]) -> str:
         ticket = result.get("ticket")
@@ -746,6 +781,8 @@ class AgentService:
         tenant_id: str,
         decision: str,
         reviewer_hash: str | None,
+        override_kind: str | None = None,
+        override_reason: str | None = None,
     ) -> None:
         session_factory = getattr(self.store, "_db_session_factory", None)
         if session_factory is None:
@@ -772,11 +809,27 @@ class AgentService:
                         text(
                             """
                             INSERT INTO approval_events (
-                                pending_id, tenant_id, decision, reviewer_id_hash
+                                pending_id,
+                                tenant_id,
+                                decision,
+                                reviewer_id_hash,
+                                latency_ms,
+                                override_kind,
+                                override_reason
                             )
-                            VALUES (
-                                :pending_id, :tenant_id, :decision, :reviewer_id_hash
-                            )
+                            SELECT
+                                pending_id,
+                                tenant_id,
+                                :decision,
+                                :reviewer_id_hash,
+                                GREATEST(
+                                    0,
+                                    ROUND(EXTRACT(EPOCH FROM (NOW() - created_at)) * 1000)::integer
+                                ),
+                                :override_kind,
+                                :override_reason
+                            FROM pending_decisions
+                            WHERE pending_id = :pending_id AND tenant_id = :tenant_id
                             """
                         ),
                         {
@@ -784,13 +837,16 @@ class AgentService:
                             "tenant_id": str(tenant_uuid),
                             "decision": decision,
                             "reviewer_id_hash": reviewer_hash,
+                            "override_kind": override_kind,
+                            "override_reason": override_reason,
                         },
                     )
                     await session.execute(
                         text(
                             """
                             UPDATE pending_decisions
-                            SET status = :status
+                            SET status = :status,
+                                resolved_at = NOW()
                             WHERE pending_id = :pending_id AND tenant_id = :tenant_id
                             """
                         ),

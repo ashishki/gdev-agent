@@ -277,7 +277,8 @@ HTTP request
 ### 3.2 Eval Subsystem
 
 The eval subsystem provides a tenant-scoped offline quality check for classification and guardrail
-behavior without changing production traffic flow.
+behavior without changing production traffic flow. It also snapshots recent tenant learning metrics
+from the approval loop so eval history shows both model quality and team adoption signals.
 
 ```text
 POST /eval/run
@@ -293,6 +294,9 @@ Key modules:
 - `app/services/eval_service.py` owns run lifecycle, budget checks, and background dispatch.
 - `eval/runner.py` loads JSONL cases, executes the agent, computes metrics, and updates `eval_runs`.
 - `eval/cases.jsonl` is the current on-disk dataset used by the runner.
+- `app/services/learning_metrics.py` derives `approval_latency_p50_ms`,
+  `approval_latency_p95_ms`, `override_rate`, `rejection_rate`, and reviewed volume from
+  `approval_events`.
 
 ### 3.3 Docker Stack
 
@@ -516,6 +520,12 @@ What the agent wants to do, plus risk metadata. Stored inside `PendingDecision` 
 | `risky` | `bool` | `true` → action enters pending path; `execute_action()` is never called directly. |
 | `risk_reason` | `string \| null` | Human-readable explanation shown to approver. `null` only when `risky=false`. |
 
+**Tool safety invariant:** `TOOL_REGISTRY` entries carry side-effect metadata. Any tool marked
+`side_effect="bulk_write"`, `side_effect="destructive"`, or `approval_required=true` must enter
+the pending path even if `ProposedAction.risky=false`. `execute_action()` also enforces this
+fail-closed, so bypassing `needs_approval()` cannot auto-execute destructive tools. Current
+runtime tools only include `create_ticket_and_reply`, marked as a non-destructive write.
+
 **Risk-trigger conditions** (evaluated in `propose_action()`; all matching conditions set `risky=true`):
 
 | Condition | `risk_reason` value |
@@ -578,6 +588,11 @@ Redis TTL prevents key accumulation; `expires_at` handles sub-second race condit
 See §4.2 for full JSON. `reviewer` is an opaque string logged for audit; it is not validated against
 any identity store by the agent. Authentication of reviewer identity is delegated to the calling
 system (n8n + Telegram inline buttons scoped to a private group).
+
+Approval requests may include optional feedback metadata: `override_reason`,
+`corrected_category`, `corrected_urgency`, and `corrected_action_tool`. These fields are persisted
+to `approval_events` as `override_kind`/`override_reason` so tenant learning metrics distinguish
+normal approvals, rejected actions, and operator corrections.
 
 **Production hardening:** Restrict `/approve` to the internal network (Docker bridge or VPC) or add a
 shared `APPROVE_SECRET` header check. The agent currently accepts any caller who knows a `pending_id`.

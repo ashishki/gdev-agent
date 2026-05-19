@@ -37,7 +37,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | Execution | Tool registry for ticketing and reply actions, dedup cache for idempotent replays, pending approval storage with TTL |
 | Multi-tenancy | PostgreSQL RLS on all tables (Alembic migrations), tenant registry, per-tenant encrypted secrets |
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
-| Analytics | Eval runner with budget check, eval API, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
+| Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
 | Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
 | Platform | Docker Compose full stack; 215 tests (unit + integration) passing; ruff-clean |
 
@@ -155,6 +155,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 | `GET /tickets` and `GET /tickets/{ticket_id}` | Ticket history and detail |
 | `GET /audit` | Audit log history |
 | `GET /metrics/cost` | Cost ledger readout |
+| `GET /metrics/learning` | Tenant approval latency, override, rejection, and reviewed-volume metrics |
 | `GET /agents` and `PUT /agents/{agent_id}` | Agent config inspection and versioned updates |
 | `GET /clusters` | RCA cluster list |
 | `GET /clusters/{cluster_id}` | RCA cluster detail |

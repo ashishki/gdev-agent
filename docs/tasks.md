@@ -1078,9 +1078,11 @@ Produce a Grafana dashboard JSON (provisioned via `docker/grafana/provisioning/d
 4. Budget utilization gauge (per tenant)
 5. Guard block rate (input + output)
 6. Pending queue depth
-7. Override rate (from approval_events query via Postgres datasource)
+7. Override/rejection rate (from approval_events query via Postgres datasource)
 8. RCA cluster count (active, per tenant)
 9. Error rate (5xx)
+10. Approval latency p50/p95 (from approval_events.latency_ms)
+11. Reviewed approval volume
 
 **Files to create:**
 - `docker/grafana/provisioning/dashboards/gdev-agent.json`
@@ -1221,8 +1223,8 @@ Both writes should succeed; if Postgres fails, raise (Redis-only is insufficient
 **`pop_pending()` + approval:**
 ```
 1. Redis GETDEL → atomic (idempotency guard)
-2. INSERT approval_events (reviewer_hash, decision, latency_ms)
-3. UPDATE pending_decisions SET resolved_at=NOW(), decision=$1
+2. INSERT approval_events (reviewer_hash, decision, latency_ms, override metadata)
+3. UPDATE pending_decisions SET resolved_at=NOW(), status=$1
 ```
 
 If Redis GETDEL returns None (expired/already-consumed) → HTTP 404. Do NOT write `approval_events`.

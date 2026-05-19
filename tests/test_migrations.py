@@ -160,6 +160,9 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     command.downgrade(cfg, "base")
 
     assert (_root_dir() / "alembic" / "versions" / "0005_cluster_membership.py").exists()
+    assert (
+        _root_dir() / "alembic" / "versions" / "0006_approval_learning_metrics.py"
+    ).exists()
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
     assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
@@ -173,6 +176,16 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
         _policy_uses_current_setting(async_url, "rca_cluster_members")
     )
     assert membership_policy_uses_current_setting is True
+    approval_latency_column = asyncio.run(
+        _column_exists(async_url, "approval_events", "latency_ms")
+    )
+    assert approval_latency_column is True
+    pending_resolved_column = asyncio.run(
+        _column_exists(async_url, "pending_decisions", "resolved_at")
+    )
+    assert pending_resolved_column is True
+    eval_override_column = asyncio.run(_column_exists(async_url, "eval_runs", "override_rate"))
+    assert eval_override_column is True
 
     command.downgrade(cfg, "base")
     downgraded = asyncio.run(_public_tables(async_url))
