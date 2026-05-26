@@ -74,6 +74,13 @@ cd ai-stack/engineering-cognition-vault
 ./scripts/sync_from_projects.sh --no-pull --commit --push
 ```
 
+Before review, ensure this project has a fresh vault index:
+
+```bash
+cd ai-stack/engineering-cognition-vault
+./scripts/ensure_fresh_for_project.sh gdev-agent --no-pull --commit --push
+```
+
 VPS project work:
 
 1. Commit and push code, docs, evals, ADRs, findings, or postmortems in this repo.
