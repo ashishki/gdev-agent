@@ -4,6 +4,8 @@
 
 `gdev-agent` is a multi-tenant AI triage service for game-studio player support: it receives support webhooks, blocks unsafe input before any model call, classifies and extracts structured data with an LLM, routes risky actions into human approval, and records the resulting audit, cost, and analytics trail behind one HTTP API.
 
+Status: frozen portfolio asset. Maintenance roadmap: `docs/PROJECT_PLAN.md`.
+
 ## Why This Project Exists
 
 Game studios deal with billing disputes, account-access incidents, bug reports, moderation signals, and repetitive gameplay questions at a volume where manual triage becomes slow and brittle. `gdev-agent` is the orchestration layer between inbound support traffic and downstream systems: it keeps routine requests moving, forces human review when confidence or risk is low, and preserves tenant isolation, observability, and cost controls.
