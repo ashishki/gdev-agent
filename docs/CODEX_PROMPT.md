@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.3
+Version: 4.4
 Date: 2026-06-11
 Status: portfolio-hardening-active
 
@@ -48,7 +48,7 @@ Empty.
 
 ## Next Task
 
-`T09`: Baseline Eval Report.
+`T10`: CI Eval Regression Gate.
 
 ## Rules
 

@@ -304,7 +304,7 @@ Validation:
 - `pytest tests/test_eval_runner.py tests/test_eval_service.py -q`
 - `python -c "from pathlib import Path; from eval.runner import run_eval; print(run_eval(Path('eval/cases.jsonl')))"`
 
-### [ ] T09: Baseline Eval Report
+### [x] T09: Baseline Eval Report
 
 Owner: Codex
 Priority: P1
