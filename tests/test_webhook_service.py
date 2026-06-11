@@ -7,6 +7,9 @@ from uuid import uuid4
 
 import pytest
 
+import fakeredis
+from app.agent import AgentService
+from app.approval_store import RedisApprovalStore
 from app.config import Settings
 from app.exceptions import AgentError
 from app.schemas import (
@@ -17,6 +20,7 @@ from app.schemas import (
     WebhookResponse,
 )
 from app.services.webhook_service import WebhookService
+from app.store import EventStore
 
 
 class _SpanStub:
@@ -197,3 +201,34 @@ def test_handle_uses_request_tenant_when_payload_has_none() -> None:
 
     assert result == response
     assert calls[0].tenant_id == request_tenant_id
+
+
+def test_handle_keeps_demo_llm_mode_inside_webhook_boundaries() -> None:
+    tenant_id = str(uuid4())
+    settings = Settings(
+        llm_mode="demo",
+        approval_categories=["billing"],
+        auto_approve_threshold=0.85,
+    )
+    agent = AgentService(
+        settings=settings,
+        store=EventStore(sqlite_path=None),
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+    )
+    dedup = _DedupStub()
+    service = WebhookService(agent, dedup, _TracerStub(), settings)
+
+    result = service.handle(
+        WebhookRequest(
+            text="I was charged twice for the starter pack and need a refund review.",
+            tenant_id=tenant_id,
+            message_id="sample-risky-01",
+            user_id="u1",
+        ),
+        _request(),
+    )
+
+    assert result.status == "pending"
+    assert result.classification.category == "billing"
+    assert dedup.check_calls == [(tenant_id, "sample-risky-01")]
+    assert dedup.set_calls

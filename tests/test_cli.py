@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from click.testing import CliRunner
 
-from scripts import cli
+from scripts import cli, demo, seed_db
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -98,6 +98,90 @@ def test_help_lists_all_commands() -> None:
     assert "tenant" in result.stdout
     assert "budget" in result.stdout
     assert "rca" in result.stdout
+
+
+def test_demo_command_surfaces_reviewer_transcript_and_help() -> None:
+    demo_help = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/demo.py"), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    wrapper_help = subprocess.run(
+        ["bash", str(ROOT / "scripts/demo.sh"), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    demo_source = (ROOT / "scripts" / "demo.py").read_text(encoding="utf-8")
+
+    assert demo_help.returncode == 0
+    assert "--llm-mode" in demo_help.stdout
+    assert wrapper_help.returncode == 0
+    assert "LLM_MODE=demo" in wrapper_help.stdout
+    assert "demo:" in makefile
+    assert "bash scripts/demo.sh" in makefile
+
+    assert "Send signed webhook" in demo_source
+    assert "Pending approval created" in demo_source
+    assert "Approval decision status=approved" in demo_source
+    assert "Metrics check" in demo_source
+    assert "stack unavailable" in demo_source
+    assert "verify docker/seed.sql was applied" in demo_source
+
+
+def test_demo_seed_contract_matches_docs_and_defaults(monkeypatch) -> None:  # noqa: ANN001
+    docs = (ROOT / "docs" / "DEMO.md").read_text(encoding="utf-8")
+    seed_sql = (ROOT / "docker" / "seed.sql").read_text(encoding="utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    for key in (
+        "DEMO_TENANT_SLUG",
+        "DEMO_TENANT_ID",
+        "DEMO_WEBHOOK_SECRET",
+        "DEMO_ADMIN_EMAIL",
+        "DEMO_ADMIN_PASSWORD",
+        "DEMO_APPROVE_SECRET",
+        "DEMO_REVIEWER",
+        "DEMO_LLM_MODE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config = demo.build_config(
+        SimpleNamespace(
+            url="http://localhost:8000",
+            poll_interval=1.0,
+            timeout=30.0,
+            llm_mode="demo",
+        )
+    )
+
+    primary_tenant = seed_db.DEMO_TENANTS[0]
+    assert config.tenant_slug == primary_tenant["slug"]
+    assert config.tenant_id == primary_tenant["tenant_id"]
+    assert config.webhook_secret == primary_tenant["webhook_secret"]
+    assert config.admin_email == primary_tenant["admin_email"]
+    assert config.admin_password == primary_tenant["admin_password"]
+    assert config.approve_secret == seed_db.DEMO_APPROVE_SECRET
+    assert config.reviewer == seed_db.DEMO_REVIEWER
+    assert config.llm_mode == "demo"
+
+    assert f"APPROVE_SECRET: {seed_db.DEMO_APPROVE_SECRET}" in compose
+    assert seed_db.DEMO_APPROVE_SECRET in docs
+    assert seed_db.DEMO_REVIEWER in docs
+
+    for tenant in seed_db.DEMO_TENANTS:
+        assert tenant["slug"] in docs
+        assert tenant["tenant_id"] in docs
+        assert tenant["webhook_secret"] in docs
+        assert tenant["admin_email"] in docs
+        assert tenant["admin_password"] in docs
+
+        assert tenant["slug"] in seed_sql
+        assert tenant["tenant_id"] in seed_sql
+        assert tenant["admin_email"] in seed_sql
 
 
 def test_tenant_list_command(monkeypatch) -> None:  # noqa: ANN001
