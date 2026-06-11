@@ -2,9 +2,34 @@
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![215 tests](https://img.shields.io/badge/tests-215%20passing-brightgreen)
 
-`gdev-agent` is a multi-tenant AI triage service for game-studio player support: it receives support webhooks, blocks unsafe input before any model call, classifies and extracts structured data with an LLM, routes risky actions into human approval, and records the resulting audit, cost, and analytics trail behind one HTTP API.
+`gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
+game-studio support: it receives support webhooks, blocks unsafe input before
+any model call, classifies and extracts structured data with an LLM, routes
+risky actions into human approval, and records the resulting audit, cost, and
+analytics trail behind one HTTP API.
 
-Status: frozen portfolio asset. Maintenance roadmap: `docs/PROJECT_PLAN.md`.
+Status: active portfolio hardening. The current stack is pilot-grade/local
+evidence: Docker Compose setup, synthetic demo and eval paths, and repository
+tests. This README does not claim production SaaS readiness, external
+deployment, or live customer usage. Roadmap: [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
+
+## Evidence Path
+
+For a claim-by-claim proof map, start with
+[docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md). For a timed review route,
+use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
+
+| Claim to inspect | Start here | Bounded status |
+| --- | --- | --- |
+| Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Implemented local stack with documented gaps and ADRs |
+| Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo; deterministic/free demo hardening is planned |
+| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md) | Seed eval runner exists; expanded dataset and regression gates are planned |
+| Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
+| Load profile | [docs/load-profile.md](docs/load-profile.md) | Scenario targets and assumptions, not production capacity claims |
+| Tenant isolation and security | [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped data, secrets, auth, and approval boundaries |
+| Tests | [Current State](#current-state) | Last recorded baseline is 215 passing tests; rerun locally before relying on it |
+| Failure modes and SLO/runbook | [docs/ARCHITECTURE.md#65-n8n-retry-strategy](docs/ARCHITECTURE.md#65-n8n-retry-strategy), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks), [Known Limits](#known-limits) | Partial retry/runbook evidence; canonical docs are planned in the hardening graph |
+| Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
 
 ## Why This Project Exists
 
@@ -187,9 +212,29 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/data-map.md](docs/data-map.md): schema, Redis keys, and tenant-boundary rules.
 - [n8n/README.md](n8n/README.md): workflow assets committed in this repository.
 
+## Known Limits
+
+- The project is pilot-grade/local evidence. It has no claimed external
+  deployment, production SaaS readiness, live tenant traffic, or real customer
+  operations.
+- Demo, eval, and load evidence is synthetic unless a later report explicitly
+  says otherwise.
+- Deterministic no-cost demo mode, expanded eval taxonomy, failure-mode and
+  SLO/runbook docs, load reports, deployment-readiness notes, and a dedicated
+  tenant-isolation proof document are tracked in [docs/tasks.md](docs/tasks.md)
+  and are not complete yet.
+- Live LLM behavior requires a real Anthropic API key and budget controls; the
+  local stack is the supported review path today.
+
 ## Current State
 
-The platform is feature-complete for a pilot deployment. It includes the multi-tenant storage foundation, JWT/RBAC boundary, approval hardening, eval APIs with budget enforcement, auth service flows, embedding persistence, RCA clustering with persisted cluster membership, full service-layer separation (no FastAPI imports in business logic), Dockerized observability, admin CLI, and the n8n workflow artifacts needed for demo or pilot-style setups.
+The local stack is pilot-grade and feature-complete enough to demonstrate the
+governed request pipeline. It includes the multi-tenant storage foundation,
+JWT/RBAC boundary, approval hardening, eval APIs with budget enforcement, auth
+service flows, embedding persistence, RCA clustering with persisted cluster
+membership, full service-layer separation (no FastAPI imports in business
+logic), Dockerized observability, admin CLI, and the n8n workflow artifacts
+needed for demo or pilot-style setups.
 
 **215 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, and cluster membership persistence). All P0 and P1 findings from 13 review cycles have been resolved.
 
