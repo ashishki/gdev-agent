@@ -8,6 +8,54 @@ from pathlib import Path
 
 import asyncpg
 
+DEMO_APPROVE_SECRET = "approve-secret"
+DEMO_REVIEWER = "demo-runner"
+
+DEMO_TENANTS = (
+    {
+        "slug": "test-tenant-a",
+        "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "webhook_secret": "test-webhook-secret-a",
+        "admin_email": "admin-a@example.com",
+        "admin_password": "password123",
+    },
+    {
+        "slug": "test-tenant-b",
+        "tenant_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "webhook_secret": "test-webhook-secret-b",
+        "admin_email": "admin-b@example.com",
+        "admin_password": "password123",
+    },
+)
+
+DEMO_SUPPORT_CASES = (
+    {
+        "case_type": "normal",
+        "message_id": "sample-normal-01",
+        "fixture_file": "load_tests/fixtures/sample_messages.jsonl",
+    },
+    {
+        "case_type": "risky",
+        "message_id": "sample-risky-01",
+        "fixture_file": "load_tests/fixtures/sample_messages.jsonl",
+    },
+    {
+        "case_type": "adversarial",
+        "message_id": "sample-adversarial-01",
+        "fixture_file": "load_tests/fixtures/sample_messages.jsonl",
+    },
+    {
+        "case_type": "low_confidence",
+        "message_id": "sample-low-confidence-01",
+        "fixture_file": "load_tests/fixtures/sample_messages.jsonl",
+    },
+    {
+        "case_type": "duplicate",
+        "message_id": "sample-duplicate-01",
+        "fixture_file": "load_tests/fixtures/sample_messages.jsonl",
+    },
+)
+
 
 def _normalize_url(url: str) -> str:
     if url.startswith("postgresql+asyncpg://"):

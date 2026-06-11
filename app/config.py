@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     app_name: str = "gdev-agent"
     app_env: str = "dev"
     log_level: str = "INFO"
+    llm_mode: Literal["live", "demo"] = "live"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
     voyage_api_key: str = ""
@@ -74,6 +75,14 @@ class Settings(BaseSettings):
             return [str(item).strip() for item in value if str(item).strip()]
         return ["billing"]
 
+    @field_validator("llm_mode", mode="before")
+    @classmethod
+    def _parse_llm_mode(cls, value: object) -> str:
+        """Normalize LLM mode from env."""
+        if value is None:
+            return "live"
+        return str(value).strip().lower()
+
     @field_validator("url_allowlist", mode="before")
     @classmethod
     def _parse_allowlist(cls, value: object) -> list[str]:
@@ -92,6 +101,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached application settings."""
     settings = Settings()
-    if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY is required")
+    if settings.llm_mode == "live" and not settings.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is required when LLM_MODE=live")
     return settings

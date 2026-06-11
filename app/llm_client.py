@@ -39,6 +39,13 @@ SYSTEM_PROMPT = (
     "Always call classify_request and extract_entities before ending your turn."
 )
 ERROR_CODE_PATTERN = re.compile(r"\b(?:ERR[-_ ]?\d{3,}|E[-_]\d{4,})\b", flags=re.IGNORECASE)
+DEMO_ADVERSARIAL_PATTERNS = (
+    "ignore previous instructions",
+    "developer mode",
+    "jailbreak",
+    "bypass",
+    "hidden admin instructions",
+)
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -146,6 +153,10 @@ class LLMClient:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._anthropic = None
+        self._client = None
+        if settings.llm_mode == "demo":
+            return
         try:
             import anthropic  # type: ignore
         except ImportError as exc:  # pragma: no cover - environment-specific
@@ -163,6 +174,9 @@ class LLMClient:
         tenant_id: str | None = None,
     ) -> TriageResult:
         """Run Claude tool-use loop and return structured triage outputs."""
+        if self.settings.llm_mode == "demo":
+            return self._run_demo_agent(text, user_id)
+
         messages: list[dict[str, Any]] = [{"role": "user", "content": text}]
         classification: ClassificationResult | None = None
         extracted = ExtractedFields(user_id=user_id)
@@ -262,6 +276,14 @@ class LLMClient:
                 "summary": "No ticket texts available",
                 "severity": "low",
             }
+        if self.settings.llm_mode == "demo":
+            joined = " ".join(ticket_texts[:3]).lower()
+            severity = "high" if any(token in joined for token in ("refund", "charged")) else "low"
+            return {
+                "label": "Demo cluster",
+                "summary": f"Deterministic demo summary for {len(ticket_texts)} tickets.",
+                "severity": severity,
+            }
 
         prompt = (
             "Summarize these support tickets into a short RCA label and summary.\n"
@@ -303,6 +325,73 @@ class LLMClient:
     async def summarize_cluster_async(self, ticket_texts: list[str]) -> dict[str, str | None]:
         """Run cluster summarization off the event loop."""
         return await asyncio.to_thread(self.summarize_cluster, ticket_texts)
+
+    def _run_demo_agent(self, text: str, user_id: str | None) -> TriageResult:
+        """Return deterministic fixture responses without an external LLM call."""
+        classification_input, extracted_input, draft_input = self._demo_tool_inputs(text)
+        classification = ClassificationResult(
+            **self._dispatch_tool("classify_request", classification_input, user_id)
+        )
+        extracted = ExtractedFields(
+            **self._dispatch_tool("extract_entities", extracted_input, user_id)
+        )
+        draft = self._dispatch_tool("draft_reply", draft_input, user_id)
+        if extracted.user_id is None:
+            extracted.user_id = user_id
+        return TriageResult(
+            classification=classification,
+            extracted=extracted,
+            draft_text=str(draft.get("draft_text", "")),
+            input_tokens=0,
+            output_tokens=0,
+            turns_used=1,
+        )
+
+    def _demo_tool_inputs(
+        self, text: str
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        lowered = text.lower()
+        if "malformed" in lowered or "bad json" in lowered or "schema" in lowered:
+            return (
+                {"category": "not_a_category", "urgency": "low", "confidence": "high"},
+                {"platform": "Dreamcast", "error_code": "not an error code"},
+                {"tone": "informational", "draft_text": ""},
+            )
+        if any(pattern in lowered for pattern in DEMO_ADVERSARIAL_PATTERNS):
+            return (
+                {"category": "other", "urgency": "high", "confidence": 0.0},
+                {"platform": "unknown", "keywords": ["adversarial", "guard"]},
+                {
+                    "tone": "escalation",
+                    "draft_text": "This request needs manual support review before action.",
+                },
+            )
+        if "cannot tell" in lowered or "thing" in lowered or "low confidence" in lowered:
+            return (
+                {"category": "other", "urgency": "medium", "confidence": 0.35},
+                {"platform": "unknown", "keywords": ["ambiguous"]},
+                {
+                    "tone": "escalation",
+                    "draft_text": "We need a support specialist to review the missing details.",
+                },
+            )
+        if any(token in lowered for token in ("charged", "refund", "payment", "purchase")):
+            return (
+                {"category": "billing", "urgency": "medium", "confidence": 0.92},
+                {"platform": "unknown", "transaction_id": None, "keywords": ["billing"]},
+                {
+                    "tone": "empathetic",
+                    "draft_text": "Thanks for reporting the payment issue. We will review it before taking action.",
+                },
+            )
+        return (
+            {"category": "gameplay_question", "urgency": "low", "confidence": 0.96},
+            {"platform": "unknown", "keywords": ["gameplay"]},
+            {
+                "tone": "informational",
+                "draft_text": "Thanks for the question. We will send the best available guidance shortly.",
+            },
+        )
 
     def _create_message(self, **kwargs: Any) -> Any:
         """Call Claude messages API with retries on transient 5xx responses."""

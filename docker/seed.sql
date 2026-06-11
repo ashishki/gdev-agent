@@ -1,3 +1,10 @@
+-- Local demo fixture contract:
+-- - Tenant/user values below must match scripts/seed_db.py DEMO_TENANTS and docs/DEMO.md.
+-- - Demo approval uses APPROVE_SECRET=approve-secret from docker-compose.yml.
+-- - Support-case payload examples are committed in load_tests/fixtures/sample_messages.jsonl;
+--   scripts/seed_db.py DEMO_SUPPORT_CASES names the normal, risky, adversarial,
+--   low-confidence, and duplicate webhook rows used by the local demo contract.
+
 INSERT INTO tenants (
     tenant_id,
     name,

@@ -34,6 +34,7 @@ class DemoConfig:
     admin_password: str
     approve_secret: str
     reviewer: str
+    llm_mode: str
     poll_interval: float
     timeout_seconds: float
 
@@ -58,12 +59,14 @@ class DemoRunner:
 
     async def run(self) -> None:
         self._log("START", f"Base URL {self.config.base_url}")
+        self._log("MODE", f"Expected server LLM mode: {self.config.llm_mode}")
         await self._step("Health check", self._health_check)
         token = await self._step("Auth token", self._auth_token)
-        webhook = await self._step("Send webhook", self._send_webhook)
+        webhook = await self._step("Send signed webhook", self._send_webhook)
         pending_id = self._extract_pending_id(webhook)
+        self._log("PENDING", f"Pending approval created: {pending_id}")
         await self._step(
-            "Wait for pending audit row",
+            "Audit lookup for pending row",
             lambda: self._wait_for_pending_audit(token, webhook["message_id"]),
         )
         approve = await self._step(
@@ -72,6 +75,8 @@ class DemoRunner:
         )
         if approve.get("status") != "approved":
             raise DemoError(f"unexpected approve status: {approve!r}")
+        self._log("APPROVED", "Approval decision status=approved")
+        await self._step("Metrics check", self._metrics_check)
         self._log(
             "OK",
             f"Demo completed for pending_id={pending_id} in {self._elapsed():.2f}s",
@@ -89,7 +94,12 @@ class DemoRunner:
         return result
 
     async def _health_check(self) -> dict[str, Any]:
-        response = await self._client.get("/health")
+        try:
+            response = await self._client.get("/health")
+        except Exception as exc:
+            raise DemoError(
+                f"stack unavailable at {self.config.base_url}; run docker compose up --build -d"
+            ) from exc
         payload = self._expect_json(response, "GET /health")
         if response.status_code != 200:
             raise DemoError(f"health check failed: {payload}")
@@ -106,7 +116,10 @@ class DemoRunner:
         )
         payload = self._expect_json(response, "POST /auth/token")
         if response.status_code != 200:
-            raise DemoError(f"auth failed: {payload}")
+            raise DemoError(
+                "auth failed; verify docker/seed.sql was applied and DEMO_* credentials "
+                f"match docs/DEMO.md: {payload}"
+            )
         token = payload.get("access_token")
         if not isinstance(token, str) or not token:
             raise DemoError("auth response did not include access_token")
@@ -143,7 +156,7 @@ class DemoRunner:
         )
         payload = self._expect_json(response, "POST /webhook")
         if response.status_code != 200:
-            raise DemoError(f"webhook failed: {payload}")
+            raise DemoError(f"signed webhook failed; verify tenant slug and secret: {payload}")
         if payload.get("status") != "pending":
             raise DemoError(f"webhook did not produce pending state: {payload}")
         payload["message_id"] = message_id
@@ -186,6 +199,15 @@ class DemoRunner:
         if response.status_code != 200:
             raise DemoError(f"approve failed: {payload}")
         return payload
+
+    async def _metrics_check(self) -> dict[str, Any]:
+        response = await self._client.get("/metrics")
+        if response.status_code != 200:
+            raise DemoError(f"metrics check failed with HTTP {response.status_code}")
+        body = response.text
+        if "gdev_requests_total" not in body and "gdev_webhook_service_calls_total" not in body:
+            raise DemoError("metrics endpoint did not include gdev workflow metrics")
+        return {"bytes": len(body)}
 
     @staticmethod
     def _extract_pending_id(payload: dict[str, Any]) -> str:
@@ -236,6 +258,15 @@ def parse_args() -> argparse.Namespace:
         default=float(os.environ.get("DEMO_TIMEOUT_SECONDS", "30.0")),
         help="Overall poll timeout in seconds. Default: %(default)s",
     )
+    parser.add_argument(
+        "--llm-mode",
+        choices=["demo", "live"],
+        default=os.environ.get("DEMO_LLM_MODE", "demo"),
+        help=(
+            "Expected server LLM mode. Configure the running API with LLM_MODE=demo "
+            "for a free deterministic run, or LLM_MODE=live with an API key and budget cap."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -249,6 +280,7 @@ def build_config(args: argparse.Namespace) -> DemoConfig:
         admin_password=os.environ.get("DEMO_ADMIN_PASSWORD", "password123"),
         approve_secret=os.environ.get("DEMO_APPROVE_SECRET", "approve-secret"),
         reviewer=os.environ.get("DEMO_REVIEWER", "demo-runner"),
+        llm_mode=args.llm_mode,
         poll_interval=args.poll_interval,
         timeout_seconds=args.timeout,
     )
