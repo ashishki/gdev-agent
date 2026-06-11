@@ -237,13 +237,13 @@ Validation:
 
 ## Phase 2 - Evaluation Hardening
 
-Status: planned
+Status: active
 Business goal: prove quality with versioned datasets, deterministic validators,
 baseline metrics, and regression gates.
 Exit criteria: eval reports answer accuracy, guardrail, routing, structure,
 latency, and cost questions with reproducible commands.
 
-### [ ] T07: Eval Dataset Taxonomy Expansion
+### [x] T07: Eval Dataset Taxonomy Expansion
 
 Owner: Codex
 Priority: P1

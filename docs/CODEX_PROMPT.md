@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.1
+Version: 4.2
 Date: 2026-06-11
 Status: portfolio-hardening-active
 
@@ -48,7 +48,7 @@ Empty.
 
 ## Next Task
 
-`T07`: Eval Dataset Taxonomy Expansion.
+`T08`: Eval Validators And Metrics.
 
 ## Rules
 

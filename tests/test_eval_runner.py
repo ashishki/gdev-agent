@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -17,6 +18,63 @@ from app.schemas import (
     WebhookResponse,
 )
 from eval import runner as eval_runner
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EVAL_CASES_PATH = PROJECT_ROOT / "eval" / "cases.jsonl"
+
+REQUIRED_TAXONOMY_CATEGORIES = {
+    "billing",
+    "account_access",
+    "bug_report",
+    "moderation",
+    "legal_gdpr",
+    "low_confidence",
+    "injection_attempt",
+    "unsafe_url_output",
+    "duplicate_webhook",
+    "tenant_boundary",
+}
+REQUIRED_CASE_FIELDS = {
+    "id",
+    "synthetic",
+    "category",
+    "text",
+    "expected_category",
+    "expected_guard",
+    "risk_expectation",
+    "expected_routing",
+    "expected_guard_behavior",
+    "tenant_context",
+}
+ALLOWED_EXPECTED_CATEGORIES = {
+    "bug_report",
+    "billing",
+    "account_access",
+    "cheater_report",
+    "gameplay_question",
+    "other",
+    None,
+}
+ALLOWED_EXPECTED_GUARDS = {None, "input_blocked"}
+ALLOWED_RISK_EXPECTATIONS = {"low", "medium", "high", "critical"}
+ALLOWED_EXPECTED_ROUTING = {
+    "auto_execute",
+    "human_review",
+    "input_rejected",
+    "output_guarded",
+    "duplicate_replay",
+    "tenant_rejected",
+}
+ALLOWED_GUARD_BEHAVIORS = {
+    "allow",
+    "manual_review",
+    "confidence_floor",
+    "input_block",
+    "output_url_strip",
+    "output_secret_block",
+    "dedup_replay",
+    "tenant_boundary_reject",
+}
 
 
 class _ResultStub:
@@ -66,6 +124,65 @@ class _AgentStub:
             action=ProposedAction(tool="create_ticket_and_reply", payload={}),
             draft_response=payload.text,
         )
+
+
+def test_committed_eval_cases_have_required_taxonomy_schema() -> None:
+    cases = eval_runner.load_cases(EVAL_CASES_PATH)
+
+    assert 150 <= len(cases) <= 300
+
+    ids: list[str] = []
+    for case in cases:
+        assert REQUIRED_CASE_FIELDS <= case.keys()
+        assert case["synthetic"] is True
+        assert isinstance(case["id"], str)
+        assert case["id"].startswith("eval-")
+        assert isinstance(case["text"], str)
+        assert case["text"].strip()
+        assert case["category"] in REQUIRED_TAXONOMY_CATEGORIES
+        assert case["expected_category"] in ALLOWED_EXPECTED_CATEGORIES
+        assert case["expected_guard"] in ALLOWED_EXPECTED_GUARDS
+        assert case["risk_expectation"] in ALLOWED_RISK_EXPECTATIONS
+        assert case["expected_routing"] in ALLOWED_EXPECTED_ROUTING
+        assert case["expected_guard_behavior"] in ALLOWED_GUARD_BEHAVIORS
+
+        tenant_context = case["tenant_context"]
+        assert isinstance(tenant_context, dict)
+        assert tenant_context["source"] == "synthetic_eval"
+        assert tenant_context["tenant_id"] == case["tenant_id"]
+        UUID(str(tenant_context["tenant_id"]))
+
+        ids.append(case["id"])
+
+    assert len(ids) == len(set(ids))
+
+
+def test_committed_eval_cases_cover_required_taxonomy() -> None:
+    cases = eval_runner.load_cases(EVAL_CASES_PATH)
+
+    categories = {str(case["category"]) for case in cases}
+    assert REQUIRED_TAXONOMY_CATEGORIES <= categories
+
+    counts = Counter(str(case["category"]) for case in cases)
+    assert all(counts[category] >= 10 for category in REQUIRED_TAXONOMY_CATEGORIES)
+
+
+def test_eval_duplicate_and_tenant_boundary_cases_are_explicit() -> None:
+    cases = eval_runner.load_cases(EVAL_CASES_PATH)
+
+    duplicate_cases = [case for case in cases if case["category"] == "duplicate_webhook"]
+    duplicate_message_ids = [str(case["message_id"]) for case in duplicate_cases]
+    assert len(set(duplicate_message_ids)) < len(duplicate_message_ids)
+    assert all(case["expected_routing"] == "duplicate_replay" for case in duplicate_cases)
+    assert all(case["expected_guard_behavior"] == "dedup_replay" for case in duplicate_cases)
+
+    boundary_cases = [case for case in cases if case["category"] == "tenant_boundary"]
+    for case in boundary_cases:
+        tenant_context = case["tenant_context"]
+        assert tenant_context["tenant_id"] != tenant_context["target_tenant_id"]
+        UUID(str(tenant_context["target_tenant_id"]))
+        assert case["expected_routing"] == "tenant_rejected"
+        assert case["expected_guard_behavior"] == "tenant_boundary_reject"
 
 
 @pytest.mark.asyncio

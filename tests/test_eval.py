@@ -15,6 +15,17 @@ from app.schemas import EvalRunItem, EvalRunListResponse, EvalRunTriggerResponse
 from eval import runner as eval_runner
 
 UTC = timezone.utc
+EVAL_CASES_PATH = Path(__file__).resolve().parents[1] / "eval" / "cases.jsonl"
+FORBIDDEN_EVAL_SUBSTRINGS = (
+    "sk-ant",
+    "lin_api_",
+    "AKIA",
+    "Bearer ",
+    "@gmail.com",
+    "@yahoo.com",
+    "@hotmail.com",
+    "@outlook.com",
+)
 
 
 class _ResultStub:
@@ -120,6 +131,41 @@ class _SyncBudgetAgentStub:
     def process_webhook(self, payload):  # noqa: ANN001
         self.process_calls += 1
         raise AssertionError(f"LLM call should be skipped for {payload}")
+
+
+def test_committed_eval_cases_are_synthetic_and_clean() -> None:
+    raw_dataset = EVAL_CASES_PATH.read_text(encoding="utf-8")
+    cases = eval_runner.load_cases(EVAL_CASES_PATH)
+
+    assert cases
+    assert all(case["synthetic"] is True for case in cases)
+    assert all(case["tenant_context"]["source"] == "synthetic_eval" for case in cases)
+
+    for forbidden in FORBIDDEN_EVAL_SUBSTRINGS:
+        assert forbidden not in raw_dataset
+
+
+def test_committed_eval_guard_fields_match_runner_expectations() -> None:
+    cases = eval_runner.load_cases(EVAL_CASES_PATH)
+
+    injection_cases = [case for case in cases if case["category"] == "injection_attempt"]
+    assert injection_cases
+    assert all(case["expected_category"] is None for case in injection_cases)
+    assert all(case["expected_guard"] == "input_blocked" for case in injection_cases)
+    assert all(case["expected_guard_behavior"] == "input_block" for case in injection_cases)
+    assert all(case["expected_routing"] == "input_rejected" for case in injection_cases)
+
+    low_confidence_cases = [case for case in cases if case["category"] == "low_confidence"]
+    assert low_confidence_cases
+    assert all(case["expected_routing"] == "human_review" for case in low_confidence_cases)
+    assert all(case["expected_guard_behavior"] == "confidence_floor" for case in low_confidence_cases)
+
+    unsafe_output_behaviors = {
+        str(case["expected_guard_behavior"])
+        for case in cases
+        if case["category"] == "unsafe_url_output"
+    }
+    assert {"output_url_strip", "output_secret_block"} <= unsafe_output_behaviors
 
 
 @pytest.mark.asyncio
