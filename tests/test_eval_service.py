@@ -281,3 +281,43 @@ async def test_get_run_status_returns_row_and_records_span(monkeypatch) -> None:
     assert result.eval_run_id == eval_run_id
     assert tracer.spans[0].name == "service.eval.get_run_status"
     assert tracer.spans[0].attributes["eval_run_id"] == str(eval_run_id)
+
+
+@pytest.mark.asyncio
+async def test_run_eval_background_accepts_stable_metric_report(tmp_path: Path) -> None:
+    tenant_id = uuid4()
+    eval_run_id = uuid4()
+    session = _SessionStub()
+    calls: list[dict[str, object]] = []
+
+    async def _eval_runner(**kwargs):  # noqa: ANN003
+        calls.append(kwargs)
+        return {
+            "status": "completed",
+            "classification_accuracy": 1.0,
+            "risk_routing_recall": 1.0,
+            "unsafe_auto_approval_rate": 0.0,
+            "invalid_structured_output_rate": 0.0,
+            "guard_block_rate": 1.0,
+            "human_escalation_rate": 0.0,
+            "cost_usd_per_case": 0.0,
+            "latency_ms_per_case": 0.0,
+        }
+
+    service = EvalService(
+        db_session_factory=lambda: session,
+        cases_path=tmp_path / "cases.jsonl",
+        eval_runner=_eval_runner,
+    )
+
+    await service._run_eval_background(tenant_id=tenant_id, eval_run_id=eval_run_id)
+
+    assert calls == [
+        {
+            "cases_path": tmp_path / "cases.jsonl",
+            "tenant_id": tenant_id,
+            "eval_run_id": eval_run_id,
+            "db_session": session,
+            "agent": None,
+        }
+    ]

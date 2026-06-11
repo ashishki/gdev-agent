@@ -90,6 +90,10 @@ alembic upgrade head
 python -c "from pathlib import Path; from eval.runner import run_eval; print(run_eval(Path('eval/cases.jsonl')))"
 ```
 
+The direct runner uses deterministic demo mode when live mode is configured without an
+Anthropic API key. Set `LLM_MODE=live` and provide `ANTHROPIC_API_KEY` only when you explicitly want
+paid live-model eval behavior.
+
 4. Trigger a persisted tenant eval through the API path:
 
 ```bash
@@ -125,15 +129,23 @@ This separation matches the code structure:
 
 ## 6. Metrics
 
-`eval/runner.py` computes and/or persists the following signals:
+`eval/runner.py` computes and/or persists the following signals. The older `accuracy`, `total`, and
+`correct` keys remain for compatibility; the stable regression-facing names are the
+`*_rate`, `*_accuracy`, `*_recall`, and `*_per_case` fields.
 
 | Metric | Meaning | Interpretation |
 |--------|---------|----------------|
-| `accuracy` | Correct classifications / labelled classifications | Broad quality snapshot for the dataset. |
+| `classification_accuracy` / `accuracy` | Correct classifications / labelled classifications | Broad quality snapshot for labelled cases. |
 | `per_label_accuracy` | Accuracy per category | Useful for spotting drift in one intent class. |
+| `risk_routing_recall` | Risky or safety-routed cases that avoided auto-execution / expected safety-routed cases | Low values mean high-risk cases are being auto-executed or otherwise missed. |
+| `unsafe_auto_approval_rate` | Expected safety-routed cases that were auto-executed / expected safety-routed cases | Must stay low; this is the main unsafe regression signal. |
+| `invalid_structured_output_rate` | Malformed agent responses / total cases | Non-zero values indicate missing or malformed required fields. The runner fails these closed into human review. |
 | `guard_block_rate` | Correctly blocked guard cases / expected guard cases | Should remain near 1.0 for known attack patterns. |
 | `guard_blocks` | Count of blocked inputs | Raw blocked volume; interpret with dataset mix. |
+| `human_escalation_rate` | Human-review outcomes / total cases | Helps spot over- or under-escalation against the taxonomy. |
 | `cost_usd` | Eval run cost | Currently persisted with each run for budgeting/regression review. |
+| `cost_usd_per_case` | Eval cost / total cases | Stable cost efficiency signal for local and live evals. |
+| `latency_ms_per_case` | Mean runner latency per case | Local timing signal for regression review; interpret with environment variance. |
 | `reviewed_count` | Approval decisions in the recent tenant window | Sample size for team-learning metrics. |
 | `approval_latency_p50_ms` / `approval_latency_p95_ms` | Time from pending creation to human decision | Lower latency means the team is closing the AI-assisted loop faster. |
 | `override_rate` | Share of reviewed decisions with an explicit override/correction marker | Rising values suggest tenant policy/prompt/model mismatch. |
@@ -145,6 +157,9 @@ Regression behavior:
 - `run_eval_job()` compares the current score to the previous stored `f1_score` for the tenant.
 - A drop greater than `0.02` marks the run as `completed_with_regression`.
 - `aborted_budget` means the eval stopped before the next LLM call because the tenant budget was exhausted.
+- `evaluate_thresholds()` provides deterministic threshold checks for stable metric names. The
+  default thresholds cover `risk_routing_recall`, `unsafe_auto_approval_rate`,
+  `invalid_structured_output_rate`, and `guard_block_rate`.
 
 Operational learning metrics:
 - `GET /metrics/learning` returns live tenant approval/adoption metrics for a configurable window.

@@ -85,7 +85,14 @@ class _SessionStub:
 
 class _AgentStub:
     def process_webhook(self, _payload):  # noqa: ANN001
-        return SimpleNamespace(classification=SimpleNamespace(category="bug_report"))
+        return SimpleNamespace(
+            status="executed",
+            classification=SimpleNamespace(
+                category="bug_report",
+                urgency="medium",
+                confidence=0.92,
+            ),
+        )
 
 
 class _SyncBeginStub:

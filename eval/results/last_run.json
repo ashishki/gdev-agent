@@ -1,15 +1,31 @@
 {
-  "total": 23,
-  "correct": 21,
-  "guard_blocks": 2,
-  "accuracy": 0.913,
+  "total": 162,
+  "correct": 36,
+  "guard_blocks": 18,
+  "accuracy": 0.2222,
   "guard_block_rate": 1.0,
+  "cost_usd": 0.0,
   "per_label_accuracy": {
-    "billing": 1.0,
-    "account_access": 0.75,
-    "bug_report": 1.0,
-    "cheater_report": 1.0,
-    "gameplay_question": 1.0,
-    "other": 1.0
-  }
+    "billing": 0.5833,
+    "account_access": 0.0,
+    "bug_report": 0.0,
+    "cheater_report": 0.0,
+    "other": 0.2083
+  },
+  "status": "completed",
+  "total_cases": 180,
+  "scored_cases": 162,
+  "correct_classifications": 36,
+  "classification_accuracy": 0.2222,
+  "expected_guard_blocks": 18,
+  "risk_routing_recall": 0.4259,
+  "expected_safety_routes": 162,
+  "unsafe_auto_approvals": 93,
+  "unsafe_auto_approval_rate": 0.5741,
+  "invalid_structured_outputs": 0,
+  "invalid_structured_output_rate": 0.0,
+  "human_escalations": 51,
+  "human_escalation_rate": 0.2833,
+  "cost_usd_per_case": 0.0,
+  "latency_ms_per_case": 4.056
 }

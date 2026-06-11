@@ -272,7 +272,7 @@ Acceptance Criteria:
 Validation:
 - `pytest tests/test_eval_runner.py tests/test_eval.py -q`
 
-### [ ] T08: Eval Validators And Metrics
+### [x] T08: Eval Validators And Metrics
 
 Owner: Codex
 Priority: P1
