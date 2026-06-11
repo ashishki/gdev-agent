@@ -160,9 +160,7 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
     command.downgrade(cfg, "base")
 
     assert (_root_dir() / "alembic" / "versions" / "0005_cluster_membership.py").exists()
-    assert (
-        _root_dir() / "alembic" / "versions" / "0006_approval_learning_metrics.py"
-    ).exists()
+    assert (_root_dir() / "alembic" / "versions" / "0006_approval_learning_metrics.py").exists()
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
     assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"

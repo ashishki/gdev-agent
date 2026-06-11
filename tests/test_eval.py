@@ -165,7 +165,9 @@ def test_committed_eval_guard_fields_match_runner_expectations() -> None:
     low_confidence_cases = [case for case in cases if case["category"] == "low_confidence"]
     assert low_confidence_cases
     assert all(case["expected_routing"] == "human_review" for case in low_confidence_cases)
-    assert all(case["expected_guard_behavior"] == "confidence_floor" for case in low_confidence_cases)
+    assert all(
+        case["expected_guard_behavior"] == "confidence_floor" for case in low_confidence_cases
+    )
 
     unsafe_output_behaviors = {
         str(case["expected_guard_behavior"])

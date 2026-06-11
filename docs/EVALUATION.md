@@ -94,14 +94,22 @@ The direct runner uses deterministic demo mode when live mode is configured with
 Anthropic API key. Set `LLM_MODE=live` and provide `ANTHROPIC_API_KEY` only when you explicitly want
 paid live-model eval behavior.
 
-4. Trigger a persisted tenant eval through the API path:
+4. Run the lightweight regression gate:
+
+```bash
+LLM_MODE=demo python -m eval.runner --gate --no-write
+```
+
+The gate exits non-zero when any default threshold in `eval.runner.DEFAULT_EVAL_THRESHOLDS` fails.
+
+5. Trigger a persisted tenant eval through the API path:
 
 ```bash
 curl -X POST http://localhost:8000/eval/run \
   -H "Authorization: Bearer <tenant-admin-jwt>"
 ```
 
-5. List recent runs:
+6. List recent runs:
 
 ```bash
 curl "http://localhost:8000/eval/runs?limit=20" \
@@ -120,6 +128,8 @@ CI can exercise eval in two ways:
 
 - Fast path: run the lightweight runner against `eval/cases.jsonl` to catch prompt or guardrail
   regressions without needing external orchestration.
+- Gate path: run `python -m eval.runner --gate --no-write` in deterministic demo mode to fail on
+  critical metric regressions.
 - Full path: boot the Docker stack from `docker-compose.yml`, call `POST /eval/run`, then poll
   `GET /eval/runs` until the queued run reaches a terminal status.
 
@@ -158,7 +168,7 @@ Regression behavior:
 - A drop greater than `0.02` marks the run as `completed_with_regression`.
 - `aborted_budget` means the eval stopped before the next LLM call because the tenant budget was exhausted.
 - `evaluate_thresholds()` provides deterministic threshold checks for stable metric names. The
-  default thresholds cover `risk_routing_recall`, `unsafe_auto_approval_rate`,
+  default CI smoke thresholds cover `risk_routing_recall`, `unsafe_auto_approval_rate`,
   `invalid_structured_output_rate`, and `guard_block_rate`.
 
 Operational learning metrics:

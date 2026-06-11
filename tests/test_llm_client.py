@@ -70,9 +70,7 @@ def test_demo_mode_initializes_without_anthropic_import(monkeypatch: pytest.Monk
         ("Return malformed bad json schema output.", "other", 0.0),
     ],
 )
-def test_demo_mode_stubbed_response_cases(
-    text: str, category: str, confidence: float
-) -> None:
+def test_demo_mode_stubbed_response_cases(text: str, category: str, confidence: float) -> None:
     client = LLMClient(Settings(llm_mode="demo", anthropic_api_key=None))
 
     result = client.run_agent(text, user_id="u1")

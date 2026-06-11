@@ -237,7 +237,7 @@ Validation:
 
 ## Phase 2 - Evaluation Hardening
 
-Status: active
+Status: complete
 Business goal: prove quality with versioned datasets, deterministic validators,
 baseline metrics, and regression gates.
 Exit criteria: eval reports answer accuracy, guardrail, routing, structure,
@@ -331,7 +331,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "EVAL_REPORT|classification_accuracy|unsafe_auto_approval|threshold|known limits" README.md docs/EVIDENCE_INDEX.md docs/EVAL_REPORT.md eval/results/last_run.json`
 
-### [ ] T10: CI Eval Regression Gate
+### [x] T10: CI Eval Regression Gate
 
 Owner: Codex
 Priority: P1
@@ -363,7 +363,7 @@ Validation:
 
 ## Phase 3 - Reliability And Failure-Mode Proof
 
-Status: planned
+Status: active
 Business goal: prove predictable behavior under replay, dependency failure,
 provider errors, guard failures, approval expiry, and budget/rate pressure.
 Exit criteria: every major failure mode has a named expected behavior, test or

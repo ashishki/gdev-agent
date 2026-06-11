@@ -62,3 +62,8 @@ jobs:
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-at-least-32-characters-long
         run: python -m pytest tests/ -q --tb=short
+
+      - name: Eval regression gate
+        env:
+          LLM_MODE: demo
+        run: python -m eval.runner --gate --no-write

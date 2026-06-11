@@ -347,9 +347,7 @@ class LLMClient:
             turns_used=1,
         )
 
-    def _demo_tool_inputs(
-        self, text: str
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    def _demo_tool_inputs(self, text: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         lowered = text.lower()
         if "malformed" in lowered or "bad json" in lowered or "schema" in lowered:
             return (

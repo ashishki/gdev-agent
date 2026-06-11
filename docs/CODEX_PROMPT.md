@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.4
+Version: 4.5
 Date: 2026-06-11
 Status: portfolio-hardening-active
 
@@ -9,13 +9,13 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 2 - Evaluation Hardening.
+Phase 3 - Reliability And Failure-Mode Proof.
 
-Business goal: prove quality with versioned datasets, deterministic validators,
-baseline metrics, and regression gates.
+Business goal: prove predictable behavior under replay, dependency failure,
+provider errors, guard failures, approval expiry, and budget/rate pressure.
 
-Phase exit criteria: eval reports answer accuracy, guardrail, routing,
-structure, latency, and cost questions with reproducible commands.
+Phase exit criteria: every major failure mode has a named expected behavior,
+test or scenario, and runbook response.
 
 ## Current State
 
@@ -48,7 +48,7 @@ Empty.
 
 ## Next Task
 
-`T10`: CI Eval Regression Gate.
+`T11`: Failure Mode Taxonomy And Runbook.
 
 ## Rules
 
