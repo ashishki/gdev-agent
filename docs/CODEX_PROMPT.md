@@ -1,7 +1,7 @@
 # gdev-agent - Compact Session State
 
-Version: 4.5
-Date: 2026-06-11
+Version: 4.6
+Date: 2026-06-12
 Status: portfolio-hardening-active
 
 Full historical prompt archived at
@@ -45,6 +45,12 @@ test or scenario, and runbook response.
 ## Fix Queue
 
 Empty.
+
+## Open Findings
+
+| ID | Sev | Description | Status |
+|----|-----|-------------|--------|
+| ARCH-HARDEN-1 | P2 | `docs/ARCHITECTURE.md` eval summary still references the old 25-case/basic metric shape after T07-T10. | Open - doc patch, non-blocking |
 
 ## Next Task
 

@@ -29,6 +29,7 @@ Reviews run at phase boundaries, not between individual tasks.
 | 7 | Phase 7 | T22–T24 | Phase 7 gate | ✅ Closed 2026-03-09 (Cycle 8) |
 | 8 | Phase 8 | FIX-A–F | Tech debt gate | ✅ Closed 2026-03-18 (Cycle 9) |
 | 9 | Phase 9 | SVC-1–3, DOC-1–5 | Service layer gate | ✅ Closed 2026-03-18 (Cycle 11) · REG-2 stop-ship |
+| 14 | Portfolio hardening Phase 2 | T07–T10 | Evaluation hardening gate | ✅ Closed 2026-06-12 · Stop-Ship: No |
 
 ## Archive
 
@@ -43,6 +44,7 @@ Reviews run at phase boundaries, not between individual tasks.
 | `archive/PHASE6_REVIEW.md` | 6–7 | 2026-03-09 |
 | `archive/PHASE8_REVIEW.md` | 9 | 2026-03-18 |
 | `archive/PHASE9_REVIEW.md` | 11 | 2026-03-18 |
+| `archive/PHASE2_EVALUATION_HARDENING_REVIEW.md` | 14 | 2026-06-12 |
 | 12 | Phase 10–11 | CLI-1, CLU-1, CLU-2, PORT-1–4 | Phase 10–11 gate | ✅ Closed 2026-03-21 (Cycle 12) · Stop-Ship: No |
 | 13 | Phase 12 | FIX-I, SVC-4 | Phase 12 gate (final) | ✅ Closed 2026-03-21 (Cycle 13) · Stop-Ship: No |
 
