@@ -1,0 +1,10 @@
+request_count=50
+p50_latency_ms=120.00
+p95_latency_ms=480.00
+p99_latency_ms=900.00
+error_rate=0.0000%
+pending_approval_rate=18.0000%
+dedup_hit_rate=8.0000%
+guard_block_rate=4.0000%
+estimated_cost_per_request_usd=0.000800
+PASS: KPI thresholds satisfied

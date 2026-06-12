@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.1
+Version: 5.2
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -54,7 +54,7 @@ Empty.
 
 ## Next Task
 
-`T16`: Load Test Report.
+`T17`: Observability Debugging Evidence.
 
 ## Rules
 

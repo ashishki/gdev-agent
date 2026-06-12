@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![243 tests](https://img.shields.io/badge/tests-243%20passing-brightgreen)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![260 tests](https://img.shields.io/badge/tests-260%20passing-brightgreen)
 
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
@@ -25,10 +25,10 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report; CI gate is planned |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
-| Load profile | [docs/load-profile.md](docs/load-profile.md) | Scenario targets and assumptions, not production capacity claims |
+| Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped data, secrets, auth, and approval boundaries |
-| Tests | [Current State](#current-state) | Last recorded baseline is 243 passing tests; rerun locally before relying on it |
-| Failure modes and SLO/runbook | [docs/ARCHITECTURE.md#65-n8n-retry-strategy](docs/ARCHITECTURE.md#65-n8n-retry-strategy), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks), [Known Limits](#known-limits) | Partial retry/runbook evidence; canonical docs are planned in the hardening graph |
+| Tests | [Current State](#current-state) | Last recorded baseline is 260 passing tests; rerun locally before relying on it |
+| Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
 
 ## Why This Project Exists
@@ -66,7 +66,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
 | Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
 | Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
-| Platform | Docker Compose full stack; 243 tests (unit + integration) passing; ruff-clean |
+| Platform | Docker Compose full stack; 260 tests (unit + integration) passing; ruff-clean |
 
 ## Quick Start
 
@@ -218,10 +218,11 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
   deployment, production SaaS readiness, live tenant traffic, or real customer
   operations.
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
-  says otherwise.
-- Failure-mode and SLO/runbook docs, CI eval gate, load reports, deployment-readiness
-  notes, and a dedicated tenant-isolation proof document are tracked in
-  [docs/tasks.md](docs/tasks.md) and are not complete yet.
+  says otherwise. The current load report is deterministic/local evidence, not
+  live capacity proof.
+- CI eval gate, live load measurements, deployment-readiness notes, and final
+  portfolio packaging are tracked in [docs/tasks.md](docs/tasks.md) and are not
+  complete yet.
 - Live LLM behavior requires a real Anthropic API key and budget controls; the
   local stack is the supported review path today.
 
@@ -235,6 +236,6 @@ membership, full service-layer separation (no FastAPI imports in business
 logic), Dockerized observability, admin CLI, and the n8n workflow artifacts
 needed for demo or pilot-style setups.
 
-**243 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, and cluster membership persistence). All P0 and P1 findings from 13 review cycles have been resolved.
+**260 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, and cluster membership persistence). All P0 and P1 findings from 15 review cycles have been resolved.
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.

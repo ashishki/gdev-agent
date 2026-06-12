@@ -533,7 +533,7 @@ Validation:
 - `pytest tests/test_load_test_fixtures.py -q`
 - `python load_tests/check_kpis.py --help` or documented dry-run equivalent
 
-### [ ] T16: Load Test Report
+### [x] T16: Load Test Report
 
 Owner: Codex
 Priority: P1

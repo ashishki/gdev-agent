@@ -1,0 +1,6 @@
+scenario,source,tenants,users,spawn_rate,run_time,p50_latency_ms,p95_latency_ms,p99_latency_ms,error_rate,approval_creation_rate,dedup_hit_rate,guard_block_rate,estimated_cost_per_request_usd,redis_notes,postgres_notes
+low_load,synthetic_deterministic_fixture,1,5,1,2m,120,480,900,0.0000,0.1800,0.0800,0.0400,0.000800,"dedup and approval keys expected in Redis; not measured live","no live DB pressure measured"
+mixed_10_tenant,synthetic_deterministic_fixture,10,50,5,10m,210,720,1300,0.0000,0.2200,0.0300,0.0300,0.000820,"10 tenant key namespaces exercised by harness config; not measured live","requires seeded synthetic load tenants before live run"
+duplicate_replay,synthetic_deterministic_fixture,1,20,10,2m,80,160,260,0.0000,0.0000,0.9600,0.0000,0.000000,"single replay key should dominate Redis dedup hits","no duplicate write pressure measured live"
+risky_action_heavy,synthetic_deterministic_fixture,2,20,4,5m,190,650,1200,0.0000,0.7100,0.0200,0.0100,0.000850,"approval queue key growth expected; queue depth not measured live","pending approval writes require local Postgres measurement"
+provider_latency,synthetic_deterministic_fixture,2,15,3,5m,870,1220,1740,0.0000,0.2600,0.0200,0.0200,0.000830,"provider latency simulated in virtual users; Redis not measured live","database latency not isolated from simulated provider wait"
