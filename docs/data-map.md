@@ -234,15 +234,20 @@ fields retained for audit integrity.
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tickets
-  USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+  USING (tenant_id = current_setting('app.current_tenant_id', TRUE)::UUID);
 
--- Set at connection start:
-SET app.current_tenant_id = '<tenant_id_from_jwt>';
+-- Set inside the current transaction only:
+SELECT set_config('app.current_tenant_id', '<tenant_id_from_jwt>', TRUE);
 ```
 
 - Application DB user (`gdev_app`) has no `BYPASSRLS` privilege.
 - Migrations and admin operations use a separate `gdev_admin` user with `BYPASSRLS`.
-- RLS is tested in integration tests: cross-tenant query must return zero rows.
+- Runtime code sets tenant context through `app/db.py::_set_tenant_ctx()` inside
+  `session.begin()`. The third `TRUE` argument to `set_config()` makes the
+  value transaction-local, equivalent to `SET LOCAL`, so tenant context is not
+  retained on a reused connection.
+- RLS is tested in integration tests: cross-tenant query must return zero rows
+  and cross-tenant writes by `gdev_app` must fail.
 
 ### Redis layer
 - Key prefix `{tenant_id}:` is enforced in all Redis client methods.

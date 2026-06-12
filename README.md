@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![260 tests](https://img.shields.io/badge/tests-260%20passing-brightgreen)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![263 tests](https://img.shields.io/badge/tests-263%20passing-brightgreen)
 
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
@@ -26,8 +26,8 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report; CI gate is planned |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
-| Tenant isolation and security | [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped data, secrets, auth, and approval boundaries |
-| Tests | [Current State](#current-state) | Last recorded baseline is 260 passing tests; rerun locally before relying on it |
+| Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
+| Tests | [Current State](#current-state) | Last recorded baseline is 263 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
 
@@ -66,7 +66,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
 | Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
 | Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
-| Platform | Docker Compose full stack; 260 tests (unit + integration) passing; ruff-clean |
+| Platform | Docker Compose full stack; 263 tests (unit + integration) passing; ruff-clean |
 
 ## Quick Start
 
@@ -209,6 +209,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/agent-registry.md](docs/agent-registry.md): agent configuration model and governance.
 - [docs/llm-usage.md](docs/llm-usage.md): prompt/versioning and model-usage rules.
 - [docs/load-profile.md](docs/load-profile.md): load targets and performance assumptions.
+- [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md): canonical tenant-isolation proof with exact tests and migrations.
 - [docs/data-map.md](docs/data-map.md): schema, Redis keys, and tenant-boundary rules.
 - [n8n/README.md](n8n/README.md): workflow assets committed in this repository.
 
@@ -232,10 +233,11 @@ The local stack is pilot-grade and feature-complete enough to demonstrate the
 governed request pipeline. It includes the multi-tenant storage foundation,
 JWT/RBAC boundary, approval hardening, eval APIs with budget enforcement, auth
 service flows, embedding persistence, RCA clustering with persisted cluster
-membership, full service-layer separation (no FastAPI imports in business
-logic), Dockerized observability, admin CLI, and the n8n workflow artifacts
-needed for demo or pilot-style setups.
+membership, service-layer separation for the main write/auth/eval workflows
+with read-route extraction still tracked as architecture drift, Dockerized
+observability, admin CLI, and the n8n workflow artifacts needed for demo or
+pilot-style setups.
 
-**260 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, and cluster membership persistence). All P0 and P1 findings from 15 review cycles have been resolved.
+**263 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 16 review cycles have been resolved.
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.
