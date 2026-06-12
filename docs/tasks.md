@@ -501,7 +501,7 @@ traffic and make debugging paths visible.
 Exit criteria: load tests are reproducible locally and reports map metrics,
 traces, and logs to user-visible workflow steps.
 
-### [ ] T15: Load Test Harness Alignment
+### [x] T15: Load Test Harness Alignment
 
 Owner: Codex
 Priority: P1

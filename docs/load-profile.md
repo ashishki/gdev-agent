@@ -166,30 +166,89 @@ Runbook ownership and local response steps live in [SLO_RUNBOOK.md](SLO_RUNBOOK.
 **Locust file structure:**
 ```
 load_tests/
-  locustfile.py         — defines User classes for each scenario
+  locustfile.py         — shared scenario configs, fixture validation, HMAC helpers
+  check_kpis.py         — parses Locust CSV and prints portfolio KPIs
   scenarios/
-    burst.py            — Scenario A
-    steady.py           — Scenario B
-    batch.py            — Scenario C
+    burst.py            — high webhook pressure user class
+    steady.py           — lower pressure plus read/approval user class
   fixtures/
-    sample_messages.jsonl  — realistic player support messages (synthetic)
+    sample_messages.jsonl  — synthetic player support messages with load profile tags
 ```
 
-**Execution:**
-```bash
-# Scenario A (burst)
-locust -f load_tests/locustfile.py --scenario burst \
-  --headless -u 60 -r 10 --run-time 7m \
-  --host http://localhost:8000
+**Supported harness scenarios:**
 
-# Scenario B (steady)
-locust -f load_tests/locustfile.py --scenario steady \
-  --headless -u 50 -r 5 --run-time 1h \
-  --host http://localhost:8000
+| Scenario | Purpose | Default tenant count | Notes |
+|----------|---------|----------------------|-------|
+| `low_load` | 1-tenant low load | 1 | Compose-safe deterministic smoke path |
+| `mixed_10_tenant` | 10-tenant mixed load | 10 | Requires matching synthetic load tenants in the local DB |
+| `duplicate_replay` | Duplicate replay storm | 1 | Reuses one message ID to exercise Redis dedup |
+| `risky_action_heavy` | Approval-heavy traffic | 2 | Biases billing/ambiguous cases toward pending approvals |
+| `provider_latency` | Provider-latency simulation | 2 | Sleeps virtual users and records KPI latency simulation events |
+
+Legacy scenario names remain accepted: `burst` maps to `mixed_10_tenant`, and `steady`
+maps to `low_load`.
+
+**Deterministic local setup:**
+
+```bash
+LLM_MODE=demo docker compose up --build -d
+.venv/bin/python scripts/demo.py --llm-mode demo
+```
+
+If Locust is not already installed in the active environment:
+
+```bash
+.venv/bin/python -m pip install locust
+```
+
+**Execution commands:**
+```bash
+# 1-tenant low load, safe against the seeded Compose demo tenants.
+mkdir -p load_tests/results/local
+.venv/bin/locust -f load_tests/locustfile.py --scenario low_load \
+  --headless -u 5 -r 1 --run-time 2m \
+  --host http://localhost:8000 \
+  --csv load_tests/results/local/low_load
+
+# 10-tenant mixed load. Seed tenants matching TENANT_PROFILES in locustfile.py first.
+.venv/bin/locust -f load_tests/locustfile.py --scenario mixed_10_tenant \
+  --headless -u 50 -r 5 --run-time 10m \
+  --host http://localhost:8000 \
+  --csv load_tests/results/local/mixed_10_tenant
+
+# Duplicate replay storm.
+.venv/bin/locust -f load_tests/locustfile.py --scenario duplicate_replay \
+  --headless -u 20 -r 10 --run-time 2m \
+  --host http://localhost:8000 \
+  --csv load_tests/results/local/duplicate_replay
+
+# Risky-action heavy traffic.
+.venv/bin/locust -f load_tests/locustfile.py --scenario risky_action_heavy \
+  --headless -u 20 -r 4 --run-time 5m \
+  --host http://localhost:8000 \
+  --csv load_tests/results/local/risky_action_heavy
+
+# Provider-latency simulation in deterministic demo mode.
+.venv/bin/locust -f load_tests/locustfile.py --scenario provider_latency \
+  --headless -u 15 -r 3 --run-time 5m \
+  --host http://localhost:8000 \
+  --csv load_tests/results/local/provider_latency
+```
+
+**KPI check:**
+
+```bash
+.venv/bin/python load_tests/check_kpis.py --dry-run
+
+.venv/bin/python load_tests/check_kpis.py \
+  --stats load_tests/results/local/low_load_stats.csv \
+  --failures load_tests/results/local/low_load_failures.csv
 ```
 
 **Result capture:**
 - Locust HTML report + CSV stats.
+- `check_kpis.py` output: p50/p95/p99 latency, error rate, pending approval rate,
+  dedup hit rate, guard block rate, and estimated cost per request.
 - Prometheus metrics snapshot at start and end of run.
 - Grafana dashboard screenshot at hold peak.
 - Results stored in `load_tests/results/{date}/`.
