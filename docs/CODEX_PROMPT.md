@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.3
+Version: 5.4
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -22,6 +22,8 @@ Phase exit criteria: reviewer can find and run tenant-isolation proof from READM
 - Portfolio role: employer-facing engineering case.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
   proof, and bounded deployment-readiness work.
+- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 263 passed, 0 skipped,
+  42 warnings (orchestrator-verified after T17).
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -41,15 +43,20 @@ Phase exit criteria: reviewer can find and run tenant-isolation proof from READM
 - `docs/load-profile.md`
 - `docs/observability.md`
 
-## Fix Queue
+─── Fix Queue ─── (empty — proceed to phase queue)
 
-Empty.
+No P0/P1 findings are open.
 
 ## Open Findings
 
 | ID | Sev | Description | Status |
 |----|-----|-------------|--------|
 | ARCH-HARDEN-1 | P2 | `docs/ARCHITECTURE.md` eval summary still references the old 25-case/basic metric shape after T07-T10. | Open - doc patch, non-blocking |
+| ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, and response assembly logic in route handlers. | Open - service extraction drift; non-blocking for T18 |
+| ARCH-2 | P2 | `docs/ARCHITECTURE.md` still describes an older system snapshot, including stale eval/audit/load/observability evidence. | Open - doc refresh before final packaging |
+| CODE-1 | P2 | `docs/data-map.md` documents tenant context as connection-level `SET app.current_tenant_id` instead of transaction-local `SET LOCAL`. | Open - address during T18 tenant isolation evidence work |
+| CODE-2 | P2 | README overstates "full service-layer separation" while read-route drift remains. | Open - soften claim or complete read service extraction |
+| CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions with unmeasured local/synthetic load evidence. | Open - add caveats or split target vs measured sections |
 
 ## Next Task
 
