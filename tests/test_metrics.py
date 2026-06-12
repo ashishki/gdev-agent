@@ -10,6 +10,7 @@ from uuid import uuid4
 from prometheus_client import REGISTRY
 
 import fakeredis
+from app import metrics as metrics_module
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
@@ -25,6 +26,22 @@ from app.schemas import (
 from app.store import EventStore
 
 UTC = timezone.utc
+
+TENANT_SAFE_METRICS = (
+    metrics_module.REQUESTS_TOTAL,
+    metrics_module.REQUEST_DURATION_SECONDS,
+    metrics_module.PENDING_TOTAL,
+    metrics_module.APPROVED_TOTAL,
+    metrics_module.REJECTED_TOTAL,
+    metrics_module.APPROVAL_QUEUE_DEPTH,
+    metrics_module.GUARD_BLOCKS_TOTAL,
+    metrics_module.LLM_REQUESTS_TOTAL,
+    metrics_module.LLM_DURATION_SECONDS,
+    metrics_module.LLM_TOKENS_TOTAL,
+    metrics_module.LLM_COST_USD_TOTAL,
+    metrics_module.BUDGET_EXCEEDED_TOTAL,
+    metrics_module.INTEGRATION_ERRORS_TOTAL,
+)
 
 
 class _FakeLLMClient:
@@ -49,6 +66,16 @@ class _FakeLLMClient:
 def _sample(metric: str, labels: dict[str, str]) -> float:
     value = REGISTRY.get_sample_value(metric, labels=labels)
     return float(value) if value is not None else 0.0
+
+
+def test_core_metrics_use_tenant_safe_labels() -> None:
+    for metric in TENANT_SAFE_METRICS:
+        labelnames = set(metric._labelnames)
+        assert "tenant_hash" in labelnames
+        assert "tenant_id" not in labelnames
+        assert "user_id" not in labelnames
+        assert "email" not in labelnames
+        assert "text" not in labelnames
 
 
 def test_webhook_increments_request_and_token_metrics() -> None:

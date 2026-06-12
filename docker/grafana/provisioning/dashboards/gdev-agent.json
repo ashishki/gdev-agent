@@ -197,28 +197,6 @@
     },
     {
       "datasource": {
-        "type": "postgres",
-        "uid": "postgres"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 16
-      },
-      "id": 7,
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT NOW() AS time, tenant_id::text AS tenant_hash, COALESCE(ROUND((COUNT(*) FILTER (WHERE override_kind IS NOT NULL))::numeric / NULLIF(COUNT(*), 0), 3), 0)::float AS override_rate, COALESCE(ROUND((COUNT(*) FILTER (WHERE decision = 'rejected'))::numeric / NULLIF(COUNT(*), 0), 3), 0)::float AS rejection_rate, COUNT(*) AS reviewed_count FROM approval_events WHERE created_at > NOW() - INTERVAL '1 day' GROUP BY tenant_id",
-          "refId": "A"
-        }
-      ],
-      "title": "Override/Rejection Rate (24h)",
-      "type": "table"
-    },
-    {
-      "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
@@ -263,46 +241,98 @@
     },
     {
       "datasource": {
-        "type": "postgres",
-        "uid": "postgres"
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 24
+        "y": 32
       },
-      "id": 10,
+      "id": 12,
       "targets": [
         {
-          "format": "table",
-          "rawSql": "SELECT NOW() AS time, tenant_id::text AS tenant_hash, ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms))::numeric)::integer AS p50_ms, ROUND((percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms))::numeric)::integer AS p95_ms FROM approval_events WHERE created_at > NOW() - INTERVAL '1 day' AND latency_ms IS NOT NULL GROUP BY tenant_id",
+          "expr": "histogram_quantile(0.50, sum by (le,tenant_hash) (rate(gdev_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{tenant_hash}}",
           "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le,tenant_hash) (rate(gdev_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{tenant_hash}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le,tenant_hash) (rate(gdev_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{tenant_hash}}",
+          "refId": "C"
         }
       ],
-      "title": "Approval Latency p50/p95 (24h)",
-      "type": "table"
+      "title": "Webhook Request Latency p50/p95/p99",
+      "type": "timeseries"
     },
     {
       "datasource": {
-        "type": "postgres",
-        "uid": "postgres"
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 24
+        "y": 32
       },
-      "id": 11,
+      "id": 13,
       "targets": [
         {
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, tenant_id::text AS tenant_hash, COUNT(*) AS reviewed_count FROM approval_events WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "expr": "sum by (tenant_hash) (increase(gdev_pending_total[1h]))",
+          "legendFormat": "pending {{tenant_hash}}",
           "refId": "A"
+        },
+        {
+          "expr": "sum by (tenant_hash) (increase(gdev_approved_total[1h]))",
+          "legendFormat": "approved {{tenant_hash}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (tenant_hash) (increase(gdev_rejected_total[1h]))",
+          "legendFormat": "rejected {{tenant_hash}}",
+          "refId": "C"
         }
       ],
-      "title": "Reviewed Approval Volume",
+      "title": "Approval Workflow Outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "sum by (tenant_hash) (increase(gdev_budget_exceeded_total[1h]))",
+          "legendFormat": "budget {{tenant_hash}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (tenant_hash) (increase(gdev_llm_retry_total[1h]))",
+          "legendFormat": "llm retry {{tenant_hash}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (integration,tenant_hash) (increase(gdev_integration_errors_total[1h]))",
+          "legendFormat": "{{integration}} {{tenant_hash}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Failure Mode Signals",
       "type": "timeseries"
     }
   ],
@@ -310,7 +340,8 @@
   "style": "dark",
   "tags": [
     "gdev-agent",
-    "phase5"
+    "phase4",
+    "observability"
   ],
   "templating": {
     "list": []

@@ -560,7 +560,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "LOAD_TEST_REPORT|p50|p95|p99|dedup|guard block|known limits" README.md docs/EVIDENCE_INDEX.md docs/LOAD_TEST_REPORT.md`
 
-### [ ] T17: Observability Debugging Evidence
+### [x] T17: Observability Debugging Evidence
 
 Owner: Codex
 Priority: P1

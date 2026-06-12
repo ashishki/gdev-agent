@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.2
+Version: 5.3
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -9,13 +9,12 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 4 - Load Profile And Observability Proof.
+Phase 5 - Tenant Isolation And Security Proof.
 
-Business goal: show measurable local behavior under realistic portfolio-scale
-traffic and make debugging paths visible.
+Business goal: back every multi-tenancy claim with concrete docs, adversarial
+examples, and tests.
 
-Phase exit criteria: load tests are reproducible locally and reports map metrics,
-traces, and logs to user-visible workflow steps.
+Phase exit criteria: reviewer can find and run tenant-isolation proof from README.
 
 ## Current State
 
@@ -54,7 +53,7 @@ Empty.
 
 ## Next Task
 
-`T17`: Observability Debugging Evidence.
+`T18`: Tenant Isolation Evidence Document.
 
 ## Rules
 

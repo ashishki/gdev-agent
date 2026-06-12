@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -10,6 +12,8 @@ from app.agent import AgentService
 from app.config import Settings
 from app.main import webhook
 from app.schemas import ClassificationResult, ExtractedFields, WebhookRequest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -166,3 +170,59 @@ def test_agent_span_attributes_do_not_include_raw_text_or_user_id(monkeypatch) -
                 assert "demo@example.com" not in value
                 assert "Player email is" not in value
                 assert value != "user-123"
+
+
+def test_dashboard_contains_main_workflow_observability_panels() -> None:
+    dashboard_path = (
+        PROJECT_ROOT / "docker" / "grafana" / "provisioning" / "dashboards" / "gdev-agent.json"
+    )
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    panel_text = json.dumps(dashboard["panels"])
+
+    required_signals = {
+        "gdev_requests_total",
+        "gdev_request_duration_seconds",
+        "gdev_pending_total",
+        "gdev_approval_queue_depth",
+        "gdev_guard_blocks_total",
+        "gdev_llm_retry_total",
+        "gdev_budget_exceeded_total",
+    }
+
+    for signal in required_signals:
+        assert signal in panel_text
+
+    for panel in dashboard["panels"]:
+        datasource = panel.get("datasource", {})
+        assert datasource.get("type") != "postgres"
+        for target in panel.get("targets", []):
+            raw_sql = target.get("rawSql", "")
+            assert "tenant_id::text AS tenant_hash" not in raw_sql
+
+
+def test_observability_docs_map_workflow_steps_to_failure_modes() -> None:
+    observability = (PROJECT_ROOT / "docs" / "observability.md").read_text(encoding="utf-8")
+    failure_modes = (PROJECT_ROOT / "docs" / "FAILURE_MODES.md").read_text(encoding="utf-8")
+
+    required_workflow_steps = (
+        "Signature and rate-limit",
+        "Dedup replay check",
+        "Input guard",
+        "LLM classify/extract/draft",
+        "Approval route",
+        "Execution and audit",
+    )
+    required_failure_links = (
+        "FM_DUPLICATE_WEBHOOK_REPLAY",
+        "FM_OUTPUT_GUARD_BLOCK",
+        "FM_LLM_TIMEOUT",
+        "FM_BUDGET_EXCEEDED",
+        "FM_APPROVAL_TTL_EXPIRED",
+        "FM_RATE_LIMIT_EXCEEDED",
+    )
+
+    for step in required_workflow_steps:
+        assert step in observability
+    for failure_mode in required_failure_links:
+        assert failure_mode in observability
+        assert failure_mode in failure_modes
