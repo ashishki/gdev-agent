@@ -35,6 +35,8 @@ class _SessionStub:
 
     async def execute(self, statement, params: dict[str, object]):
         self.execute_calls.append((statement, params))
+        if "set_config('app.current_tenant_id'" in str(statement):
+            return _ResultStub(None)
         row = self.rows.pop(0) if self.rows else None
         return _ResultStub(row)
 
@@ -59,6 +61,9 @@ async def test_get_secret_decrypts_ciphertext() -> None:
     secret = await store.get_secret(tenant_id)
 
     assert secret == "secret-a"
+    assert len(session.execute_calls) == 2
+    assert "set_config('app.current_tenant_id'" in str(session.execute_calls[0][0])
+    assert session.execute_calls[0][1] == {"tenant_id": str(tenant_id)}
 
 
 @pytest.mark.asyncio
@@ -95,3 +100,5 @@ async def test_get_secret_by_slug_reads_tenant_then_secret() -> None:
     secret = await store.get_secret_by_slug("tenant-b")
 
     assert secret == "secret-b"
+    assert "set_config('app.current_tenant_id'" in str(secret_session.execute_calls[0][0])
+    assert secret_session.execute_calls[0][1] == {"tenant_id": str(tenant_id)}

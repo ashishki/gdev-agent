@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db import _set_tenant_ctx
 from app.tenant_registry import TenantNotFoundError
 
 
@@ -28,6 +29,7 @@ class WebhookSecretStore:
 
     async def get_secret(self, tenant_id: UUID) -> str:
         async with self._db_session_factory() as session:
+            await _set_tenant_ctx(session, str(tenant_id))
             result = await session.execute(
                 text(
                     """

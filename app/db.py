@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from app.config import Settings
 
@@ -36,10 +37,9 @@ def make_engine(settings: Settings) -> AsyncEngine:
     if not database_url:
         raise ValueError("DATABASE_URL or TEST_DATABASE_URL is required")
     sqlite = database_url.startswith("sqlite")
-    kwargs: dict[str, int | bool] = {"pool_pre_ping": not sqlite}
+    kwargs: dict[str, object] = {"pool_pre_ping": not sqlite}
     if not sqlite:
-        kwargs["pool_size"] = settings.db_pool_size
-        kwargs["max_overflow"] = settings.db_max_overflow
+        kwargs["poolclass"] = NullPool
     return create_async_engine(database_url, **kwargs)
 
 

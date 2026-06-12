@@ -107,8 +107,7 @@ def test_make_engine_postgres_enables_pre_ping_and_pool_bounds(
     assert calls["url"] == "postgresql+asyncpg://user:pass@localhost:5432/gdev"
     assert calls["kwargs"] == {
         "pool_pre_ping": True,
-        "pool_size": 7,
-        "max_overflow": 3,
+        "poolclass": db.NullPool,
     }
 
 

@@ -364,8 +364,20 @@ def upgrade() -> None:
             """
         )
 
-    op.execute("CREATE ROLE gdev_app NOINHERIT LOGIN")
-    op.execute("CREATE ROLE gdev_admin NOINHERIT LOGIN")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gdev_app') THEN
+                CREATE ROLE gdev_app NOINHERIT LOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gdev_admin') THEN
+                CREATE ROLE gdev_admin NOINHERIT LOGIN;
+            END IF;
+        END
+        $$
+        """
+    )
     op.execute("GRANT ALL ON ALL TABLES IN SCHEMA public TO gdev_admin")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app")
 

@@ -37,9 +37,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
+      LLM_MODE: ${LLM_MODE:-live}
       ANTHROPIC_API_KEY: test-key
       DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
       REDIS_URL: redis://redis:6379
