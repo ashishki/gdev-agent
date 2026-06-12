@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 import fakeredis
@@ -88,6 +90,59 @@ def test_error_code_validation_filters_non_codes() -> None:
         "extract_entities", {"error_code": "error code ERR-1234"}, "u-3"
     )
     assert err_code["error_code"] == "ERR-1234"
+
+
+def test_malformed_classification_output_routes_to_safe_pending(caplog) -> None:
+    client = object.__new__(LLMClient)
+
+    with caplog.at_level(logging.ERROR, logger="app.llm_client"):
+        fallback = client._dispatch_tool(
+            "classify_request",
+            {"category": "billing", "confidence": "high"},
+            "u-4",
+        )
+
+    assert fallback == {"category": "other", "urgency": "low", "confidence": 0.0}
+    assert any(
+        getattr(record, "event", None) == "llm_invalid_response" for record in caplog.records
+    )
+
+    class MalformedFallbackLLM:
+        def run_agent(
+            self,
+            text: str,
+            user_id: str | None = None,
+            max_turns: int = 5,
+            tenant_id: str | None = None,
+        ) -> TriageResult:
+            _ = (text, max_turns, tenant_id)
+            return TriageResult(
+                classification=ClassificationResult(**fallback),
+                extracted=ExtractedFields(user_id=user_id),
+                draft_text="We will route this to a reviewer.",
+                input_tokens=20,
+                output_tokens=10,
+            )
+
+    agent = AgentService(
+        settings=Settings(approval_categories=[], auto_approve_threshold=0.5),
+        store=EventStore(sqlite_path=None),
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=MalformedFallbackLLM(),
+    )
+
+    response = agent.process_webhook(
+        WebhookRequest(
+            text="normal request with malformed model structure",
+            user_id="u-4",
+            tenant_id="11111111-1111-1111-1111-111111111111",
+        )
+    )
+
+    assert response.status == "pending"
+    assert response.action.tool == "flag_for_human"
+    assert response.pending is not None
+    assert response.pending.reason == "confidence below safety floor"
 
 
 def test_unknown_tool_marks_response_for_pending() -> None:

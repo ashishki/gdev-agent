@@ -11,7 +11,9 @@ import fakeredis
 from app.agent import AgentService
 from app.approval_store import RedisApprovalStore
 from app.config import Settings
+from app.dedup import DedupCache
 from app.exceptions import AgentError
+from app.llm_client import TriageResult
 from app.schemas import (
     ClassificationResult,
     ExtractedFields,
@@ -64,6 +66,85 @@ class _DedupStub:
 
     def set(self, tenant_id: str, message_id: str, body: str) -> None:
         self.set_calls.append((tenant_id, message_id, body))
+
+
+class _BillingLLMClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def run_agent(
+        self,
+        text: str,
+        user_id: str | None = None,
+        max_turns: int = 5,
+        tenant_id: str | None = None,
+    ) -> TriageResult:
+        _ = (text, max_turns, tenant_id)
+        self.calls += 1
+        return TriageResult(
+            classification=ClassificationResult(
+                category="billing", urgency="medium", confidence=0.95
+            ),
+            extracted=ExtractedFields(user_id=user_id),
+            draft_text="We will review the billing issue.",
+            input_tokens=80,
+            output_tokens=30,
+        )
+
+
+class _CostResultStub:
+    def mappings(self) -> "_CostResultStub":
+        return self
+
+    def first(self) -> dict[str, str]:
+        return {"cost_usd": "0.001", "daily_budget_usd": "10.0"}
+
+
+class _CostSessionStub:
+    async def __aenter__(self) -> "_CostSessionStub":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    def begin(self) -> "_CostSessionStub":
+        return self
+
+    async def execute(self, _statement, _params=None) -> _CostResultStub:
+        return _CostResultStub()
+
+
+class _CostSessionFactoryStub:
+    def __call__(self) -> _CostSessionStub:
+        return _CostSessionStub()
+
+
+class _CountingCostLedger:
+    def __init__(self) -> None:
+        self.check_calls = 0
+        self.record_calls = 0
+
+    async def check_budget(self, _tenant_id, _db) -> None:
+        self.check_calls += 1
+
+    async def record(self, *, tenant_id, day, input_tokens, output_tokens, cost_usd, db) -> None:
+        _ = (tenant_id, day, input_tokens, output_tokens, cost_usd, db)
+        self.record_calls += 1
+
+
+class _CapturingStore(EventStore):
+    def __init__(self) -> None:
+        super().__init__(sqlite_path=None)
+        self._db_session_factory = _CostSessionFactoryStub()
+        self.events: list[tuple[str, dict[str, object]]] = []
+        self.pipeline_runs: list[dict[str, object]] = []
+
+    def log_event(self, event_type: str, payload: dict[str, object]) -> None:
+        self.events.append((event_type, payload))
+
+    def persist_pipeline_run(self, *args, **kwargs):
+        self.pipeline_runs.append({"args": args, "kwargs": kwargs})
+        return "ticket-1"
 
 
 def _response() -> WebhookResponse:
@@ -124,6 +205,47 @@ def test_handle_returns_cached_response_on_dedup_hit() -> None:
 
     assert result == cached
     assert dedup.set_calls == []
+
+
+def test_duplicate_webhook_replay_is_idempotent_for_side_effects() -> None:
+    tenant_id = str(uuid4())
+    redis_client = fakeredis.FakeRedis()
+    approval_store = RedisApprovalStore(redis_client, ttl_seconds=3600)
+    llm_client = _BillingLLMClient()
+    cost_ledger = _CountingCostLedger()
+    store = _CapturingStore()
+    settings = Settings(
+        approval_categories=["billing"],
+        auto_approve_threshold=0.85,
+        anthropic_api_key="k",
+    )
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=llm_client,
+        cost_ledger=cost_ledger,
+    )
+    service = WebhookService(agent, DedupCache(redis_client), _TracerStub(), settings)
+    payload = WebhookRequest(
+        text="I was charged twice for coins.",
+        tenant_id=tenant_id,
+        message_id="duplicate-webhook-01",
+        user_id="player-1",
+    )
+
+    first = service.handle(payload, _request())
+    second = service.handle(payload, _request())
+
+    assert first.status == "pending"
+    assert second == first
+    assert llm_client.calls == 1
+    assert cost_ledger.check_calls == 1
+    assert cost_ledger.record_calls == 1
+    assert len(store.pipeline_runs) == 1
+    assert [event for event, _payload in store.events] == ["pending_created"]
+    assert first.pending is not None
+    assert approval_store.get_pending(tenant_id, first.pending.pending_id) is not None
 
 
 def test_handle_rejects_cross_tenant_payload_mismatch() -> None:

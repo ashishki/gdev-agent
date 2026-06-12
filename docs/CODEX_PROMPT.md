@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.7
+Version: 4.8
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -54,7 +54,7 @@ Empty.
 
 ## Next Task
 
-`T12`: Replay And Guard Failure Tests.
+`T13`: Provider And Dependency Degradation Tests.
 
 ## Rules
 

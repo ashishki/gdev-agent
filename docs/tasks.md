@@ -403,7 +403,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "duplicate webhook|Redis|Postgres|LLM timeout|approval TTL|budget exceedance|SLO|runbook|FAILURE_MODES" docs/FAILURE_MODES.md docs/SLO_RUNBOOK.md docs/EVIDENCE_INDEX.md`
 
-### [ ] T12: Replay And Guard Failure Tests
+### [x] T12: Replay And Guard Failure Tests
 
 Owner: Codex
 Priority: P1
