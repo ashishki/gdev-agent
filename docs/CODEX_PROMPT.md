@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.6
+Version: 4.7
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -54,7 +54,7 @@ Empty.
 
 ## Next Task
 
-`T11`: Failure Mode Taxonomy And Runbook.
+`T12`: Replay And Guard Failure Tests.
 
 ## Rules
 

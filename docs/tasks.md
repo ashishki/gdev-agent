@@ -1,7 +1,7 @@
 # gdev-agent Tasks
 
 Status: portfolio-hardening-active
-Last updated: 2026-06-11
+Last updated: 2026-06-12
 Source: `GDEV_AGENT_PORTFOLIO_HARDENING_PLAN.md` provided by human.
 
 This file is the active task graph for the AI-assisted development loop. The
@@ -369,7 +369,7 @@ provider errors, guard failures, approval expiry, and budget/rate pressure.
 Exit criteria: every major failure mode has a named expected behavior, test or
 scenario, and runbook response.
 
-### [ ] T11: Failure Mode Taxonomy And Runbook
+### [x] T11: Failure Mode Taxonomy And Runbook
 
 Owner: Codex
 Priority: P1

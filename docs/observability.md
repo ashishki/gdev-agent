@@ -193,4 +193,22 @@ All alerts route to Grafana Alerting → Telegram channel or PagerDuty (configur
 | RCA clusterer not running | `gdev_rca_run_duration_seconds` absent for > 20 min | WARNING | Scheduler may have crashed |
 
 ### Alert runbooks
-Each alert links to a `docs/runbooks/{alert-name}.md` file (to be created during Phase 5).
+
+The central local runbook is [SLO_RUNBOOK.md](SLO_RUNBOOK.md). It maps alerts and service symptoms
+to stable failure-mode names from [FAILURE_MODES.md](FAILURE_MODES.md). Per-alert runbook files may
+be added later if the project adds an externally operated deployment, but the current portfolio
+scope keeps one canonical runbook.
+
+| Signal | Failure taxonomy link | Primary runbook check |
+|--------|-----------------------|-----------------------|
+| `gdev_guard_blocks_total{guard_type="output"}` | `FM_OUTPUT_GUARD_BLOCK` | Inspect `agent.output_guard` span and unsafe-output eval cases. |
+| `gdev_llm_requests_total{status="error"}` or `gdev_llm_retry_total` spike | `FM_LLM_TIMEOUT` | Check provider status, retry saturation, and whether any unsafe auto-execution occurred. |
+| `gdev_budget_utilization_ratio >= 1.0` or `gdev_budget_exceeded_total` increments | `FM_BUDGET_EXCEEDED` | Verify the LLM call was blocked before spend and notify the tenant admin. |
+| `gdev_approval_queue_depth > 20` or `pending_expired` spikes | `FM_APPROVAL_TTL_EXPIRED` | Inspect approval notification health and queue age. |
+| `rate_limit_bypass` log event | `FM_REDIS_DEGRADED_RATE_LIMIT` | Restore Redis and consider temporary upstream throttling. |
+| HTTP 429 from rate limiting | `FM_RATE_LIMIT_EXCEEDED` | Confirm retry delay behavior and traffic source. |
+| Postgres connection or slow-query symptoms | `FM_POSTGRES_UNAVAILABLE` / `FM_POSTGRES_DEGRADED` | Check DB health, failed traces, and side-effect completion before replay. |
+
+Local SLO targets for latency, error rate, approval queue behavior, guard blocks, and dependency
+failure response are defined in [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They are portfolio targets, not a
+production SLA.

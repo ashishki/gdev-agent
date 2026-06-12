@@ -142,6 +142,23 @@ Duration: job completes + 10 min cooldown observation
 
 ---
 
+## Failure-Mode And SLO Linkage
+
+The local load targets above are inputs to [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They describe portfolio
+proof targets, not a production SLA. When a load run crosses a failure threshold, classify the result
+with the stable names in [FAILURE_MODES.md](FAILURE_MODES.md):
+
+| Load symptom | Failure taxonomy link | Expected response |
+|--------------|-----------------------|-------------------|
+| Replayed webhook returns duplicate side effects | `FM_DUPLICATE_WEBHOOK_REPLAY` | Treat as an idempotency failure; inspect Redis dedup and audit rows before replay. |
+| Redis unavailable during burst | `FM_REDIS_UNAVAILABLE` or `FM_REDIS_DEGRADED_RATE_LIMIT` | Correctness paths fail closed; rate limiting may fail open with `rate_limit_bypass`. |
+| Postgres p99 write queue or connection exhaustion | `FM_POSTGRES_DEGRADED` | Reduce background load, check slow queries, and avoid claiming action completion until writes are verified. |
+| LLM p99 or retry rate exceeds threshold | `FM_LLM_TIMEOUT` | Confirm no unsafe auto-execution occurred after provider failure. |
+| Approval queue grows beyond local target | `FM_APPROVAL_TTL_EXPIRED` | Inspect notification delivery and reviewer latency before tuning TTL. |
+| HTTP 429 rate exceeds expected load envelope | `FM_RATE_LIMIT_EXCEEDED` or `FM_BUDGET_EXCEEDED` | Separate protective throttling from application errors; verify retry/budget behavior. |
+
+Runbook ownership and local response steps live in [SLO_RUNBOOK.md](SLO_RUNBOOK.md).
+
 ## Load Testing Tooling
 
 **Tool:** Locust (Python-native; integrates with existing test infrastructure).
