@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -104,3 +105,6 @@ def test_handle_surfaces_cross_tenant_approve_not_found() -> None:
 
     assert exc.value.status_code == 404
     assert exc.value.detail == "pending_id not found"
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_CROSS_TENANT_APPROVAL" in failure_doc
+    assert "tests/test_approval_service.py" in failure_doc

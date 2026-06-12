@@ -225,8 +225,10 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
         settings=Settings(rate_limit_rpm=2, rate_limit_burst=10),
         redis_client=redis_client,
     )
+    downstream_calls = {"count": 0}
 
     async def ok(_request):
+        downstream_calls["count"] += 1
         return JSONResponse({"ok": True}, status_code=200)
 
     request = _request(b'{"user_id":"u1","text":"hi"}')
@@ -240,8 +242,12 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
+    assert downstream_calls["count"] == 2
     assert redis_client.incr_calls.count("tenant-a:ratelimit:u1") == 3
     assert ("tenant-a:ratelimit:u1", 60) in redis_client.expire_calls
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_RATE_LIMIT_EXCEEDED" in failure_doc
+    assert "tests/test_middleware.py" in failure_doc
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -41,6 +42,15 @@ class FakeLLMClient:
             input_tokens=100,
             output_tokens=50,
         )
+
+
+class CapturingStore(EventStore):
+    def __init__(self) -> None:
+        super().__init__(sqlite_path=None)
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def log_event(self, event_type: str, payload: dict[str, object]) -> None:
+        self.events.append((event_type, payload))
 
 
 def test_approve_executes_with_original_user_id() -> None:
@@ -90,6 +100,43 @@ def test_redis_pending_expired_returns_none() -> None:
     assert store.pop_pending("tenant-a", "expired-1") is None
 
 
+def test_expired_approval_returns_404_without_action_execution(caplog) -> None:
+    settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    store = CapturingStore()
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+    pending = PendingDecision(
+        pending_id="expired-agent-1",
+        tenant_id="tenant-a",
+        reason="manual",
+        user_id="user-123",
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        action=ProposedAction(tool="create_ticket_and_reply", payload={}, risky=True),
+        draft_response="draft",
+    )
+    approval_store.put_pending(pending)
+
+    with caplog.at_level("INFO", logger="app.approval_store"):
+        with pytest.raises(AgentError) as exc:
+            agent.approve(
+                ApproveRequest(pending_id=pending.pending_id, approved=True, reviewer="rev-1"),
+                jwt_tenant_id="tenant-a",
+            )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "pending_id not found"
+    assert store.events == []
+    assert any(getattr(record, "event", None) == "pending_expired" for record in caplog.records)
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_APPROVAL_TTL_EXPIRED" in failure_doc
+    assert "tests/test_approval_flow.py" in failure_doc
+
+
 def test_approve_forbidden_on_cross_tenant_pending() -> None:
     settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
     approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
@@ -117,6 +164,40 @@ def test_approve_forbidden_on_cross_tenant_pending() -> None:
         )
     assert exc.value.status_code == 404
     assert approval_store.get_pending("tenant-a", response.pending.pending_id) is not None
+
+
+def test_cross_tenant_approval_does_not_execute_action() -> None:
+    settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    store = CapturingStore()
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+    response = agent.process_webhook(
+        WebhookRequest(
+            text="Charged twice for a purchase",
+            user_id="user-123",
+            tenant_id="tenant-a",
+        )
+    )
+    assert response.pending is not None
+    store.events.clear()
+
+    with pytest.raises(AgentError) as exc:
+        agent.approve(
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
+            jwt_tenant_id="tenant-b",
+        )
+
+    assert exc.value.status_code == 404
+    assert store.events == []
+    assert approval_store.get_pending("tenant-a", response.pending.pending_id) is not None
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_CROSS_TENANT_APPROVAL" in failure_doc
+    assert "tests/test_approval_flow.py" in failure_doc
 
 
 def test_approve_forbidden_when_jwt_tenant_missing() -> None:

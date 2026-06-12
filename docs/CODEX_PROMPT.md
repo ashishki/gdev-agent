@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.9
+Version: 5.0
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -9,13 +9,13 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 3 - Reliability And Failure-Mode Proof.
+Phase 4 - Load Profile And Observability Proof.
 
-Business goal: prove predictable behavior under replay, dependency failure,
-provider errors, guard failures, approval expiry, and budget/rate pressure.
+Business goal: show measurable local behavior under realistic portfolio-scale
+traffic and make debugging paths visible.
 
-Phase exit criteria: every major failure mode has a named expected behavior,
-test or scenario, and runbook response.
+Phase exit criteria: load tests are reproducible locally and reports map metrics,
+traces, and logs to user-visible workflow steps.
 
 ## Current State
 
@@ -54,7 +54,7 @@ Empty.
 
 ## Next Task
 
-`T14`: Approval Rate Budget And Tenant-Boundary Failure Tests.
+`T15`: Load Test Harness Alignment.
 
 ## Rules
 

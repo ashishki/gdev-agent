@@ -124,11 +124,13 @@ async def _seed_cost(database_url: str, tenant_id: UUID, day: date, cost_usd: De
 
 
 async def _enable_gdev_app_login(database_url: str, password: str) -> str:
+    if password != "gdev-app-pass":
+        raise ValueError("unexpected test role password")
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text(f"ALTER ROLE gdev_app LOGIN PASSWORD '{password}'"),
+                text("ALTER ROLE gdev_app LOGIN PASSWORD 'gdev-app-pass'"),
             )
             await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
             await conn.execute(
@@ -193,6 +195,9 @@ def test_budget_exhausted_returns_429_before_llm_call(migrated_postgres: str) ->
     assert exc.value.status_code == 429
     assert exc.value.detail == {"error": {"code": "budget_exhausted"}}
     assert llm.calls == 0
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_BUDGET_EXCEEDED" in failure_doc
+    assert "tests/test_cost_ledger.py" in failure_doc
 
 
 def test_record_uses_upsert_and_accumulates_daily_usage(migrated_postgres: str) -> None:

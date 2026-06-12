@@ -363,7 +363,7 @@ Validation:
 
 ## Phase 3 - Reliability And Failure-Mode Proof
 
-Status: active
+Status: complete
 Business goal: prove predictable behavior under replay, dependency failure,
 provider errors, guard failures, approval expiry, and budget/rate pressure.
 Exit criteria: every major failure mode has a named expected behavior, test or
@@ -460,7 +460,7 @@ Acceptance Criteria:
 Validation:
 - `pytest tests/test_llm_client.py tests/test_webhook_service.py tests/test_redis_approval_store.py tests/test_db.py tests/test_middleware.py -q`
 
-### [ ] T14: Approval Rate Budget And Tenant-Boundary Failure Tests
+### [x] T14: Approval Rate Budget And Tenant-Boundary Failure Tests
 
 Owner: Codex
 Priority: P0
@@ -495,7 +495,7 @@ Validation:
 
 ## Phase 4 - Load Profile And Observability Proof
 
-Status: planned
+Status: active
 Business goal: show measurable local behavior under realistic portfolio-scale
 traffic and make debugging paths visible.
 Exit criteria: load tests are reproducible locally and reports map metrics,

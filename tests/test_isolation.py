@@ -125,15 +125,24 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(
-                text(f"ALTER ROLE {role} LOGIN PASSWORD '{password}'"),
-            )
-            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
-            await conn.execute(
-                text(
-                    f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+            if role == "gdev_app" and password == "gdev-app-pass":
+                await conn.execute(text("ALTER ROLE gdev_app LOGIN PASSWORD 'gdev-app-pass'"))
+                await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_app"))
+                await conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_app"
+                    )
                 )
-            )
+            elif role == "gdev_admin" and password == "gdev-admin-pass":
+                await conn.execute(text("ALTER ROLE gdev_admin LOGIN PASSWORD 'gdev-admin-pass'"))
+                await conn.execute(text("GRANT USAGE ON SCHEMA public TO gdev_admin"))
+                await conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO gdev_admin"
+                    )
+                )
+            else:
+                raise ValueError("unexpected test role login")
     finally:
         await engine.dispose()
 
@@ -145,11 +154,25 @@ async def _enable_role_login(database_url: str, role: str, password: str) -> str
 
 
 async def _count_rows_for_tenant(database_url: str, table_name: str, tenant_id: UUID) -> int:
+    statements = {
+        "tickets": text("SELECT COUNT(*) FROM tickets WHERE tenant_id = :tenant_id"),
+        "ticket_classifications": text(
+            "SELECT COUNT(*) FROM ticket_classifications WHERE tenant_id = :tenant_id"
+        ),
+        "ticket_extracted_fields": text(
+            "SELECT COUNT(*) FROM ticket_extracted_fields WHERE tenant_id = :tenant_id"
+        ),
+        "proposed_actions": text(
+            "SELECT COUNT(*) FROM proposed_actions WHERE tenant_id = :tenant_id"
+        ),
+        "audit_log": text("SELECT COUNT(*) FROM audit_log WHERE tenant_id = :tenant_id"),
+    }
+    statement = statements[table_name]
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
-                text(f"SELECT COUNT(*) FROM {table_name} WHERE tenant_id = :tenant_id"),
+                statement,
                 {"tenant_id": str(tenant_id)},
             )
             return int(result.scalar_one())
@@ -323,6 +346,13 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(
         draft_response="pending response",
     )
     approval_store.put_pending(pending)
+    executed = {"count": 0}
+
+    def _execute_action(*_args, **_kwargs):
+        executed["count"] += 1
+        return {"unexpected": True}
+
+    agent.execute_action = _execute_action  # type: ignore[method-assign]
 
     try:
         with pytest.raises(AgentError) as exc:
@@ -335,6 +365,10 @@ def test_approve_cross_tenant_is_forbidden_and_pending_remains(
 
     assert exc.value.status_code == 404
     assert approval_store.get_pending(str(tenant_a), pending.pending_id) is not None
+    assert executed["count"] == 0
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_CROSS_TENANT_APPROVAL" in failure_doc
+    assert "tests/test_isolation.py" in failure_doc
 
 
 @pytest.mark.integration
