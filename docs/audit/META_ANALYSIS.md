@@ -1,41 +1,42 @@
-# META_ANALYSIS — Cycle 14
-_Date: 2026-06-12 · Type: full_
+# META_ANALYSIS — Cycle 15
+_Date: 2026-06-12 · Type: targeted_
 
 ## Project State
 
-Phase 2 (T07–T10 Evaluation Hardening) is complete. Next: T11 — Failure Mode
-Taxonomy And Runbook.
+Phase 3 is active. T11–T13 are complete, T14 implementation is under security deep review, and
+Next after successful review is T15 — Load Test Harness Alignment.
 
-Baseline: 244 passed, 42 warnings. T07–T10 added the 180-case eval taxonomy, deterministic eval
-metrics/validators, baseline report, and CI eval regression gate.
+Baseline: 256 pass, 42 warnings.
 
 ## Open Findings
 
 | ID | Sev | Description | Files | Status |
 |----|-----|-------------|-------|--------|
-| ARCH-HARDEN-1 | P2 | `docs/ARCHITECTURE.md` still describes the eval dataset as 25 cases and the runner as accuracy/per-label/guard-only, while the current implementation has a 180-case taxonomy and CI gate metrics. | `docs/ARCHITECTURE.md:73`, `docs/ARCHITECTURE.md:131`, `docs/ARCHITECTURE.md:132`, `docs/ARCHITECTURE.md:277-296` | Open |
+| ARCH-HARDEN-1 | P2 | Architecture eval summary still references the old 25-case/basic metric shape after T07–T10. | `docs/ARCHITECTURE.md` | Open — non-blocking documentation patch |
 
 ## PROMPT_1 Scope (architecture)
 
-- Eval subsystem: `eval/runner.py`, `eval/cases.jsonl`, `eval/results/last_run.json`,
-  `docs/EVALUATION.md`, `docs/EVAL_REPORT.md`.
-- CI eval gate: `.github/workflows/ci.yml`.
-- Phase 3 plan: T11–T14 failure-mode taxonomy and scenario tests.
+- Approval boundary proof: TTL expiry and cross-tenant approval behavior.
+- Rate and budget boundary proof: HTTP 429 stops downstream/model spend.
+- Tenant isolation documentation: new `docs/TENANT_ISOLATION.md` proof map.
+- Runtime guardrail fixes from light review: parameterized tenant context and async Redis startup ping.
 
 ## PROMPT_2 Scope (code, priority order)
 
-1. `eval/runner.py` — new stable metrics, fail-closed structured output validation, CLI gate.
-2. `.github/workflows/ci.yml` — new eval regression gate step.
-3. `tests/test_eval_runner.py` — seeded unsafe regression and CLI gate coverage.
-4. `tests/test_eval.py`, `tests/test_eval_service.py` — compatibility coverage for eval report
-   shape and service delegation.
-5. `docs/EVALUATION.md`, `docs/EVAL_REPORT.md` — documented thresholds and known limits.
+1. `app/db.py` — tenant context SQL parameterization.
+2. `app/main.py` — async Redis startup health check.
+3. `tests/test_approval_flow.py` — approval TTL and cross-tenant no-execution tests.
+4. `tests/test_approval_service.py` — approval-service taxonomy assertion.
+5. `tests/test_cost_ledger.py` — budget block before LLM spend.
+6. `tests/test_middleware.py` — bounded rate-limit 429 before downstream work.
+7. `tests/test_isolation.py` — cross-tenant approval and SQL helper hardening.
+8. `docs/FAILURE_MODES.md`, `docs/TENANT_ISOLATION.md`, `docs/EVIDENCE_INDEX.md` — proof mapping.
 
 ## Cycle Type
 
-Full — Phase 2 completed and Phase 3 is about to start.
+Targeted — security-critical T14 boundary proof.
 
 ## Notes for PROMPT_3
 
-No P0 or P1 findings were found. Preserve the empty Fix Queue and carry the architecture
-documentation drift as P2/non-blocking.
+Focus consolidation on whether T14 creates unsafe auto-approved actions, tenant-boundary gaps, or
+new P0/P1 fix-queue items.
