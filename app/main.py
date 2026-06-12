@@ -109,6 +109,11 @@ def _configure_tracing(settings) -> None:
     TRACER = OTEL_TRACE.get_tracer(__name__)
 
 
+def _sync_redis_from_url(redis_url: str):
+    """Build the sync Redis client used by sync webhook service code paths."""
+    return redis.from_url(redis_url)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize runtime dependencies on startup."""
@@ -142,15 +147,16 @@ async def lifespan(app: FastAPI):
             },
         )
 
-    redis_client = redis.from_url(settings.redis_url)
+    tenant_registry_redis = aioredis.from_url(settings.redis_url)
     try:
-        redis_client.ping()
+        await tenant_registry_redis.ping()
     except Exception as exc:
+        await tenant_registry_redis.aclose()
         raise RuntimeError("Redis unavailable at startup") from exc
 
+    redis_client = _sync_redis_from_url(settings.redis_url)
     db_engine = make_engine(settings)
     db_session_factory = make_session_factory(db_engine)
-    tenant_registry_redis = aioredis.from_url(settings.redis_url)
     webhook_secret_store = None
     if settings.webhook_secret_encryption_key:
         webhook_secret_store = WebhookSecretStore(

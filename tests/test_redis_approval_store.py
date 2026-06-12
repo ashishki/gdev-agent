@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
+
+import pytest
 
 import app.approval_store
 import fakeredis
@@ -119,6 +122,70 @@ class _SessionFactoryStub:
         return _SessionStub(self.execute_calls)
 
 
+class _FailingRedis:
+    def set(self, *_args, **_kwargs) -> None:
+        raise RuntimeError("redis unavailable")
+
+
+class _ExplodingSession:
+    async def __aenter__(self) -> "_ExplodingSession":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def begin(self) -> "_ExplodingSession":
+        return self
+
+    async def execute(self, _statement, _params=None):
+        raise RuntimeError("postgres unavailable")
+
+
+class _ExplodingSessionFactory:
+    def __call__(self) -> _ExplodingSession:
+        return _ExplodingSession()
+
+
+def test_put_pending_redis_failure_raises_and_preserves_taxonomy() -> None:
+    store = RedisApprovalStore(_FailingRedis(), ttl_seconds=120)
+
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        store.put_pending(_pending("redis-down"))
+
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_REDIS_UNAVAILABLE" in failure_doc
+    assert "tests/test_redis_approval_store.py" in failure_doc
+
+
+def test_put_pending_postgres_failure_removes_redis_pending() -> None:
+    redis_client = fakeredis.FakeRedis()
+    store = RedisApprovalStore(
+        redis_client,
+        ttl_seconds=120,
+        db_session_factory=_ExplodingSessionFactory(),
+    )
+    tenant_id = str(uuid4())
+    pending_id = str(uuid4())
+
+    with pytest.raises(RuntimeError, match="postgres unavailable"):
+        store.put_pending(
+            PendingDecision(
+                pending_id=pending_id,
+                tenant_id=tenant_id,
+                reason="manual",
+                user_id="u1",
+                expires_at=datetime.now(UTC) + timedelta(seconds=60),
+                action=ProposedAction(tool="create_ticket_and_reply", payload={}),
+                draft_response="draft",
+            )
+        )
+
+    assert store.get_pending(tenant_id, pending_id) is None
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_POSTGRES_UNAVAILABLE" in failure_doc
+    assert "tests/test_redis_approval_store.py" in failure_doc
+
+
 def test_put_pending_dual_writes_to_postgres_when_session_factory_present() -> None:
     redis_client = fakeredis.FakeRedis()
     session_factory = _SessionFactoryStub()
@@ -143,7 +210,7 @@ def test_put_pending_dual_writes_to_postgres_when_session_factory_present() -> N
     )
 
     statements = [sql.lower() for sql, _ in session_factory.execute_calls]
-    assert any("set local app.current_tenant_id" in sql for sql in statements)
+    assert any("set_config('app.current_tenant_id'" in sql for sql in statements)
     assert any("insert into pending_decisions" in sql for sql in statements)
 
 

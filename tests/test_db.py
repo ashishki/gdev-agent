@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -83,6 +84,34 @@ def test_make_engine_sqlite_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls["kwargs"]["pool_pre_ping"] is False
 
 
+def test_make_engine_postgres_enables_pre_ping_and_pool_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/gdev",
+        db_pool_size=7,
+        db_max_overflow=3,
+    )
+    calls: dict[str, object] = {}
+
+    def _fake_create_async_engine(url: str, **kwargs):
+        calls["url"] = url
+        calls["kwargs"] = kwargs
+        return "engine"
+
+    monkeypatch.setattr(db, "create_async_engine", _fake_create_async_engine)
+
+    engine = db.make_engine(settings)
+
+    assert engine == "engine"
+    assert calls["url"] == "postgresql+asyncpg://user:pass@localhost:5432/gdev"
+    assert calls["kwargs"] == {
+        "pool_pre_ping": True,
+        "pool_size": 7,
+        "max_overflow": 3,
+    }
+
+
 def test_get_db_session_sets_local_tenant_id() -> None:
     session = _SessionContext()
     tenant_id = str(uuid4())
@@ -102,8 +131,8 @@ def test_get_db_session_sets_local_tenant_id() -> None:
     assert yielded_session is session
     session.execute.assert_awaited_once()
     statement, params = session.execute.await_args.args
-    assert str(statement) == f"SET LOCAL app.current_tenant_id = '{tenant_id}'"
-    assert params == {}
+    assert str(statement) == "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+    assert params == {"tenant_id": tenant_id}
 
 
 def test_get_db_session_skips_set_local_without_tenant_id() -> None:
@@ -132,3 +161,26 @@ def test_set_tenant_ctx_rejects_invalid_tenant_id() -> None:
     with pytest.raises(ValueError):
         asyncio.run(_run())
     session.execute.assert_not_awaited()
+
+
+def test_get_db_session_propagates_postgres_failure_before_yield() -> None:
+    session = _SessionContext()
+    session.execute.side_effect = RuntimeError("postgres unavailable")
+    tenant_id = str(uuid4())
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id=tenant_id),
+        app=SimpleNamespace(state=SimpleNamespace(db_session_factory=_SessionFactory(session))),
+    )
+
+    async def _run() -> None:
+        session_gen = db.get_db_session(request)
+        with pytest.raises(RuntimeError, match="postgres unavailable"):
+            await anext(session_gen)
+        await session_gen.aclose()
+
+    asyncio.run(_run())
+
+    session.execute.assert_awaited_once()
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_POSTGRES_UNAVAILABLE" in failure_doc
+    assert "tests/test_db.py" in failure_doc

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid5
 
@@ -50,6 +51,11 @@ class _AsyncRedisStub:
     async def expire(self, key: str, seconds: int) -> int:
         self.expire_calls.append((key, seconds))
         return 1
+
+
+class _FailingAsyncRedisStub:
+    async def incr(self, _key: str) -> int:
+        raise RuntimeError("redis unavailable")
 
 
 def _sig(secret: str, body: bytes) -> str:
@@ -337,3 +343,29 @@ def test_webhook_key_uses_tenant_first_order() -> None:
         RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", "u1") == "tenant-a:ratelimit:u1"
     )
     assert RateLimitMiddleware._webhook_key("ratelimit", None, "u1") == "anonymous:ratelimit:u1"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_redis_failure_bypasses_with_taxonomy(caplog) -> None:
+    middleware = RateLimitMiddleware(
+        app=None,
+        settings=Settings(rate_limit_rpm=1, rate_limit_burst=1),
+        redis_client=_FailingAsyncRedisStub(),
+    )
+    downstream_calls = {"count": 0}
+
+    async def ok(_request):
+        downstream_calls["count"] += 1
+        return JSONResponse({"ok": True}, status_code=200)
+
+    request = _request(b'{"user_id":"u1","text":"hi"}')
+    request.state.tenant_id = "tenant-a"
+    with caplog.at_level("WARNING", logger="app.middleware.rate_limit"):
+        response = await middleware.dispatch(request, ok)
+
+    assert response.status_code == 200
+    assert downstream_calls["count"] == 1
+    assert any(getattr(record, "event", None) == "rate_limit_bypass" for record in caplog.records)
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_REDIS_DEGRADED_RATE_LIMIT" in failure_doc
+    assert "tests/test_middleware.py" in failure_doc

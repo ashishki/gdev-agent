@@ -431,7 +431,7 @@ Acceptance Criteria:
 Validation:
 - `pytest tests/test_dedup.py tests/test_guardrails_and_extraction.py tests/test_output_guard.py tests/test_webhook_service.py -q`
 
-### [ ] T13: Provider And Dependency Degradation Tests
+### [x] T13: Provider And Dependency Degradation Tests
 
 Owner: Codex
 Priority: P1

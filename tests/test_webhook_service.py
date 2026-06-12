@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -63,6 +64,17 @@ class _DedupStub:
     def check(self, tenant_id: str, message_id: str) -> str | None:
         self.check_calls.append((tenant_id, message_id))
         return self.cached
+
+    def set(self, tenant_id: str, message_id: str, body: str) -> None:
+        self.set_calls.append((tenant_id, message_id, body))
+
+
+class _FailingDedupStub:
+    def __init__(self) -> None:
+        self.set_calls: list[tuple[str, str, str]] = []
+
+    def check(self, _tenant_id: str, _message_id: str) -> str | None:
+        raise RuntimeError("redis unavailable")
 
     def set(self, tenant_id: str, message_id: str, body: str) -> None:
         self.set_calls.append((tenant_id, message_id, body))
@@ -246,6 +258,36 @@ def test_duplicate_webhook_replay_is_idempotent_for_side_effects() -> None:
     assert [event for event, _payload in store.events] == ["pending_created"]
     assert first.pending is not None
     assert approval_store.get_pending(tenant_id, first.pending.pending_id) is not None
+
+
+def test_dedup_redis_failure_fails_closed_before_agent_or_cache() -> None:
+    tenant_id = str(uuid4())
+    agent_calls = {"count": 0}
+
+    def _agent(_payload, message_id=None):
+        _ = message_id
+        agent_calls["count"] += 1
+        return _response()
+
+    dedup = _FailingDedupStub()
+    service = WebhookService(
+        SimpleNamespace(process_webhook=_agent),
+        dedup,
+        _TracerStub(),
+        Settings(anthropic_api_key="k"),
+    )
+
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        service.handle(
+            WebhookRequest(text="hello", tenant_id=tenant_id, message_id="msg-redis-down"),
+            _request(),
+        )
+
+    assert agent_calls["count"] == 0
+    assert dedup.set_calls == []
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_REDIS_UNAVAILABLE" in failure_doc
+    assert "tests/test_webhook_service.py" in failure_doc
 
 
 def test_handle_rejects_cross_tenant_payload_mismatch() -> None:

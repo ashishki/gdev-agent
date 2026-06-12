@@ -320,4 +320,4 @@ def test_run_eval_aborts_on_budget_before_llm_call(tmp_path: Path) -> None:
     assert report["status"] == "aborted_budget"
     assert "budget exhausted" in report["explanation"].lower()
     assert agent.process_calls == 0
-    assert any("SET LOCAL app.current_tenant_id" in sql for sql, _ in session.calls)
+    assert any("set_config('app.current_tenant_id'" in sql for sql, _ in session.calls)

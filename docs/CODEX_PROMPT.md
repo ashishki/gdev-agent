@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 4.8
+Version: 4.9
 Date: 2026-06-12
 Status: portfolio-hardening-active
 
@@ -54,7 +54,7 @@ Empty.
 
 ## Next Task
 
-`T13`: Provider And Dependency Degradation Tests.
+`T14`: Approval Rate Budget And Tenant-Boundary Failure Tests.
 
 ## Rules
 

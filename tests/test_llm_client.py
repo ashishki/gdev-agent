@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -116,6 +117,27 @@ def test_create_message_does_not_retry_429() -> None:
         )
 
     assert create_mock.call_count == 1
+
+
+def test_create_message_retries_5xx_then_fails_closed_with_taxonomy() -> None:
+    create_mock = Mock(
+        side_effect=[
+            FakeAPIStatusError(529),
+            FakeAPIStatusError(529),
+            FakeAPIStatusError(529),
+        ]
+    )
+    client = _client_with_create(create_mock)
+
+    with pytest.raises(FakeAPIStatusError):
+        client._create_message(
+            model="m", max_tokens=1, system="s", tools=[], tool_choice={}, messages=[]
+        )
+
+    assert create_mock.call_count == 3
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_LLM_TIMEOUT" in failure_doc
+    assert "tests/test_llm_client.py" in failure_doc
 
 
 def test_lookup_faq_uses_configured_kb_base_url() -> None:
