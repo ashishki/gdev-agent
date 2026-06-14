@@ -921,7 +921,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "video|GIF|recording|demo artifact|manual packaging" docs/DEMO.md docs/PORTFOLIO_REVIEW_GUIDE.md docs/CASE_STUDY.md`
 
-### [ ] T26: Resume Bullets With Measured Numbers
+### [x] T26: Resume Bullets With Measured Numbers
 
 Owner: Human + Codex
 Priority: P2

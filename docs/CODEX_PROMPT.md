@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 6.6
+Version: 6.7
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -15,8 +15,9 @@ Business goal: package the evidence so hiring managers and technical
 interviewers can review quickly and drill down when needed.
 
 Phase 6 remediation is complete. T23 one-page case study, T24 architecture
-diagram asset, and T25 demo recording checklist are complete. Remaining Phase 7
-packaging must keep all claims backed by runnable or documented evidence.
+diagram asset, T25 demo recording checklist, and T26 resume bullets are
+complete. Remaining Phase 7 packaging must keep all claims backed by runnable
+or documented evidence.
 
 ## Current State
 
@@ -73,7 +74,7 @@ No P0/P1 findings are open.
 
 ## Next Task
 
-`T26`: Resume Bullets With Measured Numbers.
+`T27`: Final Evidence Audit.
 
 ## Rules
 

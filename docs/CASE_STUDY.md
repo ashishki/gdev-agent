@@ -98,6 +98,11 @@ checklist in [docs/DEMO.md#recording-checklist](DEMO.md#recording-checklist),
 which covers setup, the deterministic demo run, approval/audit evidence,
 metrics, and test/evidence pointers.
 
+Optional resume-ready packaging lives in
+[docs/RESUME_BULLETS.md](RESUME_BULLETS.md). Those bullets keep tests, eval,
+load, tenant isolation, observability, and production-user limits tied to
+repo evidence.
+
 ## Trade-Offs
 
 - The implementation favors explicit service boundaries and local proof over UI
