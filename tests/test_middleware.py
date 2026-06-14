@@ -62,6 +62,10 @@ def _sig(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
+def _short_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
 def _scope(
     path: str, headers: dict[str, str], app_state: object | None = None
 ) -> dict[str, object]:
@@ -243,8 +247,10 @@ async def test_rate_limit_exceeded_for_same_user() -> None:
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
     assert downstream_calls["count"] == 2
-    assert redis_client.incr_calls.count("tenant-a:ratelimit:u1") == 3
-    assert ("tenant-a:ratelimit:u1", 60) in redis_client.expire_calls
+    user_hash = _short_hash("u1")
+    assert redis_client.incr_calls.count(f"tenant-a:ratelimit:{user_hash}") == 3
+    assert (f"tenant-a:ratelimit:{user_hash}", 60) in redis_client.expire_calls
+    assert all(not key.endswith(":u1") for key in redis_client.incr_calls)
     failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
     assert "FM_RATE_LIMIT_EXCEEDED" in failure_doc
     assert "tests/test_middleware.py" in failure_doc
@@ -268,8 +274,9 @@ async def test_rate_limits_are_independent_per_user() -> None:
     request = _request(b'{"user_id":"u2","text":"hi"}')
     request.state.tenant_id = "tenant-a"
     assert (await middleware.dispatch(request, ok)).status_code == 200
-    assert "tenant-a:ratelimit:u1" in redis_client.incr_calls
-    assert "tenant-a:ratelimit:u2" in redis_client.incr_calls
+    assert f"tenant-a:ratelimit:{_short_hash('u1')}" in redis_client.incr_calls
+    assert f"tenant-a:ratelimit:{_short_hash('u2')}" in redis_client.incr_calls
+    assert all(not key.endswith((":u1", ":u2")) for key in redis_client.incr_calls)
 
 
 @pytest.mark.asyncio
@@ -298,7 +305,8 @@ async def test_burst_limit_exceeded_for_same_user() -> None:
     blocked = await middleware.dispatch(request, ok)
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "60"
-    assert redis_client.incr_calls.count("tenant-a:ratelimit_burst:u1") == 4
+    user_hash = _short_hash("u1")
+    assert redis_client.incr_calls.count(f"tenant-a:ratelimit_burst:{user_hash}") == 4
 
 
 @pytest.mark.asyncio
@@ -317,9 +325,10 @@ async def test_rate_limiter_uses_app_state_client_when_not_injected() -> None:
     )
     req.state.tenant_id = "tenant-a"
     assert (await middleware.dispatch(req, ok)).status_code == 200
+    user_hash = _short_hash("u1")
     assert redis_client.incr_calls == [
-        "tenant-a:ratelimit:u1",
-        "tenant-a:ratelimit_burst:u1",
+        f"tenant-a:ratelimit:{user_hash}",
+        f"tenant-a:ratelimit_burst:{user_hash}",
     ]
 
 
@@ -338,17 +347,23 @@ async def test_rate_limiter_uses_anonymous_namespace_without_tenant_id() -> None
     assert (
         await middleware.dispatch(_request(b'{"user_id":"u1","text":"hi"}'), ok)
     ).status_code == 200
+    user_hash = _short_hash("u1")
     assert redis_client.incr_calls == [
-        "anonymous:ratelimit:u1",
-        "anonymous:ratelimit_burst:u1",
+        f"anonymous:ratelimit:{user_hash}",
+        f"anonymous:ratelimit_burst:{user_hash}",
     ]
 
 
 def test_webhook_key_uses_tenant_first_order() -> None:
+    user_hash = _short_hash("u1")
     assert (
-        RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", "u1") == "tenant-a:ratelimit:u1"
+        RateLimitMiddleware._webhook_key("ratelimit", "tenant-a", user_hash)
+        == f"tenant-a:ratelimit:{user_hash}"
     )
-    assert RateLimitMiddleware._webhook_key("ratelimit", None, "u1") == "anonymous:ratelimit:u1"
+    assert (
+        RateLimitMiddleware._webhook_key("ratelimit", None, user_hash)
+        == f"anonymous:ratelimit:{user_hash}"
+    )
 
 
 @pytest.mark.asyncio

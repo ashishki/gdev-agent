@@ -26,7 +26,7 @@ _Date: 2026-03-03 · All schema changes require a migration file and a bump to t
 | `eval_runs` | Postgres | — | 1 year | Low |
 | `eval_cases` | File (`eval/cases.jsonl`) | — | Version-controlled | Medium (synthetic) |
 | `dedup_cache` | Redis (`{tenant}:dedup:{msg_id}`) | — | 24 h TTL | Medium (serialized webhook response) |
-| `rate_limit_counters` | Redis (`{tenant}:ratelimit:{user}`) | — | 60 s TTL | Low |
+| `rate_limit_counters` | Redis (`{tenant}:ratelimit:{user_hash}`) | — | 60 s / 10 s TTL | Low |
 | `approval_pending` | Redis (`{tenant}:pending:{id}`) | Postgres | Per APPROVAL_TTL | Medium (serialized pending decision) |
 | `session_tokens` | Redis (JWT blocklist) | — | Token expiry | High |
 
@@ -175,7 +175,8 @@ exceptions.
 | Key Pattern | Type | TTL | Contents |
 |---|---|---|---|
 | `{tenant_id}:dedup:{message_id}` | STRING | 86400 s | Serialized `WebhookResponse` used for idempotent replay. May include pending metadata, action payloads, draft response text, and hashed user identifiers. |
-| `{tenant_id}:ratelimit:{user_id}` | ZSET | 60 s (sliding) | Request timestamps |
+| `{tenant_id}:ratelimit:{user_id_hash}` | STRING counter | 60 s | Per-minute webhook count keyed by SHA-256 user hash. |
+| `{tenant_id}:ratelimit_burst:{user_id_hash}` | STRING counter | 10 s | Short-window burst count keyed by SHA-256 user hash. |
 | `{tenant_id}:pending:{pending_id}` | STRING (JSON) | `APPROVAL_TTL_SECONDS` | Serialized `PendingDecision` |
 | `tenant:{tenant_id}:config` | STRING (JSON) | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
 | `jwt:blocklist:{jti}` | STRING | Token expiry | Revoked-token flag. Global by design because JTI values are token-scoped and must remain invalid across all tenants. |

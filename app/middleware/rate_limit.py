@@ -67,8 +67,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     user_hash = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:16]
                     span.set_attribute("user_id_hash", user_hash)
 
-                    minute_key = self._webhook_key("ratelimit", tenant_id, str(user_id))
-                    burst_key = self._webhook_key("ratelimit_burst", tenant_id, str(user_id))
+                    minute_key = self._webhook_key("ratelimit", tenant_id, user_hash)
+                    burst_key = self._webhook_key("ratelimit_burst", tenant_id, user_hash)
                     minute_count = int(await redis_client.incr(minute_key))
                     if minute_count == 1:
                         await redis_client.expire(minute_key, 60)
@@ -121,8 +121,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
     @staticmethod
-    def _webhook_key(prefix: str, tenant_id: object, user_id: str) -> str:
+    def _webhook_key(prefix: str, tenant_id: object, user_id_hash: str) -> str:
         # Webhook requests may arrive before auth context exists; isolate those under
         # an explicit anonymous namespace instead of implicitly formatting `None`.
         tenant_prefix = str(tenant_id) if tenant_id is not None else "anonymous"
-        return f"{tenant_prefix}:{prefix}:{user_id}"
+        return f"{tenant_prefix}:{prefix}:{user_id_hash}"
