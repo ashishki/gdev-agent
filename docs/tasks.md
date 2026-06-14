@@ -896,7 +896,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "architecture-diagram|webhook|approval|audit|RLS|observability" README.md docs/CASE_STUDY.md`
 
-### [ ] T25: Demo Video Or GIF Checklist
+### [x] T25: Demo Video Or GIF Checklist
 
 Owner: Human + Codex
 Priority: P2

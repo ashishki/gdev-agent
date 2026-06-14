@@ -17,8 +17,8 @@ and avoids process history unless it explains proof quality.
 
 1. Architecture: read [docs/ARCHITECTURE.md](ARCHITECTURE.md) sections 1-3 for
    the request flow, service boundaries, and local stack.
-2. Demo: read [docs/DEMO.md](DEMO.md) to see the local approval workflow and
-   prerequisites.
+2. Demo: read [docs/DEMO.md](DEMO.md) to see the local approval workflow,
+   prerequisites, and demo artifact recording checklist.
 3. Eval: read [docs/EVALUATION.md](EVALUATION.md) and inspect
    [eval/cases.jsonl](../eval/cases.jsonl) for the current synthetic dataset.
 4. Tenant isolation: read
@@ -42,7 +42,8 @@ and avoids process history unless it explains proof quality.
 3. Eval proof: run or inspect `tests/test_eval_runner.py`,
    `tests/test_eval.py`, and `eval/runner.py`.
 4. Demo proof: run or inspect `scripts/demo.py`, `scripts/demo.sh`, and
-   [docs/DEMO.md](DEMO.md).
+   [docs/DEMO.md](DEMO.md). No video or GIF artifact is committed yet; use the
+   recording checklist in `docs/DEMO.md` as the current manual packaging task.
 5. Load and observability proof: inspect `load_tests/`, `tests/test_metrics.py`,
    `tests/test_observability.py`, [docs/load-profile.md](load-profile.md), and
    [docs/observability.md](observability.md).

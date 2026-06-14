@@ -90,6 +90,14 @@ Committed load results from [docs/LOAD_TEST_REPORT.md](LOAD_TEST_REPORT.md):
 | `risky_action_heavy` | 650 ms | 0.00% | Approval-heavy flow with 71% approval creation. |
 | `provider_latency` | 1220 ms | 0.00% | Simulated provider-latency profile. |
 
+## Demo Artifact
+
+The deterministic demo script is committed and documented, but no video or GIF
+artifact is committed yet. Recording one is a manual packaging task using the
+checklist in [docs/DEMO.md#recording-checklist](DEMO.md#recording-checklist),
+which covers setup, the deterministic demo run, approval/audit evidence,
+metrics, and test/evidence pointers.
+
 ## Trade-Offs
 
 - The implementation favors explicit service boundaries and local proof over UI

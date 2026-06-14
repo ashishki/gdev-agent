@@ -2,6 +2,12 @@
 
 `scripts/demo.py` runs the happy-path approval flow against a local `gdev-agent` stack: login, signed webhook, wait for the pending audit row, approve, and exit `0` on success.
 
+## Demo Artifact Status
+
+No video or GIF demo artifact is committed in this repository yet. Recording and
+publishing that file is a manual packaging task; the checklist below is the
+repo-side script for producing it without claiming the artifact already exists.
+
 ## Prerequisites
 
 - Docker and Docker Compose are installed.
@@ -166,6 +172,67 @@ Each step prints a UTC timestamp plus per-step timing. A successful run looks li
 ```
 
 On failure the script exits non-zero and prints the failing step or HTTP error to `stderr`.
+
+## Recording Checklist
+
+Target length: 90-150 seconds. Use deterministic demo mode unless the recording
+explicitly calls out that paid live-provider calls are being used.
+
+1. Setup and status:
+
+```bash
+git status --short
+docker compose up --build -d
+docker compose exec agent python scripts/cli.py migrations check
+```
+
+Show that only expected local files are dirty, the stack is up, and
+`migration_status=ok`.
+
+2. Deterministic demo run:
+
+```bash
+make demo
+```
+
+Show the signed webhook, pending approval creation, audit lookup, approval, and
+metrics check lines from the command output. Keep the terminal large enough that
+the timestamps and `[STEP]` / `[DONE]` labels are readable.
+
+3. Approval and audit evidence:
+
+```bash
+python scripts/demo.py --llm-mode demo
+```
+
+Capture the `PENDING`, `APPROVED`, and final `[OK]` lines. If using the API
+directly, show `POST /webhook`, `POST /approve`, and `GET /audit` with the same
+tenant context.
+
+4. Metrics and observability evidence:
+
+```bash
+curl -fsS http://localhost:8000/metrics | rg "gdev_|http_"
+```
+
+Show at least one workflow metric and one HTTP metric. The local observability
+stack and alerting notes are documented in [docs/observability.md](observability.md).
+
+5. Test and evidence pointers:
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+rg -n "tests pass|eval|load|tenant isolation|observability" README.md docs/CASE_STUDY.md
+```
+
+Show where a reviewer can inspect the current test baseline, eval summary, load
+summary, tenant-isolation proof, and observability proof. If the full test run
+is too long for the recording, show the command and the latest committed
+baseline in README, then keep the full run in terminal history for follow-up.
+
+Recommended output name once manually produced: `docs/assets/gdev-agent-demo.gif`
+or a linked external video. Until that file or link exists, portfolio docs
+should link to this checklist instead of implying a finished demo artifact.
 
 ## Troubleshooting
 
