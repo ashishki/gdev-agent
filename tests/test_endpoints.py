@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -114,6 +115,16 @@ class _SequencedSessionStub:
         self.calls.append((str(statement), params))
         rows = self.rows_by_call.pop(0) if self.rows_by_call else []
         return _ResultStub(rows)
+
+
+class _TenantPartitionedSessionStub:
+    def __init__(self, rows_by_tenant: dict[str, list[dict[str, object]]]) -> None:
+        self.rows_by_tenant = rows_by_tenant
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def execute(self, statement, params):  # noqa: ANN001
+        self.calls.append((str(statement), params))
+        return _ResultStub(self.rows_by_tenant.get(str(params["tenant_id"]), []))
 
 
 def _request(tenant_id: UUID, role: str = "tenant_admin") -> SimpleNamespace:
@@ -323,6 +334,62 @@ async def test_list_audit_pagination_sets_cursor() -> None:
 
     response = await list_audit(request=_request(tenant_id), cursor=None, limit=1, db=session)
     assert response.cursor is not None
+
+
+@pytest.mark.asyncio
+async def test_tenant_a_cannot_read_tenant_b_audit_logs() -> None:
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    now = datetime.now(UTC)
+    session = _TenantPartitionedSessionStub(
+        {
+            str(tenant_a): [
+                {
+                    "audit_id": uuid4(),
+                    "request_id": "tenant-a-request",
+                    "message_id": "tenant-a-message",
+                    "category": "billing",
+                    "urgency": "medium",
+                    "confidence": Decimal("0.900"),
+                    "action_tool": "create_ticket_and_reply",
+                    "status": "executed",
+                    "ticket_id": uuid4(),
+                    "latency_ms": 100,
+                    "input_tokens": 10,
+                    "output_tokens": 20,
+                    "cost_usd": Decimal("0.0100"),
+                    "created_at": now,
+                }
+            ],
+            str(tenant_b): [
+                {
+                    "audit_id": uuid4(),
+                    "request_id": "tenant-b-request",
+                    "message_id": "tenant-b-message",
+                    "category": "account_access",
+                    "urgency": "high",
+                    "confidence": Decimal("0.950"),
+                    "action_tool": "escalate_to_human",
+                    "status": "pending",
+                    "ticket_id": uuid4(),
+                    "latency_ms": 120,
+                    "input_tokens": 11,
+                    "output_tokens": 21,
+                    "cost_usd": Decimal("0.0200"),
+                    "created_at": now,
+                }
+            ],
+        }
+    )
+
+    response = await list_audit(request=_request(tenant_a), cursor=None, limit=50, db=session)
+
+    assert [item.request_id for item in response.data] == ["tenant-a-request"]
+    assert session.calls[0][1]["tenant_id"] == str(tenant_a)
+    tenant_doc = Path("docs/TENANT_ISOLATION.md").read_text(encoding="utf-8")
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "test_tenant_a_cannot_read_tenant_b_audit_logs" in tenant_doc
+    assert "test_tenant_a_cannot_read_tenant_b_audit_logs" in failure_doc
 
 
 @pytest.mark.asyncio

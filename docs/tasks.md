@@ -654,7 +654,7 @@ Acceptance Criteria:
 Validation:
 - `pytest tests/test_isolation.py tests/test_rbac.py tests/test_auth_service.py tests/test_secrets_store.py tests/test_cost_ledger.py -q`
 
-### [ ] T20: Adversarial Tenant Boundary Scenarios
+### [x] T20: Adversarial Tenant Boundary Scenarios
 
 Owner: Codex
 Priority: P0

@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.6
+Version: 5.7
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -22,8 +22,8 @@ Phase exit criteria: reviewer can find and run tenant-isolation proof from READM
 - Portfolio role: employer-facing engineering case.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
   proof, and bounded deployment-readiness work.
-- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 268 passed, 0 skipped,
-  45 warnings (orchestrator-verified after T19 isolation proof tests).
+- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 272 passed, 0 skipped,
+  45 warnings (orchestrator-verified after T20 adversarial boundary tests).
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -58,7 +58,7 @@ No P0/P1 findings are open.
 
 ## Next Task
 
-`T20`: Adversarial Tenant Boundary Scenarios.
+Phase 5 deep review gate before `T21`: Compose Migration And Health Hardening.
 
 ## Rules
 

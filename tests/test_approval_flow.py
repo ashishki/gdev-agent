@@ -200,6 +200,40 @@ def test_cross_tenant_approval_does_not_execute_action() -> None:
     assert "tests/test_approval_flow.py" in failure_doc
 
 
+def test_tenant_a_cannot_approve_tenant_b_pending_action() -> None:
+    settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
+    approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)
+    store = CapturingStore()
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=approval_store,
+        llm_client=FakeLLMClient(),
+    )
+    response = agent.process_webhook(
+        WebhookRequest(
+            text="Charged twice for a purchase",
+            user_id="user-456",
+            tenant_id="tenant-b",
+        )
+    )
+    assert response.pending is not None
+    store.events.clear()
+
+    with pytest.raises(AgentError) as exc:
+        agent.approve(
+            ApproveRequest(pending_id=response.pending.pending_id, approved=True, reviewer="rev-1"),
+            jwt_tenant_id="tenant-a",
+        )
+
+    assert exc.value.status_code == 404
+    assert store.events == []
+    assert approval_store.get_pending("tenant-b", response.pending.pending_id) is not None
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "FM_CROSS_TENANT_APPROVAL" in failure_doc
+    assert "test_tenant_a_cannot_approve_tenant_b_pending_action" in failure_doc
+
+
 def test_approve_forbidden_when_jwt_tenant_missing() -> None:
     settings = Settings(approval_categories=["billing"], approval_ttl_seconds=3600)
     approval_store = RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600)

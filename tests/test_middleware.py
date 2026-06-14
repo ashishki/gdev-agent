@@ -189,6 +189,28 @@ async def test_unknown_tenant_slug_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_invalid_tenant_slug_rejected_predictably() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
+    body = b'{"user_id":"u1","text":"hi"}'
+    status, called = await _run_signature(
+        middleware,
+        body,
+        {
+            "X-Tenant-Slug": "../tenant-a",
+            "X-Webhook-Signature": _sig("secret-a", body),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
+    )
+    assert status == 401
+    assert called is False
+    tenant_doc = Path("docs/TENANT_ISOLATION.md").read_text(encoding="utf-8")
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "test_invalid_tenant_slug_rejected_predictably" in tenant_doc
+    assert "test_invalid_tenant_slug_rejected_predictably" in failure_doc
+
+
+@pytest.mark.asyncio
 async def test_cross_tenant_secret_rejected() -> None:
     middleware = SignatureMiddleware(app=None, settings=Settings())
     body = b'{"user_id":"u1","text":"hi"}'
@@ -203,6 +225,28 @@ async def test_cross_tenant_secret_rejected() -> None:
         app_state=SimpleNamespace(
             webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a", "tenant-b": "secret-b"})
         ),
+    )
+    assert status == 401
+    assert called is False
+    tenant_doc = Path("docs/TENANT_ISOLATION.md").read_text(encoding="utf-8")
+    failure_doc = Path("docs/FAILURE_MODES.md").read_text(encoding="utf-8")
+    assert "test_invalid_hmac_rejected_before_downstream_side_effects" in tenant_doc
+    assert "test_invalid_hmac_rejected_before_downstream_side_effects" in failure_doc
+
+
+@pytest.mark.asyncio
+async def test_invalid_hmac_rejected_before_downstream_side_effects() -> None:
+    middleware = SignatureMiddleware(app=None, settings=Settings())
+    body = b'{"user_id":"u1","text":"hi"}'
+    status, called = await _run_signature(
+        middleware,
+        body,
+        {
+            "X-Tenant-Slug": "tenant-a",
+            "X-Webhook-Signature": _sig("wrong-secret", body),
+            "Content-Type": "application/json",
+        },
+        app_state=SimpleNamespace(webhook_secret_store=_SecretStoreStub({"tenant-a": "secret-a"})),
     )
     assert status == 401
     assert called is False
