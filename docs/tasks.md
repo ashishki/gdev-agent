@@ -845,7 +845,7 @@ interviewers can review quickly and drill down when needed.
 Exit criteria: one-page case study, architecture visual, demo artifact notes,
 and measured resume bullets are available.
 
-### [ ] T23: One-Page Case Study
+### [x] T23: One-Page Case Study
 
 Owner: Codex
 Priority: P1

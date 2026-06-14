@@ -21,13 +21,14 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 
 | Claim to inspect | Start here | Bounded status |
 | --- | --- | --- |
+| One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Implemented local stack with documented gaps and ADRs |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report and CI regression gate |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
-| Tests | [Current State](#current-state) | Last recorded baseline is 278 passing tests; rerun locally before relying on it |
+| Tests | [Current State](#current-state) | Last recorded baseline is 285 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
@@ -204,6 +205,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 ## Repository Guide
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
+- [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
 - [docs/N8N.md](docs/N8N.md): n8n integration and approval workflow blueprint.
 - [docs/observability.md](docs/observability.md): metrics, tracing, and logging conventions.
