@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.9
+Version: 6.0
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -9,13 +9,14 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 6 - Deployment Readiness Without Overclaiming.
+Phase boundary - Phase 6 Deployment Readiness complete; run deep review before
+starting Phase 7.
 
-Business goal: prove setup, migration, health, secrets, and recovery are
-understood while keeping deployment claims honest.
+Business goal: complete the Phase 6 boundary review before hiring-packaging work.
 
-Phase exit criteria: fresh-clone local setup is reliable and deployment docs
-state known limits clearly.
+Phase 6 exit criteria are met locally: fresh-clone setup path, migration checks,
+health notes, secrets, backup/restore notes, production-like config example, and
+known limits are documented without production readiness claims.
 
 ## Current State
 
@@ -24,7 +25,7 @@ state known limits clearly.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
   proof, and bounded deployment-readiness work.
 - Baseline: `.venv/bin/python -m pytest tests/ -q` -> 278 passed, 0 skipped,
-  45 warnings (orchestrator-verified after T21 migration/health hardening).
+  45 warnings (orchestrator-verified before T22 docs/config hardening).
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -54,14 +55,14 @@ No P0/P1 findings are open.
 |----|-----|-------------|--------|
 | CODE-1 | P2 | Broad `except Exception` handlers re-raise without required `LOGGER.error(..., exc_info=True)` logs. | Closed - tenant-safe `exc_info=True` logs added in `app/routers/clusters.py` and `app/approval_store.py`; covered by `tests/test_endpoints.py` and `tests/test_redis_approval_store.py` |
 | CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
-| CODE-3 / ARCH-2 / ARCH-HARDEN-1 | P2 | Current-state docs conflict with Cycle 17 evidence and security behavior, including stale test/eval counts and legacy webhook/approval semantics. | Open - refresh README and `docs/ARCHITECTURE.md` before final packaging |
+| CODE-3 / ARCH-2 / ARCH-HARDEN-1 | P2 | Current-state docs conflict with Cycle 17 evidence and security behavior, including stale test/eval counts and legacy webhook/approval semantics. | Partially addressed - README baseline and deployment-readiness links refreshed in T22; `docs/ARCHITECTURE.md` still needs final packaging alignment |
 | ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - align spec with protected REST JWT, JWT-exempt signed webhooks, network-scoped metrics, and bounded readiness claims |
-| ARCH-4 | P2 | Phase 6 deployment-readiness architecture is not yet documented. | Partially addressed in T21 for compose migration checks and health/readiness/liveness; T22 still needs secrets, backup/restore, production-like config, and known limits |
+| ARCH-4 | P2 | Phase 6 deployment-readiness architecture is not yet documented. | Closed - T21 covers compose migration and health/readiness/liveness; T22 adds `docs/DEPLOYMENT_READINESS.md`, `.env.example` required/optional config, README and evidence links |
 | CODE-4 / prior CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions or estimates with measured local/synthetic load evidence. | Open - clarify measured-vs-target language during Phase 6 or final packaging |
 
 ## Next Task
 
-`T22`: Secrets Backup Restore And Production-Like Config Notes.
+Phase 6 deep review gate. After review archive, proceed to `T23`: One-Page Case Study.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![263 tests](https://img.shields.io/badge/tests-263%20passing-brightgreen)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![278 tests](https://img.shields.io/badge/tests-278%20passing-brightgreen)
 
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
@@ -27,9 +27,10 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
-| Tests | [Current State](#current-state) | Last recorded baseline is 263 passing tests; rerun locally before relying on it |
+| Tests | [Current State](#current-state) | Last recorded baseline is 278 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
-| Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
+| Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
+| Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
 
 ## Why This Project Exists
 
@@ -66,7 +67,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
 | Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
 | Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
-| Platform | Docker Compose full stack; 263 tests (unit + integration) passing; ruff-clean |
+| Platform | Docker Compose full stack; 278 tests (unit + integration) passing; ruff-clean |
 
 ## Quick Start
 
@@ -116,7 +117,7 @@ If you want to exercise live LLM behavior instead of the compose default placeho
 
 ## Environment Variables
 
-Copy [.env.example](.env.example) and adjust only what you need for your environment.
+Copy [.env.example](.env.example) and adjust only what you need for your environment. Deployment-readiness boundaries, required secrets, backup, restore, and known limitations are documented in [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md).
 
 | Variable | Required | Notes |
 | --- | --- | --- |
@@ -210,6 +211,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/llm-usage.md](docs/llm-usage.md): prompt/versioning and model-usage rules.
 - [docs/load-profile.md](docs/load-profile.md): load targets and performance assumptions.
 - [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md): canonical tenant-isolation proof with exact tests and migrations.
+- [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md): local production-like config, secrets checklist, backup/restore notes, and known limitations.
 - [docs/data-map.md](docs/data-map.md): schema, Redis keys, and tenant-boundary rules.
 - [n8n/README.md](n8n/README.md): workflow assets committed in this repository.
 
@@ -221,9 +223,10 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
   says otherwise. The current load report is deterministic/local evidence, not
   live capacity proof.
-- CI eval gate, live load measurements, deployment-readiness notes, and final
-  portfolio packaging are tracked in [docs/tasks.md](docs/tasks.md) and are not
-  complete yet.
+- CI eval gate, live load measurements, and final portfolio packaging are tracked
+  in [docs/tasks.md](docs/tasks.md) and are not complete yet. Deployment
+  readiness notes are local/pilot-only and explicitly do not prove production
+  readiness.
 - Live LLM behavior requires a real Anthropic API key and budget controls; the
   local stack is the supported review path today.
 
@@ -238,6 +241,6 @@ with read-route extraction still tracked as architecture drift, Dockerized
 observability, admin CLI, and the n8n workflow artifacts needed for demo or
 pilot-style setups.
 
-**263 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 16 review cycles have been resolved.
+**278 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 17 review cycles have been resolved.
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.

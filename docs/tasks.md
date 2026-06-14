@@ -687,7 +687,7 @@ Validation:
 
 ## Phase 6 - Deployment Readiness Without Overclaiming
 
-Status: planned
+Status: complete
 Business goal: prove setup, migration, health, secrets, and recovery are
 understood while keeping deployment claims honest.
 Exit criteria: fresh-clone local setup is reliable and deployment docs state
@@ -721,7 +721,7 @@ Validation:
 - `pytest tests/test_cli.py tests/test_migrations.py -q`
 - `docker compose config >/tmp/gdev-compose-config.txt`
 
-### [ ] T22: Secrets Backup Restore And Production-Like Config Notes
+### [x] T22: Secrets Backup Restore And Production-Like Config Notes
 
 Owner: Codex
 Priority: P1
