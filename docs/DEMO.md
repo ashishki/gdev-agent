@@ -12,6 +12,9 @@ docker compose up --build -d
 ```
 
 - The API is reachable at `http://localhost:8000` unless you override it with `--url`.
+- The one-shot `migrate` service has completed successfully. It runs Alembic,
+  verifies the database revision with `python scripts/cli.py migrations check`,
+  and then applies demo seed data before the API container becomes healthy.
 - If your local app is not using the seeded demo tenant values, set the environment overrides below before running the script.
 - For the free deterministic path, run the API with `LLM_MODE=demo`. Live mode
   is optional and requires `LLM_MODE=live`, a real `ANTHROPIC_API_KEY`, and a
@@ -99,6 +102,22 @@ Equivalent direct wrapper:
 bash scripts/demo.sh
 ```
 
+Verify migrations against the running Compose stack:
+
+```bash
+docker compose exec agent python scripts/cli.py migrations check
+```
+
+Expected output:
+
+```text
+migration_status=ok current=<alembic_head> heads=<alembic_head>
+```
+
+If this command reports `migration_status=drift`, stop and inspect Alembic
+before running the demo; the local stack should not be treated as a valid
+review environment until the database revision matches the repository head.
+
 Use the project environment that already has `httpx` installed if calling the
 Python runner directly:
 
@@ -153,7 +172,19 @@ On failure the script exits non-zero and prints the failing step or HTTP error t
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `stack unavailable` | API container is not running or URL is wrong | Run `docker compose up --build -d` and check `BASE_URL` |
+| `migration_status=drift` | Database schema revision does not match the repository Alembic head | Re-run `docker compose up --build -d migrate` or reset the local Compose volumes before demo review |
 | `auth failed; verify docker/seed.sql was applied` | Seed data is missing or demo credentials drifted | Re-run the `migrate` service or restart Compose after checking `docker/seed.sql` |
 | `signed webhook failed` | Tenant slug or webhook secret mismatch | Use the defaults table above or update `DEMO_TENANT_SLUG` and `DEMO_WEBHOOK_SECRET` together |
 | `webhook did not produce pending state` | Server is not in deterministic mode or billing policy changed | Set `LLM_MODE=demo` in `.env` and keep `approval_categories` including `billing` |
 | `metrics endpoint did not include gdev workflow metrics` | Metrics route unavailable or app did not initialize metrics | Check `GET /metrics` and container logs |
+
+## Local Health Semantics
+
+- `GET /health` is an application liveness probe. It returns `200` when the
+  FastAPI process is running and settings loaded.
+- Compose readiness is stricter: `agent` starts after Postgres and Redis are
+  healthy and after `migrate` completes Alembic, migration verification, and
+  seed data.
+- Prometheus, Grafana, n8n, Tempo, and Loki depend on service/container
+  health checks in `docker-compose.yml`; these checks are local review proof,
+  not a production SLA.

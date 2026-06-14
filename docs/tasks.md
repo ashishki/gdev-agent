@@ -133,7 +133,7 @@ Validation:
 
 ## Phase 1 - Repeatable Demo Pack
 
-Status: planned
+Status: active
 Business goal: make the main workflow understandable without real API keys,
 domain setup, or paid model calls.
 Exit criteria: a fresh clone can run a deterministic demo that produces webhook
@@ -693,7 +693,7 @@ understood while keeping deployment claims honest.
 Exit criteria: fresh-clone local setup is reliable and deployment docs state
 known limits clearly.
 
-### [ ] T21: Compose Migration And Health Hardening
+### [x] T21: Compose Migration And Health Hardening
 
 Owner: Codex
 Priority: P1

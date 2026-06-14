@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.8
+Version: 5.9
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -23,8 +23,8 @@ state known limits clearly.
 - Portfolio role: employer-facing engineering case.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
   proof, and bounded deployment-readiness work.
-- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 276 passed, 0 skipped,
-  45 warnings (orchestrator-verified after CODE-1 logging fix).
+- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 278 passed, 0 skipped,
+  45 warnings (orchestrator-verified after T21 migration/health hardening).
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -56,12 +56,12 @@ No P0/P1 findings are open.
 | CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
 | CODE-3 / ARCH-2 / ARCH-HARDEN-1 | P2 | Current-state docs conflict with Cycle 17 evidence and security behavior, including stale test/eval counts and legacy webhook/approval semantics. | Open - refresh README and `docs/ARCHITECTURE.md` before final packaging |
 | ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - align spec with protected REST JWT, JWT-exempt signed webhooks, network-scoped metrics, and bounded readiness claims |
-| ARCH-4 | P2 | Phase 6 deployment-readiness architecture is not yet documented. | Open - cover compose migration checks, health/readiness/liveness, secrets, backup/restore, production-like config, and known limits in T21/T22 |
+| ARCH-4 | P2 | Phase 6 deployment-readiness architecture is not yet documented. | Partially addressed in T21 for compose migration checks and health/readiness/liveness; T22 still needs secrets, backup/restore, production-like config, and known limits |
 | CODE-4 / prior CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions or estimates with measured local/synthetic load evidence. | Open - clarify measured-vs-target language during Phase 6 or final packaging |
 
 ## Next Task
 
-`T21`: Compose Migration And Health Hardening.
+`T22`: Secrets Backup Restore And Production-Like Config Notes.
 
 ## Rules
 

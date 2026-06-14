@@ -300,13 +300,14 @@ Key modules:
 
 ### 3.3 Docker Stack
 
-`docker-compose.yml` (T24) defines the local full-stack deployment used for development, demos,
-and CI smoke flows.
+`docker-compose.yml` defines the local full-stack deployment used for
+development, demos, and portfolio smoke flows. This is local/pilot evidence,
+not a production deployment claim.
 
 | Service | Purpose |
 |---------|---------|
 | `postgres` | Primary relational store with pgvector support |
-| `migrate` | Runs Alembic migrations and seed data before app start |
+| `migrate` | Runs Alembic migrations, verifies repository head with `python scripts/cli.py migrations check`, and applies seed data before app start |
 | `agent` | FastAPI application |
 | `redis` | Dedup, pending approvals, rate limiting, JWT blocklist |
 | `prometheus` | Metrics scrape and storage |
@@ -486,8 +487,15 @@ Approve or reject a pending action. `pending_id` is **single-use** — `pop_pend
 { "status": "ok", "app": "gdev-agent" }
 ```
 
-HTTP 200. Used by Docker healthchecks, n8n, and load balancers. Does not check downstream
-dependencies (Redis, Anthropic API). Use separate monitoring for dependency health.
+HTTP 200. In the local stack this is an application liveness probe: the FastAPI
+process is running and settings loaded. It does not check downstream Redis,
+Postgres, or provider health.
+
+Compose readiness is stricter than `/health`: the `agent` service starts only
+after Postgres and Redis are healthy and the one-shot `migrate` service has
+completed Alembic upgrade, migration verification, and seed data. Prometheus,
+Grafana, Tempo, Loki, and n8n use their own service/container health checks in
+`docker-compose.yml`. These checks are local review proof, not a production SLA.
 
 ---
 

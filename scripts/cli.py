@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import click
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from redis import asyncio as redis_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -35,6 +37,12 @@ def _session_bundle_from_settings(
 
 def _redis_client_from_settings(settings: Settings):
     return redis_asyncio.from_url(settings.redis_url, decode_responses=True)
+
+
+def _migration_heads() -> tuple[str, ...]:
+    config = Config(str(ROOT / "alembic.ini"))
+    script = ScriptDirectory.from_config(config)
+    return tuple(sorted(script.get_heads()))
 
 
 async def _close_redis(redis_client: object) -> None:
@@ -206,6 +214,32 @@ async def _run_rca_for_tenant(settings: Settings, tenant_id: UUID) -> None:
         await engine.dispose()
 
 
+async def _migration_status(settings: Settings) -> SimpleNamespace:
+    engine, session_factory = _session_bundle_from_settings(settings)
+    try:
+        async with session_factory() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT version_num
+                    FROM alembic_version
+                    ORDER BY version_num
+                    """
+                ),
+                {},
+            )
+            current = tuple(sorted(str(row["version_num"]) for row in result.mappings().all()))
+    finally:
+        await engine.dispose()
+
+    heads = _migration_heads()
+    return SimpleNamespace(
+        current=current,
+        heads=heads,
+        status="ok" if current and set(current) == set(heads) else "drift",
+    )
+
+
 @click.group()
 def app() -> None:
     """gdev-admin operational CLI."""
@@ -292,6 +326,22 @@ def rca_run(tenant_id: UUID) -> None:
     """Run RCA clustering for a tenant."""
     asyncio.run(_run_rca_for_tenant(_get_settings(), tenant_id))
     click.echo(f"RCA run completed for {tenant_id}")
+
+
+@app.group()
+def migrations() -> None:
+    """Migration verification operations."""
+
+
+@migrations.command("check")
+def migrations_check() -> None:
+    """Verify the database Alembic version matches repository head."""
+    status = asyncio.run(_migration_status(_get_settings()))
+    current = ",".join(status.current) if status.current else "none"
+    heads = ",".join(status.heads) if status.heads else "none"
+    if status.status != "ok":
+        raise click.ClickException(f"migration_status=drift current={current} heads={heads}")
+    click.echo(f"migration_status=ok current={current} heads={heads}")
 
 
 if __name__ == "__main__":

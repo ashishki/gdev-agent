@@ -98,6 +98,7 @@ def test_help_lists_all_commands() -> None:
     assert "tenant" in result.stdout
     assert "budget" in result.stdout
     assert "rca" in result.stdout
+    assert "migrations" in result.stdout
 
 
 def test_demo_command_surfaces_reviewer_transcript_and_help() -> None:
@@ -169,6 +170,7 @@ def test_demo_seed_contract_matches_docs_and_defaults(monkeypatch) -> None:  # n
     assert config.llm_mode == "demo"
 
     assert f"APPROVE_SECRET: {seed_db.DEMO_APPROVE_SECRET}" in compose
+    assert "python scripts/cli.py migrations check" in compose
     assert seed_db.DEMO_APPROVE_SECRET in docs
     assert seed_db.DEMO_REVIEWER in docs
 
@@ -369,3 +371,33 @@ def test_rca_run_command(monkeypatch) -> None:  # noqa: ANN001
     assert result.exit_code == 0
     assert seen == [str(tenant_id)]
     assert f"RCA run completed for {tenant_id}" in result.output
+
+
+def test_migrations_check_command_reports_ok(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    session = _SessionStub([[{"version_num": "head-a"}]])
+    engine = _EngineStub()
+    _patch_settings(monkeypatch)
+    _patch_session_bundle(monkeypatch, session, engine)
+    monkeypatch.setattr(cli, "_migration_heads", lambda: ("head-a",))
+
+    result = runner.invoke(cli.app, ["migrations", "check"])
+
+    assert result.exit_code == 0
+    assert "migration_status=ok current=head-a heads=head-a" in result.output
+    assert "FROM alembic_version" in session.calls[0][0]
+    assert engine.disposed is True
+
+
+def test_migrations_check_command_fails_on_drift(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    session = _SessionStub([[{"version_num": "old-rev"}]])
+    engine = _EngineStub()
+    _patch_settings(monkeypatch)
+    _patch_session_bundle(monkeypatch, session, engine)
+    monkeypatch.setattr(cli, "_migration_heads", lambda: ("head-a",))
+
+    result = runner.invoke(cli.app, ["migrations", "check"])
+
+    assert result.exit_code != 0
+    assert "migration_status=drift current=old-rev heads=head-a" in result.output

@@ -45,6 +45,17 @@ real operator feedback appears.
   resume bullets.
 - Keep packaging grounded in committed proof, not marketing claims.
 
+### Phase 6 - Deployment Readiness Without Overclaiming
+
+- Make local Compose setup verifiable with explicit Postgres/Redis health
+  dependencies and a migration check command:
+  `python scripts/cli.py migrations check`.
+- Treat `GET /health` as app-process liveness. Local Compose readiness depends
+  on healthy Postgres/Redis plus successful migration verification and seeding.
+- Document secrets, backup/restore, and production-like config as readiness
+  knowledge only; do not claim production SaaS readiness without an external
+  deployment and users.
+
 ### Future Only With Real Load
 
 - Reopen product development only if real support traffic, real tenants, or real
