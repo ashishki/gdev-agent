@@ -25,7 +25,7 @@ _Date: 2026-03-03 · All schema changes require a migration file and a bump to t
 | `cost_ledger` | Postgres | — | 2 years | Low |
 | `eval_runs` | Postgres | — | 1 year | Low |
 | `eval_cases` | File (`eval/cases.jsonl`) | — | Version-controlled | Medium (synthetic) |
-| `dedup_keys` | Redis (`{tenant}:dedup:{msg_id}`) | — | 24 h TTL | Low (hash only) |
+| `dedup_cache` | Redis (`{tenant}:dedup:{msg_id}`) | — | 24 h TTL | Medium (serialized webhook response) |
 | `rate_limit_counters` | Redis (`{tenant}:ratelimit:{user}`) | — | 60 s TTL | Low |
 | `approval_pending` | Redis (`{tenant}:pending:{id}`) | Postgres | Per APPROVAL_TTL | Low |
 | `session_tokens` | Redis (JWT blocklist) | — | Token expiry | High |
@@ -168,16 +168,18 @@ UNIQUE(tenant_id, date)
 
 ## 3. Redis Key Schema
 
-All keys are namespaced by `{tenant_id}` to prevent cross-tenant collision.
+Tenant-scoped operational keys are namespaced by `{tenant_id}` to prevent
+cross-tenant collision. Global security keys are listed explicitly as
+exceptions.
 
 | Key Pattern | Type | TTL | Contents |
 |---|---|---|---|
-| `{tenant_id}:dedup:{message_id}` | STRING | 86400 s | `"1"` (existence flag) |
+| `{tenant_id}:dedup:{message_id}` | STRING | 86400 s | Serialized `WebhookResponse` used for idempotent replay. May include pending metadata, action payloads, draft response text, and hashed user identifiers. |
 | `{tenant_id}:ratelimit:{user_id}` | ZSET | 60 s (sliding) | Request timestamps |
 | `{tenant_id}:pending:{pending_id}` | STRING (JSON) | `APPROVAL_TTL_SECONDS` | Serialized `PendingDecision` |
 | `tenant:{tenant_id}:config` | STRING (JSON) | 300 s | Cached `TenantConfig` JSON (`TenantRegistry`) |
-| `jwt:blocklist:{jti}` | STRING | Token expiry | `"1"` (revoked flag) |
-| `auth_ratelimit:{email_hash}` | STRING | 60 s | Login attempt counter. Global scope by design, so it intentionally omits a tenant prefix and rate-limits the same email hash across all tenants. |
+| `jwt:blocklist:{jti}` | STRING | Token expiry | Revoked-token flag. Global by design because JTI values are token-scoped and must remain invalid across all tenants. |
+| `auth_ratelimit:{email_hash}` | STRING | 60 s | Login attempt counter. Global by design, so it intentionally omits a tenant prefix and rate-limits the same email hash across all tenants. |
 
 ---
 
@@ -224,8 +226,15 @@ fields retained for audit integrity.
 **Principle**: Each tenant's data is invisible to all other tenants at every layer.
 
 ### Application layer
-- `tenant_id` is resolved from the JWT on every request and injected into all service calls.
-- No service method may be called without a `tenant_id`. Missing tenant = HTTP 401, request dropped.
+- Protected read/admin/approval APIs resolve `tenant_id`, user, role, and JTI
+  from JWT middleware and inject that context into route dependencies and
+  service calls.
+- `POST /webhook` is JWT-exempt by design. Its tenant context is resolved from
+  signed `X-Tenant-Slug` plus `X-Webhook-Signature` in
+  `app/middleware/signature.py` before the webhook service runs.
+- Missing tenant context is rejected for tenant-scoped service calls. Protected
+  JWT APIs return HTTP 401 on missing/invalid JWT; webhook calls return 400/401
+  on missing slug or invalid signature.
 
 ### Database layer (Row-Level Security)
 

@@ -13,7 +13,7 @@ Not Protected section states what this local proof does not protect.
 Run the current tenant-boundary proof with:
 
 ```bash
-.venv/bin/python -m pytest tests/test_isolation.py tests/test_rbac.py tests/test_auth_service.py tests/test_secrets_store.py tests/test_cost_ledger.py tests/test_approval_flow.py tests/test_middleware.py tests/test_webhook_service.py -q
+.venv/bin/python -m pytest tests/test_isolation.py tests/test_rbac.py tests/test_auth_service.py tests/test_secrets_store.py tests/test_cost_ledger.py tests/test_approval_flow.py tests/test_middleware.py tests/test_webhook_service.py tests/test_endpoints.py tests/test_redis_approval_store.py -q
 ```
 
 Some RLS and cost-ledger tests require Docker or `TEST_DATABASE_URL`. If no
@@ -58,6 +58,7 @@ These are explicit limits of the current portfolio proof:
 | Migration | Isolation work |
 |-----------|----------------|
 | `alembic/versions/0001_initial_schema.py` | Defines tenant-scoped tables including `tenant_users`, `api_keys`, `webhook_secrets`, `tickets`, `pending_decisions`, `approval_events`, `audit_log`, `agent_configs`, `cost_ledger`, and `eval_runs`; enables RLS for each table; creates `tenant_isolation` policies using `current_setting('app.current_tenant_id', TRUE)::UUID`; creates `gdev_app` and `gdev_admin` roles. |
+| `alembic/versions/0002_grant_admin_bypassrls.py` | Grants `BYPASSRLS` only to `gdev_admin`, keeping the application role separate from migration/admin maintenance privileges. |
 | `alembic/versions/0005_cluster_membership.py` | Adds RLS for `rca_cluster_members` through the owning `cluster_summaries.tenant_id`, so cluster membership reads follow the tenant context. |
 
 ## Exact Test Proof
