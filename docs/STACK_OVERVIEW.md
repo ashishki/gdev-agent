@@ -9,7 +9,7 @@ reliable AI/agent systems.
 | --- | --- | --- | --- |
 | Governed workflow | `gdev-agent` | Multi-tenant support-triage workflow with webhook intake, guardrails, approval, audit, cost, and observability controls. | 285 tests, local Compose demo, 180-case internal smoke eval, load and isolation evidence. |
 | Quality layer | `Eval-Ground-Truth-Lab` | Deterministic regression evaluation framework for structured output, routing, unsafe auto-approval, cost, latency, and adapter behavior. | 55-case live local gdev-agent baseline with zero adapter errors and zero validator failures. |
-| Runtime layer | `Agent-Runtime-Grid` | Queue-backed runtime for running many AI/agent jobs with retries, timeouts, idempotent finalization, artifacts, metrics, and cost controls. | 100-job smoke, 500-job reliability proof, failure-injection reports, and cross-project artifact proof. |
+| Runtime layer | `Agent-Runtime-Grid` | Queue-backed runtime for running many AI/agent jobs with retries, timeouts, idempotent finalization, artifacts, metrics, and cost controls. | 100-job smoke, 500-job reliability proof, failure-injection reports, cross-project artifact proof, and optional live-local HTTP proof. |
 
 ## How They Connect
 
@@ -23,7 +23,7 @@ Eval Ground Truth Lab
   -> baseline report and run artifact
 ```
 
-The Runtime Grid path is currently an artifact-linked runtime proof:
+The default Runtime Grid path is artifact-linked runtime proof:
 
 ```text
 Agent Runtime Grid
@@ -35,8 +35,10 @@ Agent Runtime Grid
 ```
 
 That Runtime Grid mode does not call live `gdev-agent` over HTTP by default. A
-future `full-stack-live-local` mode would run Grid workers that trigger Eval Lab
-or the gdev HTTP adapter end to end.
+separate optional `full-stack-live-local` mode now runs Grid workers that call a
+local `gdev-agent` `/webhook` endpoint and write sanitized runtime artifacts.
+That live-local mode is still local/operator-run evidence; it does not claim
+hosted operations, external users, or production traffic.
 
 ## What An Agent Means Here
 
@@ -65,6 +67,7 @@ Default portfolio and CI mode should stay deterministic:
 | `demo` / `stub` | deterministic fixtures | tests, CI, load/reliability proofs, zero-cost demos |
 | `live` in `gdev-agent` | Anthropic Claude | implemented live support-triage provider path |
 | optional judge in Eval Lab | OpenAI provider contract | bounded, budget-gated, non-authoritative judging |
+| Runtime Grid `full-stack-live-local` | local `gdev-agent` HTTP endpoint | optional end-to-end local proof; provider behavior is still governed by `gdev-agent` `LLM_MODE` |
 | future runtime live jobs | model router over Anthropic/OpenAI/Gemini/Mistral/local | planned only after explicit budget, egress, and eval gates |
 | future local mode | Ollama or vLLM | offline/dev/privacy/inference-infra demonstrations |
 
@@ -77,4 +80,3 @@ terminal state, tenant isolation, approval policy, or eval pass/fail authority.
 This stack is v1 local evidence, not production adoption evidence. It does not
 claim external users, hosted SaaS operations, production SLOs, exactly-once
 execution, or a general autonomous swarm.
-

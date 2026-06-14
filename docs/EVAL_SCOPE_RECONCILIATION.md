@@ -9,7 +9,8 @@ answer different questions.
 | --- | --- | ---: | --- | --- |
 | Internal gdev-agent smoke eval | `eval/cases.jsonl`, `docs/EVAL_REPORT.md` | 180 | Does the local demo-mode workflow expose broad taxonomy, guard, routing, and unsafe-auto-approval regressions? | Broad smoke signal. It intentionally exposes known demo-policy quality gaps. |
 | Eval Lab integration baseline | `Eval-Ground-Truth-Lab/datasets/gdev_agent/triage_v1.jsonl`, `reports/gdev-agent/baseline_report.md` | 55 | Does Eval Lab's configured HTTP adapter reach a live local gdev-agent and validate the agreed triage contract? | Passing integration/conformance baseline: 55 cases, zero adapter errors, zero validator failures. |
-| Runtime Grid artifact proof | `Agent-Runtime-Grid` full-stack artifact proof | 20 default | Can selected Eval Lab/gdev evidence be run as queue-backed jobs with runtime artifacts, lifecycle state, and report cross-links? | Runtime reliability proof over ready artifacts, not a live HTTP gdev-agent quality eval. |
+| Runtime Grid artifact proof | `Agent-Runtime-Grid` `proof full-stack` | 20 default | Can selected Eval Lab/gdev evidence be run as queue-backed jobs with runtime artifacts, lifecycle state, and report cross-links? | Default runtime reliability proof over ready artifacts, not a live HTTP gdev-agent quality eval. |
+| Runtime Grid live-local proof | `Agent-Runtime-Grid` `proof full-stack-live-local` | operator-selected | Can Grid workers call a local gdev-agent HTTP endpoint while preserving queue lifecycle, sanitized artifacts, and report links? | Optional local HTTP proof. It exercises runtime execution plus gdev HTTP transport, but it does not replace Eval Lab's quality report or claim production traffic. |
 
 ## Why The Metrics Differ
 
@@ -48,12 +49,14 @@ conformance set.
   the broad taxonomy.
 - Add a harder Eval Lab challenge set with ambiguous, expected-review,
   expected-failure, malformed, and policy-stress cases.
-- Add a Runtime Grid `full-stack-live-local` mode only after the current
-  artifact proof is clearly named and stable.
+- Keep Runtime Grid `proof full-stack` as the reproducible artifact-linked
+  proof, and use `proof full-stack-live-local` only as explicit local HTTP
+  evidence when the operator has a local gdev-agent stack running.
 
 ## Reviewer Shortcut
 
 Use the Eval Lab 55-case report to inspect integration correctness. Use the
 internal 180-case report to inspect known quality gaps and regression visibility.
-Use Runtime Grid evidence to inspect batch execution reliability.
-
+Use Runtime Grid artifact evidence to inspect batch execution reliability, and
+use Runtime Grid live-local evidence only when you want to inspect queued local
+HTTP execution against gdev-agent.
