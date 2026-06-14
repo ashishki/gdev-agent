@@ -33,6 +33,7 @@ Reviews run at phase boundaries, not between individual tasks.
 | 15 | Portfolio hardening Phase 3 | T14 | Security-critical boundary gate | ✅ Closed 2026-06-12 · Stop-Ship: No |
 | 16 | Portfolio hardening Phase 4 | T15–T17 | Load/observability gate | ✅ Closed 2026-06-12 · Stop-Ship: No |
 | 17 | Portfolio hardening Phase 5 | T18–T20 | Tenant isolation/security gate | ✅ Closed 2026-06-14 · Stop-Ship: No |
+| 18 | Portfolio hardening Phase 6 | T21–T22 | Deployment readiness gate | ✅ Closed 2026-06-14 · Stop-Ship: Yes for Phase 7 |
 
 ## Archive
 
@@ -51,6 +52,7 @@ Reviews run at phase boundaries, not between individual tasks.
 | `archive/T14_SECURITY_REVIEW.md` | 15 | 2026-06-12 |
 | `archive/PHASE4_LOAD_OBSERVABILITY_REVIEW.md` | 16 | 2026-06-12 |
 | `archive/PHASE17_REVIEW.md` | 17 | 2026-06-14 |
+| `archive/PHASE18_REVIEW.md` | 18 | 2026-06-14 |
 | 12 | Phase 10–11 | CLI-1, CLU-1, CLU-2, PORT-1–4 | Phase 10–11 gate | ✅ Closed 2026-03-21 (Cycle 12) · Stop-Ship: No |
 | 13 | Phase 12 | FIX-I, SVC-4 | Phase 12 gate (final) | ✅ Closed 2026-03-21 (Cycle 13) · Stop-Ship: No |
 

@@ -46,7 +46,7 @@ This is not a product expansion plan.
 
 ## Phase 0 - Positioning And Evidence Map
 
-Status: active
+Status: complete
 Business goal: make the strongest proof easy to find in 10-15 minutes.
 Exit criteria: README links to architecture, tests, eval, load, demo, failure
 modes, SLO/runbook, observability, and known limits with bounded status claims.
@@ -133,7 +133,7 @@ Validation:
 
 ## Phase 1 - Repeatable Demo Pack
 
-Status: active
+Status: complete
 Business goal: make the main workflow understandable without real API keys,
 domain setup, or paid model calls.
 Exit criteria: a fresh clone can run a deterministic demo that produces webhook
@@ -496,7 +496,7 @@ Validation:
 
 ## Phase 4 - Load Profile And Observability Proof
 
-Status: active
+Status: complete
 Business goal: show measurable local behavior under realistic portfolio-scale
 traffic and make debugging paths visible.
 Exit criteria: load tests are reproducible locally and reports map metrics,
@@ -595,7 +595,7 @@ Validation:
 
 ## Phase 5 - Tenant Isolation And Security Proof
 
-Status: active
+Status: complete
 Business goal: back every multi-tenancy claim with concrete docs, adversarial
 examples, and tests.
 Exit criteria: reviewer can find and run tenant-isolation proof from README.
@@ -687,7 +687,7 @@ Validation:
 
 ## Phase 6 - Deployment Readiness Without Overclaiming
 
-Status: complete
+Status: remediation-active
 Business goal: prove setup, migration, health, secrets, and recovery are
 understood while keeping deployment claims honest.
 Exit criteria: fresh-clone local setup is reliable and deployment docs state
@@ -748,11 +748,98 @@ Acceptance Criteria:
 Validation:
 - `rg -n "DEPLOYMENT_READINESS|secrets checklist|backup|restore|known limitations|production readiness" README.md docs/EVIDENCE_INDEX.md docs/DEPLOYMENT_READINESS.md .env.example`
 
+## Phase 6 Remediation - Cycle 18 Stop-Ship Fixes
+
+Status: active
+Business goal: close Phase 6 review blockers before hiring packaging.
+Exit criteria: Compose migration/health/env behavior is reliable, env examples
+match runtime parsing, and public evidence state is internally consistent.
+
+### [ ] FIX-P6-1: Compose Runtime And Env Contract Repair
+
+Owner: Codex
+Priority: P1
+Type: code/tests/docs/config
+Depends-On: T22
+
+Objective:
+Fix Cycle 18 runtime/config blockers in the local Compose and environment
+contract without expanding product scope.
+
+Files to create/modify:
+- `docker-compose.yml`
+- `Dockerfile` or Compose healthcheck command
+- `.dockerignore`
+- `.env.example`
+- `app/config.py`
+- `scripts/cli.py`
+- `tests/test_cli.py`
+- `tests/test_config.py` or existing config-focused tests
+- `README.md`
+
+Acceptance Criteria:
+1. Compose migration check no longer depends on unrelated live LLM provider
+   settings.
+2. Agent healthcheck uses a command available in the built image or the image
+   installs the required command.
+3. Compose can use `.env`/interpolation for `LLM_MODE` and
+   `ANTHROPIC_API_KEY` without hard-coding a live key path.
+4. `.env.example` list values match runtime parsing for approval categories and
+   URL allowlist.
+5. Documented cost env vars are either accepted by runtime settings or renamed
+   to the actual runtime env names.
+6. Docker build context excludes local secrets and other unnecessary runtime
+   artifacts.
+7. Focused tests or config checks cover the repaired contracts.
+
+Validation:
+- `pytest tests/test_cli.py tests/test_config.py -q`
+- `ruff check app/ tests/ scripts/`
+- `docker-compose config >/tmp/gdev-compose-config.txt`
+
+### [ ] FIX-P6-2: Phase 6 Evidence And Architecture Alignment
+
+Owner: Codex
+Priority: P1
+Type: docs
+Depends-On: FIX-P6-1
+
+Objective:
+Resolve Cycle 18 documentation and task-state blockers before Phase 7 case
+study work.
+
+Files to create/modify:
+- `README.md`
+- `docs/tasks.md`
+- `docs/CODEX_PROMPT.md`
+- `docs/ARCHITECTURE.md`
+- `docs/spec.md`
+- `docs/DEPLOYMENT_READINESS.md`
+- `docs/EVIDENCE_INDEX.md`
+- `docs/prompts/ORCHESTRATOR.md`
+
+Acceptance Criteria:
+1. README no longer says the CI eval gate is planned or incomplete when the
+   workflow implements it.
+2. Completed phase statuses are normalized.
+3. Architecture/spec docs match current `/approve`, `/health`, webhook HMAC,
+   JWT, metrics, and live/demo LLM secret behavior.
+4. Deployment readiness backup commands work for a fresh clone or document
+   required directory creation.
+5. Boundary validation evidence is recorded without claiming production
+   readiness.
+6. Stale `/home/gdev/gdev-agent` prompt examples are replaced with the current
+   repository root.
+
+Validation:
+- `rg -n "CI eval|Eval regression gate|readiness|liveness|APPROVE_SECRET|WEBHOOK_SECRET_ENCRYPTION_KEY|/home/gdev/gdev-agent|/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent" README.md docs/ARCHITECTURE.md docs/spec.md docs/DEPLOYMENT_READINESS.md docs/EVIDENCE_INDEX.md docs/prompts/ORCHESTRATOR.md docs/CODEX_PROMPT.md`
+- `rg -n "Status: active|Status: remediation-active|FIX-P6|T23" docs/tasks.md docs/CODEX_PROMPT.md`
+
 ---
 
 ## Phase 7 - Hiring Packaging
 
-Status: planned
+Status: blocked-by-phase-6-remediation
 Business goal: package the evidence so hiring managers and technical
 interviewers can review quickly and drill down when needed.
 Exit criteria: one-page case study, architecture visual, demo artifact notes,
@@ -763,7 +850,7 @@ and measured resume bullets are available.
 Owner: Codex
 Priority: P1
 Type: docs
-Depends-On: T22
+Depends-On: T22, FIX-P6-1, FIX-P6-2
 
 Objective:
 Create a concise case study that tells the engineering story through evidence.
