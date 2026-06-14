@@ -377,7 +377,7 @@ def test_migrations_check_command_reports_ok(monkeypatch) -> None:  # noqa: ANN0
     runner = CliRunner()
     session = _SessionStub([[{"version_num": "head-a"}]])
     engine = _EngineStub()
-    _patch_settings(monkeypatch)
+    monkeypatch.setattr(cli, "_get_migration_settings", lambda: SimpleNamespace())
     _patch_session_bundle(monkeypatch, session, engine)
     monkeypatch.setattr(cli, "_migration_heads", lambda: ("head-a",))
 
@@ -389,11 +389,26 @@ def test_migrations_check_command_reports_ok(monkeypatch) -> None:  # noqa: ANN0
     assert engine.disposed is True
 
 
+def test_migrations_check_command_does_not_load_live_llm_settings(monkeypatch) -> None:  # noqa: ANN001
+    runner = CliRunner()
+    session = _SessionStub([[{"version_num": "head-a"}]])
+    engine = _EngineStub()
+    monkeypatch.setattr(cli, "_get_settings", lambda: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(cli, "_get_migration_settings", lambda: SimpleNamespace())
+    _patch_session_bundle(monkeypatch, session, engine)
+    monkeypatch.setattr(cli, "_migration_heads", lambda: ("head-a",))
+
+    result = runner.invoke(cli.app, ["migrations", "check"])
+
+    assert result.exit_code == 0
+    assert "migration_status=ok current=head-a heads=head-a" in result.output
+
+
 def test_migrations_check_command_fails_on_drift(monkeypatch) -> None:  # noqa: ANN001
     runner = CliRunner()
     session = _SessionStub([[{"version_num": "old-rev"}]])
     engine = _EngineStub()
-    _patch_settings(monkeypatch)
+    monkeypatch.setattr(cli, "_get_migration_settings", lambda: SimpleNamespace())
     _patch_session_bundle(monkeypatch, session, engine)
     monkeypatch.setattr(cli, "_migration_heads", lambda: ("head-a",))
 

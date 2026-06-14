@@ -28,6 +28,10 @@ def _get_settings() -> Settings:
     return get_settings()
 
 
+def _get_migration_settings() -> Settings:
+    return Settings(llm_mode="demo")
+
+
 def _session_bundle_from_settings(
     settings: Settings,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
@@ -336,7 +340,7 @@ def migrations() -> None:
 @migrations.command("check")
 def migrations_check() -> None:
     """Verify the database Alembic version matches repository head."""
-    status = asyncio.run(_migration_status(_get_settings()))
+    status = asyncio.run(_migration_status(_get_migration_settings()))
     current = ",".join(status.current) if status.current else "none"
     heads = ",".join(status.heads) if status.heads else "none"
     if status.status != "ok":

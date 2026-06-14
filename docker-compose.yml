@@ -25,6 +25,7 @@ services:
       - alembic upgrade head && python scripts/cli.py migrations check && python scripts/seed_db.py
     environment:
       DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
+      LLM_MODE: demo
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,8 +40,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      LLM_MODE: ${LLM_MODE:-live}
-      ANTHROPIC_API_KEY: test-key
+      LLM_MODE: ${LLM_MODE:-demo}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
       REDIS_URL: redis://redis:6379
       WEBHOOK_SECRET_ENCRYPTION_KEY: kL6h3kArf9nUP9QufR2gY6eebjY5J5A95fYYxRcbk3s=
@@ -55,7 +56,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()\" || exit 1",
+        ]
       interval: 10s
       timeout: 3s
       retries: 10

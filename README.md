@@ -95,7 +95,7 @@ What starts:
 | tempo | `http://localhost:3200` | Trace backend |
 | loki | `http://localhost:3100` | Log backend |
 
-The `migrate` service runs Alembic and seeds the database before the API starts. In the compose stack, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `APPROVE_SECRET`, `WEBHOOK_SECRET_ENCRYPTION_KEY`, `OTLP_ENDPOINT`, and a development `ANTHROPIC_API_KEY` are injected automatically.
+The `migrate` service runs Alembic and seeds the database before the API starts. In the compose stack, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `APPROVE_SECRET`, `WEBHOOK_SECRET_ENCRYPTION_KEY`, and `OTLP_ENDPOINT` are injected automatically. `LLM_MODE` defaults to deterministic `demo` mode.
 
 Verify the stack:
 
@@ -113,7 +113,7 @@ HTTP/1.1 200 OK
 {"status":"ok","app":"gdev-agent"}
 ```
 
-If you want to exercise live LLM behavior instead of the compose default placeholder key, set `ANTHROPIC_API_KEY` in `.env` before startup.
+If you want to exercise live LLM behavior, set `LLM_MODE=live` and `ANTHROPIC_API_KEY` in `.env` before startup.
 
 ## Environment Variables
 
@@ -153,7 +153,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 | `SQLITE_LOG_PATH` | Optional | Enables local SQLite event logging |
 | `OTLP_ENDPOINT` / `OTEL_SERVICE_NAME` | Optional | OpenTelemetry export |
 | `APP_NAME` / `APP_ENV` / `LOG_LEVEL` | No | App identity and logging controls |
-| `ANTHROPIC_INPUT_COST_PER_1K` / `ANTHROPIC_OUTPUT_COST_PER_1K` | No | Cost ledger rates |
+| `LLM_INPUT_RATE_PER_1K` / `LLM_OUTPUT_RATE_PER_1K` | No | Cost ledger rates |
 
 ## API Overview
 

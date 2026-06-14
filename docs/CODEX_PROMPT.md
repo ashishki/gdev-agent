@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 6.1
+Version: 6.2
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -24,6 +24,8 @@ contracts and evidence-state drift are fixed.
   proof, and bounded deployment-readiness work.
 - Baseline: `.venv/bin/python -m pytest tests/ -q` -> 278 passed, 0 skipped,
   45 warnings (orchestrator-verified before T22 docs/config hardening).
+- Current validation: `.venv/bin/python -m pytest tests/ -q` -> 285 passed,
+  0 skipped, 45 warnings after `FIX-P6-1`.
 - Phase 6 review: `docs/archive/PHASE18_REVIEW.md` -> Stop-Ship: Yes for
   Phase 7 advancement; no P0 findings.
 - Historical product roadmap is complete enough; this cycle must not reopen
@@ -47,14 +49,7 @@ contracts and evidence-state drift are fixed.
 
 ─── Fix Queue ───
 
-1. `FIX-P6-1` [P1] — Compose Runtime And Env Contract Repair.
-   - Fix Compose migration/health path, live LLM env interpolation,
-     `.env.example` parser mismatch, cost env names, `.dockerignore`, and
-     focused tests.
-   - Validation: `pytest tests/test_cli.py tests/test_config.py -q`,
-     `ruff check app/ tests/ scripts/`, and
-     `docker-compose config >/tmp/gdev-compose-config.txt`.
-2. `FIX-P6-2` [P1] — Phase 6 Evidence And Architecture Alignment.
+1. `FIX-P6-2` [P1] — Phase 6 Evidence And Architecture Alignment.
    - Align README CI eval wording, phase statuses, architecture/spec security
      and readiness wording, backup command notes, boundary validation evidence,
      and stale prompt root examples.
@@ -65,13 +60,13 @@ contracts and evidence-state drift are fixed.
 | ID | Sev | Description | Status |
 |----|-----|-------------|--------|
 | CODE-1 | P2 | Broad `except Exception` handlers re-raise without required `LOGGER.error(..., exc_info=True)` logs. | Closed - tenant-safe `exc_info=True` logs added in `app/routers/clusters.py` and `app/approval_store.py`; covered by `tests/test_endpoints.py` and `tests/test_redis_approval_store.py` |
-| CODE-18-1 | P1 | Compose migration/health path is unreliable because migration check loads live LLM settings and agent healthcheck uses `curl` not present in the image. | Open - fix in `FIX-P6-1` |
-| CODE-18-2 / ARCH-18-2 | P1 | README documents `.env` live LLM key override, but Compose hard-codes `ANTHROPIC_API_KEY: test-key`. | Open - fix in `FIX-P6-1` |
-| ARCH-18-1 | P1 | `.env.example` list values do not match runtime comma-split parsing for approval categories and URL allowlist. | Open - fix in `FIX-P6-1` |
+| CODE-18-1 | P1 | Compose migration/health path is unreliable because migration check loads live LLM settings and agent healthcheck uses `curl` not present in the image. | Closed - `FIX-P6-1` decoupled migration settings, switched healthcheck to Python stdlib, and covered with `tests/test_cli.py` / `tests/test_config.py` |
+| CODE-18-2 / ARCH-18-2 | P1 | README documents `.env` live LLM key override, but Compose hard-codes `ANTHROPIC_API_KEY: test-key`. | Closed - `FIX-P6-1` uses Compose interpolation for `LLM_MODE` and `ANTHROPIC_API_KEY` |
+| ARCH-18-1 | P1 | `.env.example` list values do not match runtime comma-split parsing for approval categories and URL allowlist. | Closed - `FIX-P6-1` normalizes `.env.example` and accepts comma/JSON list parsing |
 | META-18-1 | P1 | README and task graph contradict completed CI eval gate and completed phase state. | Open - fix in `FIX-P6-2` |
 | CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
-| CODE-18-3 | P2 | Cost env vars are documented under names runtime settings do not read. | Open - fix in `FIX-P6-1` |
-| CODE-18-4 | P2 | Docker build context can include untracked local secrets because `.dockerignore` is missing. | Open - fix in `FIX-P6-1` |
+| CODE-18-3 | P2 | Cost env vars are documented under names runtime settings do not read. | Closed - `FIX-P6-1` documents `LLM_*_RATE_PER_1K` and keeps legacy `ANTHROPIC_*_COST_PER_1K` aliases |
+| CODE-18-4 | P2 | Docker build context can include untracked local secrets because `.dockerignore` is missing. | Closed - `FIX-P6-1` adds `.dockerignore` exclusions and coverage |
 | CODE-3 / ARCH-2 / ARCH-HARDEN-1 / ARCH-18-3 | P2 | Current-state architecture/spec docs conflict with current security/readiness behavior. | Open - fix in `FIX-P6-2` |
 | ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - fix in `FIX-P6-2` |
 | ARCH-4 | P2 | Phase 6 deployment-readiness architecture was documented in T21/T22, but Cycle 18 found runtime/config regressions. | Open - close after `FIX-P6-1` and `FIX-P6-2` |
@@ -80,7 +75,7 @@ contracts and evidence-state drift are fixed.
 
 ## Next Task
 
-`FIX-P6-1`: Compose Runtime And Env Contract Repair.
+`FIX-P6-2`: Phase 6 Evidence And Architecture Alignment.
 
 ## Rules
 

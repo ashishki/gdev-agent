@@ -755,7 +755,7 @@ Business goal: close Phase 6 review blockers before hiring packaging.
 Exit criteria: Compose migration/health/env behavior is reliable, env examples
 match runtime parsing, and public evidence state is internally consistent.
 
-### [ ] FIX-P6-1: Compose Runtime And Env Contract Repair
+### [x] FIX-P6-1: Compose Runtime And Env Contract Repair
 
 Owner: Codex
 Priority: P1
