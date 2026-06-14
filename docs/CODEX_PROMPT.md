@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 6.2
+Version: 6.3
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -9,19 +9,20 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 6 remediation after Cycle 18 deployment-readiness deep review.
+Phase 7 - Hiring Packaging.
 
-Business goal: close Phase 6 stop-ship findings before hiring-packaging work.
+Business goal: package the evidence so hiring managers and technical
+interviewers can review quickly and drill down when needed.
 
-Cycle 18 found no P0 issues, but Phase 7 is blocked until Compose/env runtime
-contracts and evidence-state drift are fixed.
+Phase 6 remediation is complete. Phase 7 starts with the one-page case study and
+must keep all claims backed by runnable or documented evidence.
 
 ## Current State
 
 - Product: multi-tenant support/AI backend showcase.
 - Portfolio role: employer-facing engineering case.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
-  proof, and bounded deployment-readiness work.
+  proof, bounded deployment-readiness work, and hiring evidence packaging.
 - Baseline: `.venv/bin/python -m pytest tests/ -q` -> 278 passed, 0 skipped,
   45 warnings (orchestrator-verified before T22 docs/config hardening).
 - Current validation: `.venv/bin/python -m pytest tests/ -q` -> 285 passed,
@@ -47,13 +48,9 @@ contracts and evidence-state drift are fixed.
 - `docs/load-profile.md`
 - `docs/observability.md`
 
-─── Fix Queue ───
+─── Fix Queue ─── (empty — proceed to phase queue)
 
-1. `FIX-P6-2` [P1] — Phase 6 Evidence And Architecture Alignment.
-   - Align README CI eval wording, phase statuses, architecture/spec security
-     and readiness wording, backup command notes, boundary validation evidence,
-     and stale prompt root examples.
-   - Validation: documented `rg` checks in `docs/tasks.md`.
+No P0/P1 findings are open.
 
 ## Open Findings
 
@@ -63,19 +60,19 @@ contracts and evidence-state drift are fixed.
 | CODE-18-1 | P1 | Compose migration/health path is unreliable because migration check loads live LLM settings and agent healthcheck uses `curl` not present in the image. | Closed - `FIX-P6-1` decoupled migration settings, switched healthcheck to Python stdlib, and covered with `tests/test_cli.py` / `tests/test_config.py` |
 | CODE-18-2 / ARCH-18-2 | P1 | README documents `.env` live LLM key override, but Compose hard-codes `ANTHROPIC_API_KEY: test-key`. | Closed - `FIX-P6-1` uses Compose interpolation for `LLM_MODE` and `ANTHROPIC_API_KEY` |
 | ARCH-18-1 | P1 | `.env.example` list values do not match runtime comma-split parsing for approval categories and URL allowlist. | Closed - `FIX-P6-1` normalizes `.env.example` and accepts comma/JSON list parsing |
-| META-18-1 | P1 | README and task graph contradict completed CI eval gate and completed phase state. | Open - fix in `FIX-P6-2` |
+| META-18-1 | P1 | README and task graph contradict completed CI eval gate and completed phase state. | Closed - `FIX-P6-2` aligns README CI/eval wording and phase status |
 | CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
 | CODE-18-3 | P2 | Cost env vars are documented under names runtime settings do not read. | Closed - `FIX-P6-1` documents `LLM_*_RATE_PER_1K` and keeps legacy `ANTHROPIC_*_COST_PER_1K` aliases |
 | CODE-18-4 | P2 | Docker build context can include untracked local secrets because `.dockerignore` is missing. | Closed - `FIX-P6-1` adds `.dockerignore` exclusions and coverage |
-| CODE-3 / ARCH-2 / ARCH-HARDEN-1 / ARCH-18-3 | P2 | Current-state architecture/spec docs conflict with current security/readiness behavior. | Open - fix in `FIX-P6-2` |
-| ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - fix in `FIX-P6-2` |
-| ARCH-4 | P2 | Phase 6 deployment-readiness architecture was documented in T21/T22, but Cycle 18 found runtime/config regressions. | Open - close after `FIX-P6-1` and `FIX-P6-2` |
+| CODE-3 / ARCH-2 / ARCH-HARDEN-1 / ARCH-18-3 | P2 | Current-state architecture/spec docs conflict with current security/readiness behavior. | Closed - `FIX-P6-2` refreshes architecture/spec security, readiness, and LLM secret behavior |
+| ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Closed - `FIX-P6-2` aligns protected REST JWT, signed webhook, metrics, and bounded readiness assumptions |
+| ARCH-4 | P2 | Phase 6 deployment-readiness architecture was documented in T21/T22, but Cycle 18 found runtime/config regressions. | Closed - `FIX-P6-1` and `FIX-P6-2` close runtime/config and docs drift |
 | CODE-4 / prior CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions or estimates with measured local/synthetic load evidence. | Open - clarify measured-vs-target language before final packaging |
-| CODE-18-5 | P3 | `docs/prompts/ORCHESTRATOR.md` still has stale `/home/gdev/gdev-agent` examples. | Open - fix in `FIX-P6-2` |
+| CODE-18-5 | P3 | `docs/prompts/ORCHESTRATOR.md` still had stale legacy root examples. | Closed - root examples now use `/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent` |
 
 ## Next Task
 
-`FIX-P6-2`: Phase 6 Evidence And Architecture Alignment.
+`T23`: One-Page Case Study.
 
 ## Rules
 

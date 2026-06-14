@@ -92,6 +92,7 @@ verification and seed data.
 Back up the local Compose database:
 
 ```bash
+mkdir -p ./backups
 docker compose exec -T postgres pg_dump -U gdev_app -d gdev \
   --format=custom --file=/tmp/gdev.dump
 docker compose cp postgres:/tmp/gdev.dump ./backups/gdev.dump

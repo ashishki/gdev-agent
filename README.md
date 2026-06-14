@@ -23,7 +23,7 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | --- | --- | --- |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Implemented local stack with documented gaps and ADRs |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
-| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report; CI gate is planned |
+| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report and CI regression gate |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
@@ -121,7 +121,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Yes for real LLM calls | Required by `get_settings()` at app startup |
+| `ANTHROPIC_API_KEY` | Yes for `LLM_MODE=live` | Live provider calls fail startup without it |
 | `ANTHROPIC_MODEL` | No | Defaults to `claude-sonnet-4-6` |
 | `VOYAGE_API_KEY` | No | Needed for embedding-backed features outside stub mode |
 | `EMBEDDING_MODEL` | No | Defaults to `voyage-3-lite` |
@@ -163,7 +163,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 | --- | --- |
 | `POST /webhook` | Main ingestion path for support messages; returns either `executed` or `pending` |
 | `POST /approve` | Human decision endpoint for pending actions |
-| `GET /health` | Readiness check used by Docker health checks |
+| `GET /health` | Application liveness check used by Docker health checks |
 | `GET /metrics` | Prometheus scrape endpoint |
 
 ### Auth and governance
@@ -223,10 +223,9 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
   says otherwise. The current load report is deterministic/local evidence, not
   live capacity proof.
-- CI eval gate, live load measurements, and final portfolio packaging are tracked
-  in [docs/tasks.md](docs/tasks.md) and are not complete yet. Deployment
-  readiness notes are local/pilot-only and explicitly do not prove production
-  readiness.
+- Live load measurements and final portfolio packaging are tracked in
+  [docs/tasks.md](docs/tasks.md) and are not complete yet. Deployment readiness
+  notes are local/pilot-only and explicitly do not prove production readiness.
 - Live LLM behavior requires a real Anthropic API key and budget controls; the
   local stack is the supported review path today.
 
@@ -241,6 +240,6 @@ with read-route extraction still tracked as architecture drift, Dockerized
 observability, admin CLI, and the n8n workflow artifacts needed for demo or
 pilot-style setups.
 
-**278 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 17 review cycles have been resolved.
+**285 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 18 review cycles have been resolved.
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.

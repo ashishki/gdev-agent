@@ -75,7 +75,7 @@ capability.
 | Classification accuracy (per tenant eval baseline) | ≥ 0.85 F1 |
 | Input guard block rate on known injection patterns | 1.00 |
 | Output guard secret leak rate | 0.00 |
-| System availability (API uptime) | 99.5 % monthly |
+| System availability (API uptime) | Local SLO target only; no production SLA claimed |
 | Pending action TTL | Configurable; default 3600 s |
 | Root Cause Analyzer refresh cadence | Every 15 min (configurable per tenant) |
 | Cost per request | ≤ $0.015 (enforced via budget guard) |
@@ -88,7 +88,8 @@ SLA targets are per-tenant; degraded performance in one tenant must not cascade 
 
 1. All inbound webhooks are authenticated via HMAC-SHA256 (`X-Hub-Signature-256`). Secret is
    per-tenant; rotation requires no downtime (dual-secret window of 60 s).
-2. All API calls require a JWT Bearer token. JWTs encode `tenant_id` and `role`.
+2. Protected REST APIs require a JWT Bearer token. JWTs encode `tenant_id` and
+   `role`.
 3. Postgres row-level security (RLS) enforces tenant isolation at the database layer; no application
    code path must bypass RLS.
 4. Redis namespaces are prefixed with `{tenant_id}:` to prevent cross-tenant key collisions.
@@ -96,8 +97,12 @@ SLA targets are per-tenant; degraded performance in one tenant must not cascade 
    audit tables. Raw text is stored only in the `tickets` table under RLS.
 6. The Anthropic API key is global (single key), but per-tenant usage is tracked and quotas enforced
    before the API call is made.
-7. All service-to-service calls within the stack use mTLS in production.
-8. `APPROVE_SECRET` and `WEBHOOK_SECRET` are required in production; startup fails if absent.
+7. A production deployment would need TLS/mTLS and network controls outside the
+   local Compose proof.
+8. `WEBHOOK_SECRET_ENCRYPTION_KEY` is required for per-tenant encrypted webhook
+   HMAC secrets. `APPROVE_SECRET` is recommended as approval defense in depth.
+   Legacy `WEBHOOK_SECRET` is deprecated. `ANTHROPIC_API_KEY` is required only
+   when `LLM_MODE=live`.
 9. Secrets are injected via environment variables only; no secrets in config files or logs.
 10. Output guard runs on every LLM response before it leaves the service boundary.
 
@@ -111,7 +116,7 @@ SLA targets are per-tenant; degraded performance in one tenant must not cascade 
         │
         ▼
 [API Gateway / Load Balancer]
-  HTTPS termination, JWT validation
+  HTTPS termination for protected REST APIs
         │
         ▼
 [gdev-agent FastAPI Service]
@@ -178,8 +183,8 @@ SLA targets are per-tenant; degraded performance in one tenant must not cascade 
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/webhook` | HMAC sig + JWT | Submit player support request |
-| `POST` | `/approve` | JWT (support_agent+) | Approve or reject pending action |
+| `POST` | `/webhook` | Tenant slug + per-tenant HMAC signature | Submit player support request |
+| `POST` | `/approve` | JWT (support_agent+) + optional `APPROVE_SECRET` | Approve or reject pending action |
 | `GET` | `/health` | None | Liveness probe |
 
 ### New endpoints (v1 evolution)

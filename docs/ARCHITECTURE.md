@@ -1,6 +1,6 @@
-# gdev-agent — Architecture Spec v3.0
+# gdev-agent — Architecture Spec v3.1
 
-_Last updated: 2026-03-18 · Implementation contract for Codex and human reviewers.
+_Last updated: 2026-06-14 · Implementation contract for Codex and human reviewers.
 All PRs must keep this document current. Spec version must be bumped on structural change._
 
 ---
@@ -31,7 +31,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 
 ---
 
-## 2. Current System State (2026-03-18)
+## 2. Current System State (2026-06-14)
 
 ### 2.1 Component Status
 
@@ -70,7 +70,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Workflow operations guide | `docs/WORKFLOW.md` | ✅ PORT-2 (Phase 11) |
 | Demo harness | `scripts/demo.py` | ✅ PORT-3 (Phase 11) |
 | MCP server evaluation ADR | `docs/adr/006-mcp-server-evaluation.md` | ✅ PORT-4 (Phase 11) |
-| Eval dataset (25 cases) | `eval/cases.jsonl` | ✅ Implemented |
+| Eval dataset (180 synthetic cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
 | `RATE_LIMIT_BURST` enforcement | `app/middleware/rate_limit.py` | ✅ Implemented |
@@ -602,8 +602,10 @@ Approval requests may include optional feedback metadata: `override_reason`,
 to `approval_events` as `override_kind`/`override_reason` so tenant learning metrics distinguish
 normal approvals, rejected actions, and operator corrections.
 
-**Production hardening:** Restrict `/approve` to the internal network (Docker bridge or VPC) or add a
-shared `APPROVE_SECRET` header check. The agent currently accepts any caller who knows a `pending_id`.
+`POST /approve` is protected by JWT role checks (`support_agent` or tenant
+admin). When `APPROVE_SECRET` is configured, `ApprovalService` also validates
+the shared approval secret before consuming the pending decision. The
+`pending_id` alone is not sufficient.
 
 ---
 
@@ -837,27 +839,32 @@ If Redis is unavailable, rate limiting degrades gracefully (logs `WARNING`, allo
 
 ### 7.5 Authentication of `POST /approve`
 
-`POST /approve` has no HTTP-level authentication by the agent. Authentication is delegated to the
-calling system (n8n + Telegram inline buttons scoped to a private support group). The `reviewer`
-field is logged for audit.
+`POST /approve` uses application-level JWT authentication and tenant role
+checks. The route requires a token for the same tenant as the pending decision
+and a reviewer role (`support_agent` or tenant admin). When configured,
+`APPROVE_SECRET` adds a shared-secret check in `ApprovalService` before the
+decision is consumed. The `reviewer` field is logged for audit and is not used
+as an authentication factor.
 
-**Production hardening recommendation:** Restrict `/approve` to the Docker bridge network or a VPC
-private subnet. Or add `APPROVE_SECRET` as a required request header, validated in a middleware.
-The `pending_id` has 128-bit entropy and is not guessable — but it is transmitted in the webhook
-response body and may appear in logs or proxies.
+Deployment hardening would still restrict `/approve` to trusted workflow
+callers or private network paths. That deployment control is not proven by this
+local repository.
 
 ### 7.6 Secrets Management
 
 ```
-.env (never commit — in .gitignore):
-  ANTHROPIC_API_KEY=sk-ant-...
+.env (never commit — in .gitignore and .dockerignore):
+  LLM_MODE=demo                       # deterministic local review path
+  ANTHROPIC_API_KEY=sk-ant-...        # required only when LLM_MODE=live
   LINEAR_API_KEY=lin_api_...
   TELEGRAM_BOT_TOKEN=...
   TELEGRAM_APPROVAL_CHAT_ID=...
-  WEBHOOK_SECRET=<256-bit random hex>
+  WEBHOOK_SECRET_ENCRYPTION_KEY=<Fernet key for per-tenant webhook secrets>
+  WEBHOOK_SECRET=<legacy single-tenant fallback; deprecated>
   REDIS_URL=redis://redis:6379
 
-Production: Docker secrets / AWS Secrets Manager / HashiCorp Vault
+Production-like deployments would need a real secret manager; this local repo
+does not prove production secret operations.
 ```
 
 Rules enforced in code and CI:
@@ -865,7 +872,7 @@ Rules enforced in code and CI:
 - `git grep -rn "sk-ant\|lin_api_\|Bearer "` must return no results inside `app/`.
 - `JsonFormatter` must not serialise environment variable values.
 - `user_id` values are hashed (`sha256(user_id).hexdigest()`) in Sheets audit log.
-- Missing `ANTHROPIC_API_KEY` causes immediate startup failure via `get_settings()`.
+- Missing `ANTHROPIC_API_KEY` causes startup failure only when `LLM_MODE=live`.
 - Redis unreachable at startup causes `RuntimeError` (hard fail — idempotency broken without Redis).
 
 ---
@@ -1006,9 +1013,12 @@ APP_NAME=gdev-agent
 APP_ENV=dev                          # dev | staging | prod
 LOG_LEVEL=INFO
 
-# ── LLM — required at startup ────────────────────────────────────────────
-ANTHROPIC_API_KEY=                   # sk-ant-... — missing → startup failure
+# ── LLM ──────────────────────────────────────────────────────────────────
+LLM_MODE=demo                        # demo | live
+ANTHROPIC_API_KEY=                   # required only when LLM_MODE=live
 ANTHROPIC_MODEL=claude-sonnet-4-6
+LLM_INPUT_RATE_PER_1K=0.003
+LLM_OUTPUT_RATE_PER_1K=0.015
 
 # ── Agent behaviour ───────────────────────────────────────────────────────
 MAX_INPUT_LENGTH=2000
@@ -1026,7 +1036,10 @@ URL_ALLOWLIST=                       # comma-separated allowed domains; empty = 
 OUTPUT_URL_BEHAVIOR=strip            # strip | reject
 
 # ── Security ─────────────────────────────────────────────────────────────
-WEBHOOK_SECRET=                      # 256-bit random hex; unset = verification skipped (WARNING logged)
+WEBHOOK_SECRET_ENCRYPTION_KEY=       # Fernet key for per-tenant webhook secrets
+WEBHOOK_SECRET=                      # deprecated legacy fallback
+JWT_SECRET=                          # 32+ byte random value outside demo
+APPROVE_SECRET=                      # recommended shared approval secret
 RATE_LIMIT_RPM=10                    # max requests per minute per user_id (enforced)
 RATE_LIMIT_BURST=3                   # max requests in 10-second window (enforced)
 

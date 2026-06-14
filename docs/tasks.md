@@ -687,7 +687,7 @@ Validation:
 
 ## Phase 6 - Deployment Readiness Without Overclaiming
 
-Status: remediation-active
+Status: complete
 Business goal: prove setup, migration, health, secrets, and recovery are
 understood while keeping deployment claims honest.
 Exit criteria: fresh-clone local setup is reliable and deployment docs state
@@ -750,7 +750,7 @@ Validation:
 
 ## Phase 6 Remediation - Cycle 18 Stop-Ship Fixes
 
-Status: active
+Status: complete
 Business goal: close Phase 6 review blockers before hiring packaging.
 Exit criteria: Compose migration/health/env behavior is reliable, env examples
 match runtime parsing, and public evidence state is internally consistent.
@@ -797,7 +797,7 @@ Validation:
 - `ruff check app/ tests/ scripts/`
 - `docker-compose config >/tmp/gdev-compose-config.txt`
 
-### [ ] FIX-P6-2: Phase 6 Evidence And Architecture Alignment
+### [x] FIX-P6-2: Phase 6 Evidence And Architecture Alignment
 
 Owner: Codex
 Priority: P1
@@ -828,18 +828,18 @@ Acceptance Criteria:
    required directory creation.
 5. Boundary validation evidence is recorded without claiming production
    readiness.
-6. Stale `/home/gdev/gdev-agent` prompt examples are replaced with the current
-   repository root.
+6. Stale legacy-root prompt examples are replaced with the current repository
+   root.
 
 Validation:
-- `rg -n "CI eval|Eval regression gate|readiness|liveness|APPROVE_SECRET|WEBHOOK_SECRET_ENCRYPTION_KEY|/home/gdev/gdev-agent|/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent" README.md docs/ARCHITECTURE.md docs/spec.md docs/DEPLOYMENT_READINESS.md docs/EVIDENCE_INDEX.md docs/prompts/ORCHESTRATOR.md docs/CODEX_PROMPT.md`
-- `rg -n "Status: active|Status: remediation-active|FIX-P6|T23" docs/tasks.md docs/CODEX_PROMPT.md`
+- `rg -n "CI eval|Eval regression gate|readiness|liveness|APPROVE_SECRET|WEBHOOK_SECRET_ENCRYPTION_KEY|/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent" README.md docs/ARCHITECTURE.md docs/spec.md docs/DEPLOYMENT_READINESS.md docs/EVIDENCE_INDEX.md docs/prompts/ORCHESTRATOR.md docs/CODEX_PROMPT.md`
+- `rg -n "Status: active|FIX-P6|T23" docs/tasks.md docs/CODEX_PROMPT.md`
 
 ---
 
 ## Phase 7 - Hiring Packaging
 
-Status: blocked-by-phase-6-remediation
+Status: active
 Business goal: package the evidence so hiring managers and technical
 interviewers can review quickly and drill down when needed.
 Exit criteria: one-page case study, architecture visual, demo artifact notes,

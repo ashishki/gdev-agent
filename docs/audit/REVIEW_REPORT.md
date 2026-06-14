@@ -44,7 +44,7 @@ None.
 | ID | Description | Files | Status |
 |----|-------------|-------|--------|
 | META-18-4 | Carry-forward wording still says measured-vs-target cleanup can happen during Phase 6 even though Phase 6 is now complete. | `docs/CODEX_PROMPT.md:61` | Open |
-| CODE-18-5 | Prompt docs still contain stale `/home/gdev/gdev-agent` examples. | `docs/prompts/ORCHESTRATOR.md:27`, `docs/prompts/ORCHESTRATOR.md:59`, `docs/prompts/ORCHESTRATOR.md:117` | Open |
+| CODE-18-5 | Prompt docs still contain stale legacy-root examples. | `docs/prompts/ORCHESTRATOR.md:27`, `docs/prompts/ORCHESTRATOR.md:59`, `docs/prompts/ORCHESTRATOR.md:117` | Open |
 
 ## Carry-Forward Status
 
