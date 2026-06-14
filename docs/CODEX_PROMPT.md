@@ -23,8 +23,8 @@ state known limits clearly.
 - Portfolio role: employer-facing engineering case.
 - Development mode: portfolio hardening, evidence packaging, reliability/eval
   proof, and bounded deployment-readiness work.
-- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 272 passed, 0 skipped,
-  45 warnings (orchestrator-verified after T20 adversarial boundary tests).
+- Baseline: `.venv/bin/python -m pytest tests/ -q` -> 276 passed, 0 skipped,
+  45 warnings (orchestrator-verified after CODE-1 logging fix).
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -52,7 +52,7 @@ No P0/P1 findings are open.
 
 | ID | Sev | Description | Status |
 |----|-----|-------------|--------|
-| CODE-1 | P2 | Broad `except Exception` handlers re-raise without required `LOGGER.error(..., exc_info=True)` logs. | Open - add tenant-safe error logs in `app/routers/clusters.py` and `app/approval_store.py` |
+| CODE-1 | P2 | Broad `except Exception` handlers re-raise without required `LOGGER.error(..., exc_info=True)` logs. | Closed - tenant-safe `exc_info=True` logs added in `app/routers/clusters.py` and `app/approval_store.py`; covered by `tests/test_endpoints.py` and `tests/test_redis_approval_store.py` |
 | CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
 | CODE-3 / ARCH-2 / ARCH-HARDEN-1 | P2 | Current-state docs conflict with Cycle 17 evidence and security behavior, including stale test/eval counts and legacy webhook/approval semantics. | Open - refresh README and `docs/ARCHITECTURE.md` before final packaging |
 | ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - align spec with protected REST JWT, JWT-exempt signed webhooks, network-scoped metrics, and bounded readiness claims |

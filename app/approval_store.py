@@ -47,6 +47,17 @@ class RedisApprovalStore:
             try:
                 run_blocking(self._persist_pending_async(decision))
             except Exception:
+                LOGGER.error(
+                    "pending persistence failed",
+                    extra={
+                        "event": "pending_persistence_failed",
+                        "context": {
+                            "tenant_id_hash": _sha256_short(str(decision.tenant_id)),
+                            "pending_id": str(decision.pending_id),
+                        },
+                    },
+                    exc_info=True,
+                )
                 self.redis.delete(key)
                 raise
         APPROVAL_QUEUE_DEPTH.labels(tenant_hash=_sha256_short(decision.tenant_id)).inc()

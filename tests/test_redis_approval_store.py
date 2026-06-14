@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -243,3 +244,42 @@ def test_put_pending_uses_shared_run_blocking(monkeypatch) -> None:
     )
 
     assert called["value"] is True
+
+
+def test_put_pending_logs_and_rolls_back_redis_when_db_persist_fails(
+    monkeypatch, caplog
+) -> None:
+    redis_client = fakeredis.FakeRedis()
+    session_factory = _SessionFactoryStub()
+    store = RedisApprovalStore(
+        redis_client,
+        ttl_seconds=120,
+        db_session_factory=session_factory,
+    )
+    pending = PendingDecision(
+        pending_id=str(uuid4()),
+        tenant_id=str(uuid4()),
+        reason="manual",
+        user_id="u1",
+        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+        action=ProposedAction(tool="create_ticket_and_reply", payload={}),
+        draft_response="draft",
+    )
+
+    def fake_run_blocking(coroutine):
+        coroutine.close()
+        raise RuntimeError("db write failed")
+
+    monkeypatch.setattr(app.approval_store, "run_blocking", fake_run_blocking)
+
+    with caplog.at_level(logging.ERROR, logger="app.approval_store"):
+        with pytest.raises(RuntimeError, match="db write failed"):
+            store.put_pending(pending)
+
+    assert redis_client.get(f"{pending.tenant_id}:pending:{pending.pending_id}") is None
+    record = next(
+        item for item in caplog.records if getattr(item, "event", None) == "pending_persistence_failed"
+    )
+    assert record.exc_info is not None
+    assert record.context["tenant_id_hash"]
+    assert str(pending.tenant_id) not in str(record.context)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime
 from time import perf_counter
 from uuid import UUID
@@ -28,6 +29,7 @@ from app.schemas import (
 from app.tracing import get_tracer
 
 router = APIRouter()
+LOGGER = logging.getLogger(__name__)
 TRACER = get_tracer(__name__)
 
 CLUSTER_TICKETS_REQUESTS_TOTAL = Counter(
@@ -161,6 +163,14 @@ async def list_clusters(
         except Exception as exc:
             CLUSTER_LIST_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
             span.record_exception(exc)
+            LOGGER.error(
+                "cluster list failed",
+                extra={
+                    "event": "cluster_list_failed",
+                    "context": {"tenant_id_hash": tenant_hash},
+                },
+                exc_info=True,
+            )
             raise
         finally:
             CLUSTER_LIST_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
@@ -254,6 +264,17 @@ async def get_cluster(
         except Exception as exc:
             CLUSTER_DETAIL_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
             span.record_exception(exc)
+            LOGGER.error(
+                "cluster detail failed",
+                extra={
+                    "event": "cluster_detail_failed",
+                    "context": {
+                        "tenant_id_hash": tenant_hash,
+                        "cluster_id": str(cluster_id),
+                    },
+                },
+                exc_info=True,
+            )
             raise
         finally:
             CLUSTER_DETAIL_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(
@@ -367,6 +388,17 @@ async def get_cluster_tickets(
         except Exception as exc:
             span.record_exception(exc)
             CLUSTER_TICKETS_REQUESTS_TOTAL.labels(tenant_hash=tenant_hash, outcome="error").inc()
+            LOGGER.error(
+                "cluster tickets failed",
+                extra={
+                    "event": "cluster_tickets_failed",
+                    "context": {
+                        "tenant_id_hash": tenant_hash,
+                        "cluster_id": str(cluster_id),
+                    },
+                },
+                exc_info=True,
+            )
             raise
         finally:
             CLUSTER_TICKETS_DURATION_SECONDS.labels(tenant_hash=tenant_hash).observe(

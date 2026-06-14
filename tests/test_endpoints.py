@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -115,6 +116,11 @@ class _SequencedSessionStub:
         self.calls.append((str(statement), params))
         rows = self.rows_by_call.pop(0) if self.rows_by_call else []
         return _ResultStub(rows)
+
+
+class _FailingSessionStub:
+    async def execute(self, _statement, _params):  # noqa: ANN001
+        raise RuntimeError("database unavailable")
 
 
 class _TenantPartitionedSessionStub:
@@ -758,6 +764,53 @@ async def test_get_cluster_cross_tenant_returns_404() -> None:
     assert isinstance(response, JSONResponse)
     assert response.status_code == 404
     assert b'"code":"cluster_not_found"' in response.body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler", "event"),
+    [
+        (list_clusters, "cluster_list_failed"),
+        (get_cluster, "cluster_detail_failed"),
+        (get_cluster_tickets, "cluster_tickets_failed"),
+    ],
+)
+async def test_cluster_handlers_log_broad_exceptions_with_exc_info(
+    handler, event: str, caplog
+) -> None:
+    tenant_id = uuid4()
+    cluster_id = uuid4()
+
+    with caplog.at_level(logging.ERROR, logger="app.routers.clusters"):
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            if handler is list_clusters:
+                await handler(
+                    request=_request(tenant_id),
+                    cursor=None,
+                    limit=50,
+                    is_active=True,
+                    severity=None,
+                    db=_FailingSessionStub(),
+                )
+            elif handler is get_cluster:
+                await handler(
+                    cluster_id=cluster_id,
+                    request=_request(tenant_id),
+                    db=_FailingSessionStub(),
+                )
+            else:
+                await handler(
+                    cluster_id=cluster_id,
+                    request=_request(tenant_id),
+                    page=1,
+                    limit=50,
+                    db=_FailingSessionStub(),
+                )
+
+    record = next(item for item in caplog.records if getattr(item, "event", None) == event)
+    assert record.exc_info is not None
+    assert record.context["tenant_id_hash"]
+    assert str(tenant_id) not in str(record.context)
 
 
 @pytest.mark.asyncio
