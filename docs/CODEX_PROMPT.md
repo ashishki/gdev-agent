@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 5.7
+Version: 5.8
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -9,12 +9,13 @@ Full historical prompt archived at
 
 ## Current Phase
 
-Phase 5 - Tenant Isolation And Security Proof.
+Phase 6 - Deployment Readiness Without Overclaiming.
 
-Business goal: back every multi-tenancy claim with concrete docs, adversarial
-examples, and tests.
+Business goal: prove setup, migration, health, secrets, and recovery are
+understood while keeping deployment claims honest.
 
-Phase exit criteria: reviewer can find and run tenant-isolation proof from README.
+Phase exit criteria: fresh-clone local setup is reliable and deployment docs
+state known limits clearly.
 
 ## Current State
 
@@ -51,14 +52,16 @@ No P0/P1 findings are open.
 
 | ID | Sev | Description | Status |
 |----|-----|-------------|--------|
-| ARCH-HARDEN-1 | P2 | `docs/ARCHITECTURE.md` eval summary still references the old 25-case/basic metric shape after T07-T10. | Open - doc patch, non-blocking |
-| ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, and response assembly logic in route handlers. | Open - service extraction drift; non-blocking for Phase 5 |
-| ARCH-2 | P2 | `docs/ARCHITECTURE.md` still describes an older system snapshot, including stale eval/audit/load/observability evidence. | Open - doc refresh before final packaging |
-| CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions with unmeasured local/synthetic load evidence. | Open - add caveats or split target vs measured sections |
+| CODE-1 | P2 | Broad `except Exception` handlers re-raise without required `LOGGER.error(..., exc_info=True)` logs. | Open - add tenant-safe error logs in `app/routers/clusters.py` and `app/approval_store.py` |
+| CODE-2 / ARCH-1 | P2 | Ticket, analytics, and cluster read APIs still embed query, pagination, metrics, error mapping, and response assembly logic in route handlers. | Open - extract read workflows into services; non-blocking for T21 |
+| CODE-3 / ARCH-2 / ARCH-HARDEN-1 | P2 | Current-state docs conflict with Cycle 17 evidence and security behavior, including stale test/eval counts and legacy webhook/approval semantics. | Open - refresh README and `docs/ARCHITECTURE.md` before final packaging |
+| ARCH-3 | P2 | `docs/spec.md` auth and production-secret assumptions lag current JWT/HMAC architecture. | Open - align spec with protected REST JWT, JWT-exempt signed webhooks, network-scoped metrics, and bounded readiness claims |
+| ARCH-4 | P2 | Phase 6 deployment-readiness architecture is not yet documented. | Open - cover compose migration checks, health/readiness/liveness, secrets, backup/restore, production-like config, and known limits in T21/T22 |
+| CODE-4 / prior CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions or estimates with measured local/synthetic load evidence. | Open - clarify measured-vs-target language during Phase 6 or final packaging |
 
 ## Next Task
 
-Phase 5 deep review gate before `T21`: Compose Migration And Health Hardening.
+`T21`: Compose Migration And Health Hardening.
 
 ## Rules
 

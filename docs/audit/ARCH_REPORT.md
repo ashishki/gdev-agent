@@ -1,71 +1,90 @@
-# ARCH_REPORT — Cycle 16
-_Date: 2026-06-12_
+# ARCH_REPORT — Cycle 17
+_Date: 2026-06-14_
 
 ## Component Verdicts
-
 | Component | Verdict | Note |
 |-----------|---------|------|
-| Load testing evidence | PASS | `docs/LOAD_TEST_REPORT.md` frames results as local deterministic/synthetic evidence and explicitly avoids production-capacity claims. |
-| Load profile | DRIFT | `docs/load-profile.md` still contains infrastructure-scale expectations and future failure responses that are not fully represented by the committed deterministic harness. |
-| Observability evidence | PASS | `docs/observability.md` maps support workflow steps to tenant-safe metric, trace, dashboard, and runbook signals. |
-| Tenant isolation proof entrypoint | PASS | `docs/TENANT_ISOLATION.md` correctly scopes the proof to local tests and avoids claiming external production readiness. |
-| `app/services/*` layer integrity | PASS | Services do not import FastAPI symbols; no carry-forward `HTTPException` import remains in `app/agent.py` or services. |
-| `app/routers/auth.py` | PASS | Thin HTTP adapter; delegates login/logout/refresh behavior to `AuthService`. |
-| `app/routers/eval.py` | PASS | Thin HTTP adapter for eval trigger/list operations; business behavior lives in `EvalService`. |
-| `app/routers/analytics.py` | DRIFT | Audit and cost-list endpoints perform cursor parsing, SQL selection, pagination, and response assembly in the route handler. |
-| `app/routers/tickets.py` | DRIFT | Ticket list/detail endpoints contain direct tenant-scoped SQL and pagination/404 behavior in the route handler. |
-| `app/routers/clusters.py` | DRIFT | Cluster read routes contain query construction, metrics, tracing, pagination, and response assembly rather than delegating read use cases to a service. |
+| Tenant isolation proof | PASS | Canonical proof is bounded to local code, migrations, and tests; it explicitly excludes production/cloud/network controls. |
+| RLS migrations and tenant DB context | PASS | Tenant-scoped tables have RLS policies, `gdev_admin` is the only bypass role, and runtime tenant context is transaction-local via `set_config(..., true)`. |
+| JWT/RBAC boundary | PASS | Protected read/admin/approval APIs use JWT tenant/role context; current ADR accepts HS256 for v1, so P1-1 is not open under the accepted ADR. |
+| Webhook signature boundary | PASS | `/webhook` tenant context is resolved from `X-Tenant-Slug` and per-tenant HMAC before downstream handling. |
+| Approval boundary | PASS | `/approve` is JWT-role gated, optional approve-secret checked, and pending decisions are looked up/popped by JWT tenant namespace. |
+| Secrets and cost separation | PASS | Webhook secrets stay per-tenant in encrypted Postgres rows, and cost ledger checks/writes are tenant-scoped. |
+| Adversarial tenant scenarios | PASS | Audit-read, cross-tenant approval, missing/invalid slug, and invalid-HMAC examples are documented as local/test-backed boundaries. |
+| Phase 6 compose and health shape | DRIFT | Compose has service health checks, but architecture docs still only describe a single `/health` probe and do not yet capture T21 readiness/liveness/migration-check framing. |
+| Phase 6 secrets, backup, restore, config notes | DRIFT | T22 deployment-readiness notes are planned but not yet represented in architecture/evidence docs. |
+| `app/services/*` layer integrity | PASS | Service modules do not import FastAPI symbols; the carry-forward `agent.py` `HTTPException` concern is absent. |
+| `app/main.py` webhook/approve routes | PASS | Routes are thin adapters delegating to `WebhookService` and `ApprovalService`. |
+| `app/routers/auth.py` | PASS | HTTP adapter delegates auth behavior to `AuthService`. |
+| `app/routers/eval.py` | PASS | Router delegates eval trigger/list behavior to `EvalService`. |
+| `app/routers/tickets.py` | DRIFT | Ticket read routes still contain SQL, pagination, 404 handling, and response assembly. |
+| `app/routers/analytics.py` | DRIFT | Audit and cost routes still contain SQL, cursor parsing, pagination, and response assembly. |
+| `app/routers/clusters.py` | DRIFT | Cluster routes still contain query construction, metrics, tracing, pagination, and response assembly. |
+| `docs/ARCHITECTURE.md` current-state snapshot | DRIFT | Main architecture doc is stale relative to Cycle 17 eval/test/evidence and deployment-readiness scope. |
+| `docs/spec.md` auth/production assumptions | DRIFT | Product spec still says all API calls, including `/webhook`, require JWT and that prod startup fails without legacy secrets; current architecture intentionally uses JWT-exempt signed webhooks and bounded local evidence. |
 
 ## ADR Compliance
-
 | ADR | Verdict | Note |
 |-----|---------|------|
-| ADR-001 Storage | PASS | PostgreSQL remains the primary durable store, Redis is TTL/ephemeral, and the tenant isolation proof covers RLS-backed persistence. |
-| ADR-002 Vector DB | PASS | pgvector remains the documented/implemented vector path, with no new vector-store drift in scope. |
-| ADR-003 RBAC | PASS | P1-1 is no longer open as written: ADR-003 now accepts HS256 for v1 and explicitly defers RS256/JWKS to v2; implementation uses configurable `jwt_algorithm` defaulting to HS256. |
-| ADR-004 Observability | PASS | New observability evidence covers Prometheus metrics, OTel-style spans, Grafana dashboard panels, and alert/runbook linkage with tenant-hash labels. |
-| ADR-005 Orchestration | PASS | Claude tool-use loop remains bounded by `max_turns=5`; no new scheduler/orchestration model change in scope. |
-| ADR-006 MCP | PASS | No MCP server was added; HTTP remains the only product surface. |
+| ADR-001 Storage | PASS | PostgreSQL remains the durable store with RLS; Redis remains TTL/ephemeral coordination and cache storage. |
+| ADR-002 Vector DB | PASS | pgvector remains conditional; migration `0004` resizes vector columns to 1024, matching Voyage runtime and docs. |
+| ADR-003 RBAC | PASS | P1-1 is closed under current ADR text: HS256 is the accepted v1 algorithm and RS256/JWKS is deferred to v2. |
+| ADR-004 Observability | PASS | New service paths emit OTel-style spans and Prometheus metrics; `/metrics` network-scope caveat is documented. |
+| ADR-005 Orchestration | PASS | Claude tool-use loop is bounded by `max_turns=5`; APScheduler remains the documented background-job model. |
+| ADR-006 MCP | PASS | No MCP server was introduced; HTTP remains the product surface as decided. |
 
 ## Architecture Findings
-
 ### ARCH-1 [P2] — Read API Business Logic Remains In Route Handlers
-Symptom: Several read APIs violate the documented service-layer boundary that "Routers are thin HTTP adapters" by embedding query, pagination, metrics, and response construction logic in route modules.
+Symptom: Read routes still violate the documented service-layer boundary by embedding SQL, pagination, metrics/tracing, error mapping, and response assembly directly in FastAPI router modules.
 
 Evidence: `app/routers/tickets.py:57`, `app/routers/analytics.py:58`, `app/routers/clusters.py:118`
 
-Root cause: The service-layer extraction has covered auth, eval, webhook, approval, and learning metrics, but ticket/audit/cost/cluster read models still live directly in FastAPI routers.
+Root cause: Service extraction covered webhook, approval, auth, eval, and learning metrics, but ticket, audit/cost, and cluster read use cases were left in route handlers.
 
-Impact: Authorization and tenant-scoped query behavior are harder to reuse and test outside HTTP handlers; future API shape changes risk duplicating pagination, error envelope, metrics, and SQL logic.
+Impact: Tenant-scoped read behavior is harder to reuse and test outside HTTP, and future API changes risk duplicating pagination, error, metrics, and SQL logic.
 
-Fix: Move ticket, analytics, and cluster read use cases into service modules (`TicketService`, `AnalyticsService`, `ClusterReadService` or equivalent). Keep routers responsible for dependency injection, role checks, parameter validation, and service response translation only.
+Fix: Extract ticket, analytics, and cluster read behavior into service modules. Keep routers limited to dependency injection, role checks, request parameter validation, and service response translation.
 
-### ARCH-2 [P2] — Architecture Spec Still Describes An Older System Snapshot
-Symptom: `docs/ARCHITECTURE.md` still presents the current system state as 2026-03-18, references an eval dataset of 25 cases, omits newer load/observability/tenant-isolation evidence, and still describes Google Sheets as the audit-log write path.
+### ARCH-2 [P2] — Main Architecture Snapshot Is Stale For Cycle 17
+Symptom: `docs/ARCHITECTURE.md` still presents the system as a 2026-03-18 snapshot, lists the eval dataset as 25 cases, and omits current evidence-package language for the 272-test baseline, 180-case synthetic eval, tenant-isolation proof, load/observability evidence, and Phase 6 readiness positioning.
 
-Evidence: `docs/ARCHITECTURE.md:34`, `docs/ARCHITECTURE.md:73`, `docs/ARCHITECTURE.md:635`
+Evidence: `docs/ARCHITECTURE.md:34`, `docs/ARCHITECTURE.md:73`, `docs/audit/META_ANALYSIS.md:6`
 
-Root cause: Phase 4 evidence and later hardening work were added to focused docs, README, and tests without refreshing the main architecture snapshot.
+Root cause: Focused hardening docs and README were updated through Phase 5, but the primary architecture contract has not been refreshed as the source-of-truth overview.
 
-Impact: Reviewers get inconsistent architecture claims: README says 260 tests and local evidence packages exist, while ARCHITECTURE.md still reads like an older milestone. This also carries forward `ARCH-HARDEN-1`.
+Impact: Reviewers see conflicting current-state claims across the repo, and `ARCH-HARDEN-1` remains open.
 
-Fix: Update `docs/ARCHITECTURE.md` to the Cycle 16 state: current test/eval wording, persistent audit path, observability/load evidence docs, tenant-isolation proof, and updated repository layout.
+Fix: Refresh `docs/ARCHITECTURE.md` for Cycle 17: current status/date, eval/test evidence wording, local/pilot evidence boundaries, tenant-isolation proof entrypoint, observability/load docs, compose health framing, and remaining read-route debt.
 
-### ARCH-3 [P3] — Load Profile Mixes Portfolio Targets With Unproven Deployment Assumptions
-Symptom: The load report is appropriately bounded, but `docs/load-profile.md` still includes concrete infrastructure sizing, p99 targets, connection-pool expectations, and remediation actions that are broader than the committed deterministic evidence.
+### ARCH-3 [P2] — Spec Auth And Production-Secret Assumptions Lag Current Architecture
+Symptom: `docs/spec.md` says all API calls require JWT and `/webhook` auth is HMAC plus JWT, while the current data map and implementation intentionally make `/webhook` JWT-exempt and tenant-resolved by signed slug plus HMAC. The spec also says `APPROVE_SECRET` and `WEBHOOK_SECRET` are required in production, while runtime currently warns for missing approve secret and deprecates legacy `WEBHOOK_SECRET`.
 
-Evidence: `docs/load-profile.md:11`, `docs/load-profile.md:43`, `docs/load-profile.md:51`, `docs/load-profile.md:86`
+Evidence: `docs/spec.md:91`, `docs/spec.md:100`, `docs/spec.md:181`, `docs/data-map.md:234`
 
-Root cause: The profile predates the bounded local deterministic report and still reads partly like a production load plan.
+Root cause: Security design moved from legacy single-tenant secrets to per-tenant webhook secret lookup and local/pilot readiness boundaries, but `docs/spec.md` was not updated to match the accepted contract.
 
-Impact: A reader may infer measured capacity or deployment readiness from the profile even though the report correctly says the committed artifact does not measure Redis/Postgres latency, memory, or one-hour soak behavior.
+Impact: The product contract is ambiguous for reviewers and future implementers, especially around webhook ingress, production-readiness claims, and which controls are application-enforced versus deployment-scoped.
 
-Fix: Split `docs/load-profile.md` into "target scenarios" and "measured local evidence" language, or add clear caveats near the topology and KPI sections that these are unvalidated targets until a live Locust run records infrastructure metrics.
+Fix: Update `docs/spec.md` to align with the current security model: protected REST APIs use JWT, webhook ingress uses per-tenant HMAC without JWT, `/metrics` is network-scoped, and production-grade secret/readiness hardening remains a Phase 6 documentation item unless implemented.
+
+### ARCH-4 [P2] — Phase 6 Deployment-Readiness Architecture Is Not Yet Documented
+Symptom: T21/T22 require compose migration checks, health/readiness/liveness behavior, secrets checklist, backup/restore notes, production-like config language, and explicit non-production-readiness boundaries, but the architecture docs currently only describe `/health` as a 200 liveness-style endpoint and README says deployment-readiness notes are not complete.
+
+Evidence: `docs/audit/META_ANALYSIS.md:21`, `docs/ARCHITECTURE.md:483`, `README.md:224`
+
+Root cause: Phase 6 work is next in the graph, and architecture docs have not yet been expanded from local stack description into deployment-readiness guidance.
+
+Impact: Compose and health behavior are inspectable in `docker-compose.yml`, but reviewers do not yet have a single architecture/readiness page that distinguishes local proof, production-like config, backup/restore, and non-production boundaries.
+
+Fix: Add or link a deployment-readiness section/document that covers compose migration verification, health/readiness/liveness semantics, secrets checklist, Postgres/Redis backup and restore notes, production-like local config, and known limitations without claiming production SaaS readiness.
 
 ## Doc Patches Needed
-
 | File | Section | Change |
 |------|---------|--------|
-| `docs/ARCHITECTURE.md` | Current System State / Repository Layout | Refresh date, component table, repository tree, test/eval count language, and add load/observability/tenant-isolation evidence docs. |
-| `docs/ARCHITECTURE.md` | Audit Log Entry | Replace stale Google Sheets-primary wording with Postgres primary audit plus optional Sheets export. |
-| `docs/load-profile.md` | System Topology Assumptions / Scenario KPIs | Mark infrastructure sizing, p99, connection pool, and remediation values as target assumptions, not measured evidence. |
+| `docs/ARCHITECTURE.md` | Header / Current System State | Refresh date, cycle state, component table, repository layout, eval/test counts, and current evidence links. |
+| `docs/ARCHITECTURE.md` | Service Layer | Keep read-route extraction debt explicit, including tickets, analytics, and clusters. |
+| `docs/ARCHITECTURE.md` | Health / Docker Stack / Deployment Readiness | Explain local compose dependency checks and distinguish liveness, readiness, and downstream dependency monitoring. |
+| `docs/ARCHITECTURE.md` | Security / Environment Variables | Replace legacy `WEBHOOK_SECRET` wording with per-tenant encrypted webhook secret language and clarify `APPROVE_SECRET` behavior. |
+| `docs/spec.md` | Security Assumptions / API Surface | Align JWT/HMAC rules with current webhook/JWT architecture and local/non-production readiness boundaries. |
+| `docs/EVIDENCE_INDEX.md` | Known limits and production changes | Link the Phase 6 deployment-readiness notes once added. |
+| `README.md` | Current State / Known Limits | Update recorded test baseline from 263 to the Cycle 17 272-pass baseline when verified in this cycle's final packaging. |
