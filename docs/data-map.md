@@ -27,7 +27,7 @@ _Date: 2026-03-03 · All schema changes require a migration file and a bump to t
 | `eval_cases` | File (`eval/cases.jsonl`) | — | Version-controlled | Medium (synthetic) |
 | `dedup_cache` | Redis (`{tenant}:dedup:{msg_id}`) | — | 24 h TTL | Medium (serialized webhook response) |
 | `rate_limit_counters` | Redis (`{tenant}:ratelimit:{user}`) | — | 60 s TTL | Low |
-| `approval_pending` | Redis (`{tenant}:pending:{id}`) | Postgres | Per APPROVAL_TTL | Low |
+| `approval_pending` | Redis (`{tenant}:pending:{id}`) | Postgres | Per APPROVAL_TTL | Medium (serialized pending decision) |
 | `session_tokens` | Redis (JWT blocklist) | — | Token expiry | High |
 
 ---
@@ -194,7 +194,7 @@ exceptions.
 | Cluster summaries | 6 months rolling | Operational analytics; no long-term value |
 | Cost ledger | 2 years | Billing reconciliation |
 | Eval runs | 1 year | Trend analysis; ML governance |
-| Redis (dedup, rate limit) | Per TTL | Operational; auto-expired |
+| Redis (dedup, pending approval, rate limit) | Per TTL | Operational; auto-expired |
 
 Deletion is logical (soft delete with `deleted_at` column) for tickets and users; physical deletion
 for Redis entries (TTL). GDPR right-to-erasure: `raw_text` overwritten with `[ERASED]`, all other
@@ -212,8 +212,9 @@ fields retained for audit integrity.
 
 **Storage rules:**
 - High-PII fields are never written to logs. Logs use hashed variants or omit entirely.
-- Medium-PII fields stored in Postgres under RLS. Not in Redis (except reviewer token, which is
-  a hash).
+- Medium-PII fields are stored in Postgres under RLS by default. Redis Medium-PII exceptions are
+  explicit and TTL-bound: dedup response caches (`{tenant_id}:dedup:{message_id}`) and pending
+  approvals (`{tenant_id}:pending:{pending_id}`) are tenant-namespaced operational records.
 - High-PII secrets stored encrypted at rest (AWS Secrets Manager in prod; environment variable
   in dev).
 - The `user_id` received in webhooks is always hashed (SHA-256) before any persistence or log
