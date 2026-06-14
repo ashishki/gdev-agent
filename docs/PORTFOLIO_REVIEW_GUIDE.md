@@ -9,7 +9,7 @@ and avoids process history unless it explains proof quality.
 1. Read the opening status and [Evidence Path](../README.md#evidence-path) in
    the README.
 2. Scan [docs/EVIDENCE_INDEX.md](EVIDENCE_INDEX.md) for the claim, proof,
-   verification, and gap table.
+   verification, gap table, and final portfolio questions.
 3. Check [Known Limits](../README.md#known-limits) before interpreting any
    architecture, eval, load, or demo claim.
 
@@ -47,9 +47,11 @@ and avoids process history unless it explains proof quality.
 5. Load and observability proof: inspect `load_tests/`, `tests/test_metrics.py`,
    `tests/test_observability.py`, [docs/load-profile.md](load-profile.md), and
    [docs/observability.md](observability.md).
-6. Final known limits: use [README.md#known-limits](../README.md#known-limits)
-   and [docs/tasks.md](tasks.md) to separate implemented evidence from planned
-   hardening work.
+6. Final evidence audit: use
+   [docs/EVIDENCE_INDEX.md#final-portfolio-questions](EVIDENCE_INDEX.md#final-portfolio-questions),
+   [README.md#known-limits](../README.md#known-limits), and
+   [docs/CASE_STUDY.md#what-would-change-for-production](CASE_STUDY.md#what-would-change-for-production)
+   to separate implemented evidence from production changes.
 
 ## Do not infer
 

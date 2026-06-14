@@ -839,7 +839,7 @@ Validation:
 
 ## Phase 7 - Hiring Packaging
 
-Status: active
+Status: complete
 Business goal: package the evidence so hiring managers and technical
 interviewers can review quickly and drill down when needed.
 Exit criteria: one-page case study, architecture visual, demo artifact notes,
@@ -945,7 +945,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "tests|eval|load|tenant isolation|observability|production-user" docs/RESUME_BULLETS.md docs/CASE_STUDY.md`
 
-### [ ] T27: Final Evidence Audit
+### [x] T27: Final Evidence Audit
 
 Owner: Codex
 Priority: P1

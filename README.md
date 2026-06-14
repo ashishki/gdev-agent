@@ -21,6 +21,7 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 
 | Claim to inspect | Start here | Bounded status |
 | --- | --- | --- |
+| Final portfolio question map | [docs/EVIDENCE_INDEX.md#final-portfolio-questions](docs/EVIDENCE_INDEX.md#final-portfolio-questions) | One-click route for problem, architecture, controls, quality, failure behavior, metrics, demo, limits, and production changes |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
@@ -32,6 +33,7 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
+| Resume-ready summary | [docs/RESUME_BULLETS.md](docs/RESUME_BULLETS.md) | Measured bullets tied to tests, eval, load, tenant isolation, and observability evidence |
 
 ## Why This Project Exists
 
@@ -204,9 +206,12 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 ## Repository Guide
 
+- [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): final question map and claim-by-claim proof table.
+- [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md): 5-minute, 15-minute, and deep-dive reviewer paths.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
 - [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
 - [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
+- [docs/RESUME_BULLETS.md](docs/RESUME_BULLETS.md): measured resume-ready bullets with explicit limits.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
 - [docs/N8N.md](docs/N8N.md): n8n integration and approval workflow blueprint.
 - [docs/observability.md](docs/observability.md): metrics, tracing, and logging conventions.
@@ -226,9 +231,9 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
   says otherwise. The current load report is deterministic/local evidence, not
   live capacity proof.
-- Live load measurements and final portfolio packaging are tracked in
-  [docs/tasks.md](docs/tasks.md) and are not complete yet. Deployment readiness
-  notes are local/pilot-only and explicitly do not prove production readiness.
+- Live load measurements remain out of scope for the current local evidence.
+  Deployment readiness notes are local/pilot-only and explicitly do not prove
+  production readiness.
 - Live LLM behavior requires a real Anthropic API key and budget controls; the
   local stack is the supported review path today.
 
