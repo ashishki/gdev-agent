@@ -615,7 +615,7 @@ Output of the Claude `tool_use` loop; feeds `propose_action()`.
 
 | Field | Type | Values |
 |-------|------|--------|
-| `category` | `string` | `bug_report`, `billing`, `account_access`, `cheater_report`, `gameplay_question`, `other` |
+| `category` | `string` | `bug_report`, `billing`, `account_access`, `cheater_report`, `moderation`, `legal`, `uncertain`, `security`, `safety`, `webhook`, `boundary`, `gameplay_question`, `other` |
 | `urgency` | `string` | `low`, `medium`, `high`, `critical` |
 | `confidence` | `float` | `0.0`–`1.0`. Below `AUTO_APPROVE_THRESHOLD` (default 0.85) → risky. Below `0.5` → OutputGuard forces `flag_for_human`. |
 

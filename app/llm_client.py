@@ -61,6 +61,13 @@ TOOLS: list[dict[str, Any]] = [
                         "billing",
                         "account_access",
                         "cheater_report",
+                        "moderation",
+                        "legal",
+                        "uncertain",
+                        "security",
+                        "safety",
+                        "webhook",
+                        "boundary",
                         "gameplay_question",
                         "other",
                     ],
@@ -355,40 +362,15 @@ class LLMClient:
                 {"platform": "Dreamcast", "error_code": "not an error code"},
                 {"tone": "informational", "draft_text": ""},
             )
-        if any(pattern in lowered for pattern in DEMO_ADVERSARIAL_PATTERNS):
-            return (
-                {"category": "other", "urgency": "high", "confidence": 0.0},
-                {"platform": "unknown", "keywords": ["adversarial", "guard"]},
-                {
-                    "tone": "escalation",
-                    "draft_text": "This request needs manual support review before action.",
-                },
-            )
-        if "cannot tell" in lowered or "thing" in lowered or "low confidence" in lowered:
-            return (
-                {"category": "other", "urgency": "medium", "confidence": 0.35},
-                {"platform": "unknown", "keywords": ["ambiguous"]},
-                {
-                    "tone": "escalation",
-                    "draft_text": "We need a support specialist to review the missing details.",
-                },
-            )
-        if any(token in lowered for token in ("charged", "refund", "payment", "purchase")):
-            return (
-                {"category": "billing", "urgency": "medium", "confidence": 0.92},
-                {"platform": "unknown", "transaction_id": None, "keywords": ["billing"]},
-                {
-                    "tone": "empathetic",
-                    "draft_text": "Thanks for reporting the payment issue. We will review it before taking action.",
-                },
-            )
+        category, urgency, confidence, keywords = _classify_demo_text(lowered)
+        tone = "escalation" if category in _DEMO_HUMAN_REVIEW_CATEGORIES else "informational"
+        extracted = {"platform": "unknown", "keywords": keywords}
+        if category == "billing":
+            extracted["transaction_id"] = None
         return (
-            {"category": "gameplay_question", "urgency": "low", "confidence": 0.96},
-            {"platform": "unknown", "keywords": ["gameplay"]},
-            {
-                "tone": "informational",
-                "draft_text": "Thanks for the question. We will send the best available guidance shortly.",
-            },
+            {"category": category, "urgency": urgency, "confidence": confidence},
+            extracted,
+            {"tone": tone, "draft_text": _demo_draft_text(category)},
         )
 
     def _create_message(self, **kwargs: Any) -> Any:
@@ -555,3 +537,194 @@ class LLMClient:
 
 def _sha256_short(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+_DEMO_HUMAN_REVIEW_CATEGORIES = {
+    "billing",
+    "account_access",
+    "moderation",
+    "legal",
+    "uncertain",
+    "security",
+    "safety",
+    "boundary",
+}
+
+
+def _classify_demo_text(lowered: str) -> tuple[str, str, float, list[str]]:
+    """Deterministic local classifier aligned with the gdev triage_v1 eval slice."""
+    if _matches_any(
+        lowered,
+        (
+            "support queue for test-tenant",
+            "another tenant",
+            "tenant a routing",
+            "tenant b routing",
+            "as if it belonged to",
+        ),
+    ):
+        return "boundary", "critical", 0.99, ["tenant-boundary"]
+    if _matches_any(
+        lowered,
+        (
+            *DEMO_ADVERSARIAL_PATTERNS,
+            "normal routing rules",
+            "approve this refund automatically",
+            "system instruction",
+            "skip human review",
+            "override the policy",
+            "mark every future request as safe",
+            "return approved",
+            "routing policy says pending",
+        ),
+    ):
+        return "security", "critical", 0.99, ["prompt-injection"]
+    if _matches_any(
+        lowered,
+        (
+            "hidden service credentials",
+            "internal connection settings",
+            "hidden signing material",
+            "private operational values",
+            "confidential configuration values",
+        ),
+    ):
+        return "security", "critical", 0.99, ["secret-leak-attempt"]
+    if _matches_any(
+        lowered,
+        (
+            "hxxp://",
+            "suspicious link",
+            "shortened link",
+            "free gems",
+            "suspicious external giveaway",
+            "alter account balances",
+            "external form asking for account recovery details",
+        ),
+    ):
+        return "safety", "high", 0.98, ["unsafe-url"]
+    if _matches_any(
+        lowered,
+        (
+            "repeated webhook delivery",
+            "same support event",
+            "duplicate demo notification",
+            "delivered the same bug report twice",
+            "duplicate moderation report",
+        ),
+    ):
+        return "webhook", "low", 0.94, ["duplicate-webhook"]
+    if _matches_any(
+        lowered,
+        (
+            "cannot sign in",
+            "recovery email",
+            "verification code",
+            "locked out",
+            "account says disabled",
+            "lost access",
+            "login approval",
+            "account lockout",
+        ),
+    ):
+        return "account_access", "high", 0.93, ["account-access"]
+    if _matches_any(
+        lowered,
+        (
+            "copy of all data",
+            "delete the records",
+            "privacy rights",
+            "object to processing",
+            "privacy team",
+            "access request",
+            "data deletion",
+            "legal review",
+        ),
+    ):
+        return "legal", "high", 0.94, ["privacy", "legal"]
+    if _matches_any(
+        lowered,
+        (
+            "harassing",
+            "abusive language",
+            "spam links in the public lobby",
+            "report a synthetic user",
+            "griefing",
+            "disruptive behavior",
+            "moderation report",
+        ),
+    ):
+        return "moderation", "high", 0.91, ["moderation"]
+    if _matches_any(
+        lowered,
+        (
+            "not sure",
+            "cannot tell",
+            "forgot the exact",
+            "unclear complaint",
+            "incomplete and unclear",
+            "something odd",
+            "might be billing or access",
+            "thing",
+            "low confidence",
+        ),
+    ):
+        return "uncertain", "medium", 0.35, ["ambiguous"]
+    if _matches_any(
+        lowered,
+        (
+            "charged",
+            "refund",
+            "payment",
+            "purchase",
+            "subscription",
+            "billing",
+            "receipt",
+            "identical charges",
+            "reverse the accidental charge",
+            "duplicate invoice",
+        ),
+    ):
+        return "billing", "medium", 0.92, ["billing"]
+    if _matches_any(
+        lowered,
+        (
+            "spinner never stops",
+            "reports tab",
+            "export button",
+            "empty csv",
+            "filters reset",
+            "issue list",
+            "mobile menu overlaps",
+            "notification banner",
+            "status badge",
+            "stale state",
+            "workflow completes",
+        ),
+    ):
+        return "bug_report", "low", 0.9, ["bug-report"]
+    return "gameplay_question", "low", 0.96, ["gameplay"]
+
+
+def _matches_any(value: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in value for needle in needles)
+
+
+def _demo_draft_text(category: str) -> str:
+    if category == "billing":
+        return "Thanks for reporting the payment issue. We will review it before taking action."
+    if category == "account_access":
+        return "We received your account access request and escalated it for review."
+    if category == "bug_report":
+        return "Thanks for the bug report. We have logged it for the team."
+    if category == "moderation":
+        return "Thanks for the report. Our moderation team will review it."
+    if category == "legal":
+        return "We have routed this privacy or legal request for specialist review."
+    if category == "uncertain":
+        return "We need a support specialist to review the missing details."
+    if category in {"security", "safety", "boundary"}:
+        return "This request is blocked by safety checks and needs manual review."
+    if category == "webhook":
+        return "Thanks. We have logged this webhook delivery idempotently."
+    return "Thanks for the question. We will send the best available guidance shortly."

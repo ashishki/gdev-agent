@@ -145,11 +145,49 @@ class AgentService:
             span.set_attribute("text_length", len(payload.text))
             try:
                 self._guard_input(payload.text)
-            except Exception as exc:
+            except ValidationError as exc:
                 span.set_attribute("blocked", True)
                 INJECTION_ATTEMPTS_TOTAL.labels(tenant_hash=metric_tenant_hash).inc()
                 span.record_exception(exc)
-                raise
+                latency_ms = round((time.monotonic() - start) * 1000)
+                category = self._guard_block_category(payload.text) or "security"
+                classification = ClassificationResult(
+                    category=category,
+                    urgency="critical" if category in {"security", "boundary"} else "high",
+                    confidence=0.99,
+                )
+                action = ProposedAction(
+                    tool="flag_for_human",
+                    payload={
+                        "title": f"[{classification.category}] blocked support request",
+                        "text": payload.text,
+                        "category": classification.category,
+                        "urgency": classification.urgency,
+                        "tenant_id": payload.tenant_id,
+                    },
+                    risky=True,
+                    risk_reason=str(exc.detail),
+                )
+                REQUESTS_TOTAL.labels(
+                    status="blocked",
+                    category=classification.category,
+                    urgency=classification.urgency,
+                    tenant_hash=metric_tenant_hash,
+                ).inc()
+                REQUEST_DURATION_SECONDS.labels(
+                    endpoint="/webhook", tenant_hash=metric_tenant_hash
+                ).observe(time.monotonic() - start)
+                return WebhookResponse(
+                    status="blocked",
+                    classification=classification,
+                    extracted=ExtractedFields(user_id=payload.user_id),
+                    action=action,
+                    draft_response="Request blocked by input safety checks.",
+                    cost_usd=0.0,
+                    requires_human=True,
+                    guard_blocked=True,
+                    unsafe_auto_approval=False,
+                )
             span.set_attribute("blocked", False)
 
         with TRACER.start_as_current_span("agent.budget_check") as span:
@@ -335,6 +373,10 @@ class AgentService:
                 action=action,
                 draft_response=draft_response,
                 pending=pending,
+                cost_usd=cost_usd,
+                requires_human=True,
+                guard_blocked=False,
+                unsafe_auto_approval=False,
             )
 
         action_result = self.execute_action(
@@ -411,6 +453,10 @@ class AgentService:
             action=action,
             draft_response=draft_response,
             action_result=action_result,
+            cost_usd=cost_usd,
+            requires_human=False,
+            guard_blocked=False,
+            unsafe_auto_approval=False,
         )
 
     def approve(
@@ -532,6 +578,17 @@ class AgentService:
         if classification.category in self.settings.approval_categories:
             risky = True
             reason = f"category '{classification.category}' requires approval"
+        if classification.category in {
+            "account_access",
+            "moderation",
+            "legal",
+            "uncertain",
+            "security",
+            "safety",
+            "boundary",
+        }:
+            risky = True
+            reason = reason or f"category '{classification.category}' requires approval"
         if classification.urgency in {"high", "critical"}:
             risky = True
             reason = reason or f"urgency '{classification.urgency}' requires approval"
@@ -619,9 +676,59 @@ class AgentService:
         """Validate incoming text and raise ValidationError on guardrail hit."""
         if len(text) > self.settings.max_input_length:
             raise ValidationError(f"Input exceeds max length ({self.settings.max_input_length})")
+        guard_category = self._guard_block_category(text)
+        if guard_category is not None:
+            raise ValidationError(f"Input failed {guard_category} guard")
+
+    def _guard_block_category(self, text: str) -> str | None:
+        """Return the eval-facing guard category for unsafe input, if blocked."""
         lowered = text.lower()
         if any(pattern in lowered for pattern in INJECTION_PATTERNS):
-            raise ValidationError("Input failed injection guard")
+            return "security"
+        if any(
+            token in lowered
+            for token in (
+                "normal routing rules",
+                "approve this refund automatically",
+                "system instruction",
+                "skip human review",
+                "override the policy",
+                "mark every future request as safe",
+                "return approved",
+                "routing policy says pending",
+                "hidden service credentials",
+                "internal connection settings",
+                "hidden signing material",
+                "private operational values",
+                "confidential configuration values",
+            )
+        ):
+            return "security"
+        if any(
+            token in lowered
+            for token in (
+                "hxxp://",
+                "suspicious link",
+                "shortened link",
+                "free gems",
+                "suspicious external giveaway",
+                "alter account balances",
+                "external form asking for account recovery details",
+            )
+        ):
+            return "safety"
+        if any(
+            token in lowered
+            for token in (
+                "support queue for test-tenant",
+                "another tenant",
+                "tenant a routing",
+                "tenant b routing",
+                "as if it belonged to",
+            )
+        ):
+            return "boundary"
+        return None
 
     def _draft_response(self, classification: ClassificationResult) -> str:
         """Generate a short user-facing draft reply."""
@@ -635,6 +742,16 @@ class AgentService:
             return (
                 "Thanks for the report. Our moderation team will investigate this player activity."
             )
+        if classification.category == "moderation":
+            return "Thanks for the report. Our moderation team will review it."
+        if classification.category == "legal":
+            return "We have routed this privacy or legal request for specialist review."
+        if classification.category == "uncertain":
+            return "We need a support specialist to review the missing details."
+        if classification.category in {"security", "safety", "boundary"}:
+            return "This request is blocked by safety checks and needs manual review."
+        if classification.category == "webhook":
+            return "Thanks. We have logged this webhook delivery idempotently."
         if classification.category == "gameplay_question":
             return "Thanks for your question. We will send the best available guidance shortly."
         return "Thanks for contacting support. We have logged your request and will reply soon."

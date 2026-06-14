@@ -14,6 +14,13 @@ Category = Literal[
     "billing",
     "account_access",
     "cheater_report",
+    "moderation",
+    "legal",
+    "uncertain",
+    "security",
+    "safety",
+    "webhook",
+    "boundary",
     "gameplay_question",
     "other",
 ]
@@ -104,13 +111,17 @@ class PendingDecision(BaseModel):
 class WebhookResponse(BaseModel):
     """Response returned by POST /webhook."""
 
-    status: Literal["executed", "pending"]
+    status: Literal["executed", "pending", "blocked"]
     classification: ClassificationResult
     extracted: ExtractedFields
     action: ProposedAction
     draft_response: str
     action_result: dict[str, Any] | None = None
     pending: PendingDecision | None = None
+    cost_usd: float = 0.0
+    requires_human: bool = False
+    guard_blocked: bool = False
+    unsafe_auto_approval: bool = False
 
 
 class ApproveRequest(BaseModel):

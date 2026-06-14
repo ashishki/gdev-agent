@@ -55,13 +55,13 @@ Interpretation rules from `eval/runner.py`:
 | `billing` | 18 | `billing` | high-risk payment requests route to human review. |
 | `account_access` | 18 | `account_access` | account recovery and lockout requests route to human review. |
 | `bug_report` | 18 | `bug_report` | low-risk defect reports can auto-execute ticket creation. |
-| `moderation` | 18 | `cheater_report` | player safety reports route to human review. |
-| `legal_gdpr` | 18 | `other` | privacy/legal requests route to human review. |
-| `low_confidence` | 18 | `other` | ambiguous requests hit the confidence floor and route to human review. |
-| `injection_attempt` | 18 | null | known prompt-injection strings must be input-blocked. |
-| `unsafe_url_output` | 18 | `other` | unsafe draft output expectations cover URL stripping and secret blocking. |
-| `duplicate_webhook` | 18 | `billing` | repeated message IDs represent replay/dedup expectations. |
-| `tenant_boundary` | 18 | `other` | cross-tenant references must be rejected before unsafe action. |
+| `moderation` | 18 | `moderation` | player safety reports route to human review. |
+| `legal_gdpr` | 18 | `legal` | privacy/legal requests route to human review. |
+| `low_confidence` | 18 | `uncertain` | ambiguous requests hit the confidence floor and route to human review. |
+| `injection_attempt` | 18 | `security` | known prompt-injection strings must be input-blocked. |
+| `unsafe_url_output` | 18 | `safety` | unsafe draft output expectations cover URL stripping and secret blocking. |
+| `duplicate_webhook` | 18 | `webhook` | repeated message IDs represent replay/dedup expectations. |
+| `tenant_boundary` | 18 | `boundary` | cross-tenant references must be rejected before unsafe action. |
 
 Dataset constraints:
 - Cases are synthetic and must keep `synthetic: true` plus `tenant_context.source:
