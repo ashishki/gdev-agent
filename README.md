@@ -22,10 +22,11 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Claim to inspect | Start here | Bounded status |
 | --- | --- | --- |
 | Final portfolio question map | [docs/EVIDENCE_INDEX.md#final-portfolio-questions](docs/EVIDENCE_INDEX.md#final-portfolio-questions) | One-click route for problem, architecture, controls, quality, failure behavior, metrics, demo, limits, and production changes |
+| Three-project stack map | [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md) | Explains how gdev-agent, Eval Ground Truth Lab, and Agent Runtime Grid fit together as workflow, quality, and runtime layers |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
-| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report and CI regression gate |
+| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab integration baseline, and scope reconciliation |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
@@ -207,6 +208,8 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 ## Repository Guide
 
 - [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): final question map and claim-by-claim proof table.
+- [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md): three-project stack map and provider strategy.
+- [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): explains the internal 180-case smoke eval versus the Eval Lab 55-case integration baseline.
 - [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md): 5-minute, 15-minute, and deep-dive reviewer paths.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
 - [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
@@ -231,6 +234,10 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
   says otherwise. The current load report is deterministic/local evidence, not
   live capacity proof.
+- Eval metrics have multiple scopes. The internal 180-case smoke report exposes
+  broad demo-mode routing gaps, while the external Eval Lab 55-case baseline is
+  an integration/conformance pass over the configured `/webhook` adapter. See
+  [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md).
 - Live load measurements remain out of scope for the current local evidence.
   Deployment readiness notes are local/pilot-only and explicitly do not prove
   production readiness.

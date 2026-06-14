@@ -59,8 +59,9 @@ Proof: [docs/FAILURE_MODES.md](FAILURE_MODES.md) and
 
 ## Eval Results
 
-The current eval corpus has 180 synthetic cases. The deterministic demo-mode
-baseline is useful as a regression signal, not as live model quality evidence.
+The current internal eval corpus has 180 synthetic cases. The deterministic
+demo-mode baseline is useful as a broad regression and gap-discovery signal, not
+as live model quality evidence.
 
 Latest committed eval results from [docs/EVAL_REPORT.md](EVAL_REPORT.md):
 
@@ -74,6 +75,13 @@ Latest committed eval results from [docs/EVAL_REPORT.md](EVAL_REPORT.md):
 
 The CI eval regression gate is active for smoke regressions. Stricter quality
 gates remain future work.
+
+There is also an external Eval Lab integration baseline over 55 curated
+gdev-agent triage cases. That baseline calls a live local `gdev-agent` through
+the configured `/webhook` adapter and currently records 55 cases, zero adapter
+errors, and zero deterministic validator failures. This does not contradict the
+weaker internal 180-case smoke metrics: the two reports have different scopes.
+See [docs/EVAL_SCOPE_RECONCILIATION.md](EVAL_SCOPE_RECONCILIATION.md).
 
 ## Load Results
 
@@ -109,6 +117,8 @@ repo evidence.
   breadth. There is no chat UI or open-ended agent behavior.
 - Demo mode keeps review free and deterministic, but live LLM quality is not
   proven by the committed baseline.
+- The clean 55-case Eval Lab baseline proves the current integration contract,
+  not broad production triage quality across every internal smoke taxonomy.
 - Redis stores ephemeral coordination state; Postgres is the durable source of
   record.
 - Read APIs still have known service-extraction debt for ticket, analytics, and

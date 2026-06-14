@@ -15,6 +15,12 @@ python -c "from pathlib import Path; from eval.runner import run_eval; print(run
 The committed `eval/results/last_run.json` was generated with deterministic demo-mode behavior.
 The direct runner falls back to demo mode when live mode is configured without an Anthropic API key.
 
+For cross-project interpretation, read this report with
+[docs/EVAL_SCOPE_RECONCILIATION.md](EVAL_SCOPE_RECONCILIATION.md). The 180-case
+internal eval is a broad smoke/gap-discovery surface. The separate Eval Ground
+Truth Lab 55-case baseline is a curated live local integration/conformance eval
+over the configured `/webhook` adapter.
+
 ## Environment Assumptions
 
 - Dataset: `eval/cases.jsonl`
@@ -66,6 +72,18 @@ These thresholds are intentionally baseline-compatible so CI can catch regressio
 the current demo stub is high-quality across the whole taxonomy. They are smoke thresholds, not
 product quality targets.
 
+## Relationship To Eval Lab Baseline
+
+Eval Ground Truth Lab now has a separate 55-case gdev-agent integration baseline
+that calls a live local `gdev-agent` through the HTTP adapter and records zero
+adapter errors and zero deterministic validator failures. That result proves the
+current adapter/conformance contract for the curated Eval Lab dataset.
+
+It does not invalidate this internal 180-case report. This report remains the
+broader local smoke taxonomy and intentionally keeps weak routing and
+classification metrics visible until the demo/live policy improves across the
+expanded dataset.
+
 ## Known Limits
 
 - The dataset is synthetic and does not prove real customer support quality.
@@ -73,3 +91,5 @@ product quality targets.
 - Routing metrics still expose gaps in demo-mode policy coverage across the expanded taxonomy.
 - `latency_ms_per_case` is local workstation timing, not an SLO or production latency claim.
 - The CI regression gate is active for smoke regressions; stricter quality gates remain future work.
+- The 55-case Eval Lab baseline should be read as integration/conformance
+  evidence, not as a replacement for this broader internal smoke surface.
