@@ -8,7 +8,7 @@ any model call, classifies and extracts structured data with an LLM, routes
 risky actions into human approval, and records the resulting audit, cost, and
 analytics trail behind one HTTP API.
 
-Status: active portfolio hardening. The current stack is pilot-grade/local
+Status: portfolio hardening complete. The current stack is pilot-grade/local
 evidence: Docker Compose setup, synthetic demo and eval paths, and repository
 tests. This README does not claim production SaaS readiness, external
 deployment, or live customer usage. Roadmap: [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).

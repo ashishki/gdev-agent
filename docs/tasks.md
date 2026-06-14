@@ -1,6 +1,6 @@
 # gdev-agent Tasks
 
-Status: portfolio-hardening-active
+Status: portfolio-hardening-complete
 Last updated: 2026-06-14
 Source: `GDEV_AGENT_PORTFOLIO_HARDENING_PLAN.md` provided by human.
 
@@ -833,7 +833,7 @@ Acceptance Criteria:
 
 Validation:
 - `rg -n "CI eval|Eval regression gate|readiness|liveness|APPROVE_SECRET|WEBHOOK_SECRET_ENCRYPTION_KEY|/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent" README.md docs/ARCHITECTURE.md docs/spec.md docs/DEPLOYMENT_READINESS.md docs/EVIDENCE_INDEX.md docs/prompts/ORCHESTRATOR.md docs/CODEX_PROMPT.md`
-- `rg -n "Status: active|FIX-P6|T23" docs/tasks.md docs/CODEX_PROMPT.md`
+- `rg -n "Status: complete|FIX-P6|T23" docs/tasks.md docs/CODEX_PROMPT.md`
 
 ---
 

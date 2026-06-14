@@ -32,6 +32,8 @@ Final artifacts: README evidence path, `docs/EVIDENCE_INDEX.md`,
   0 skipped, 45 warnings after `FIX-P6-1`.
 - Phase 6 review: `docs/archive/PHASE18_REVIEW.md` -> Stop-Ship: Yes for
   Phase 7 advancement; no P0 findings.
+- Phase 7 review: `docs/archive/PHASE19_REVIEW.md` -> Stop-Ship: Yes before
+  `FIX-P7-1`; docs/state blockers resolved after the report.
 - Historical product roadmap is complete enough; this cycle must not reopen
   speculative product scope.
 - The task graph was rebuilt from the human-provided
@@ -75,6 +77,9 @@ No P0/P1 findings are open.
 | ARCH-4 | P2 | Phase 6 deployment-readiness architecture was documented in T21/T22, but Cycle 18 found runtime/config regressions. | Closed - `FIX-P6-1` and `FIX-P6-2` close runtime/config and docs drift |
 | CODE-4 / prior CODE-3 | P3 | `docs/load-profile.md` mixes target assumptions or estimates with measured local/synthetic load evidence. | Open - non-blocking doc debt; final packaging routes reviewers to the bounded deterministic load report and known limits |
 | CODE-18-5 | P3 | `docs/prompts/ORCHESTRATOR.md` still had stale legacy root examples. | Closed - root examples now use `/home/ashishki/Documents/dev/ai-stack/projects/gdev-agent` |
+| META-19-1 | P1 | Public README and task graph status contradicted hardening completion. | Closed - `FIX-P7-1` aligns README, task graph, and compact state |
+| META-19-2 | P1 | Phase 7 deep-review archive was missing from the audit index. | Closed - `FIX-P7-1` adds Cycle 19 schedule/archive rows |
+| META-19-3 | P2 | Audit index table structure mixed schedule rows into archive rows. | Closed - `FIX-P7-1` normalizes the review schedule and archive tables |
 
 ## Next Task
 
