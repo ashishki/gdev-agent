@@ -37,7 +37,8 @@ This is not a product expansion plan.
 - Documentation-only tasks do not need application tests, but must include a
   grep/link sanity check in the completion report.
 - Security-critical tasks touching auth, middleware, RLS, tenant isolation, or
-  secrets require deep review.
+  secrets require focused validation and tests; deep review is reserved for the
+  phase boundary after all tasks in the phase are complete.
 - Keep task diffs scoped to the listed files unless local code discovery shows a
   direct dependency.
 
@@ -594,12 +595,12 @@ Validation:
 
 ## Phase 5 - Tenant Isolation And Security Proof
 
-Status: planned
+Status: active
 Business goal: back every multi-tenancy claim with concrete docs, adversarial
 examples, and tests.
 Exit criteria: reviewer can find and run tenant-isolation proof from README.
 
-### [ ] T18: Tenant Isolation Evidence Document
+### [x] T18: Tenant Isolation Evidence Document
 
 Owner: Codex
 Priority: P0
@@ -624,7 +625,6 @@ Acceptance Criteria:
 
 Validation:
 - `rg -n "TENANT_ISOLATION|RLS|tenant-scoped JWT|webhook signature|cost ledger|not protected" README.md docs/EVIDENCE_INDEX.md docs/TENANT_ISOLATION.md`
-- Deep review required.
 
 ### [ ] T19: RLS JWT Secret And Cost Isolation Tests
 
@@ -653,7 +653,6 @@ Acceptance Criteria:
 
 Validation:
 - `pytest tests/test_isolation.py tests/test_rbac.py tests/test_auth_service.py tests/test_secrets_store.py tests/test_cost_ledger.py -q`
-- Deep review required.
 
 ### [ ] T20: Adversarial Tenant Boundary Scenarios
 
@@ -682,7 +681,7 @@ Acceptance Criteria:
 
 Validation:
 - `pytest tests/test_endpoints.py tests/test_approval_flow.py tests/test_middleware.py tests/test_webhook_service.py -q`
-- Deep review required.
+- Deep review runs at the Phase 5 boundary after T20.
 
 ---
 

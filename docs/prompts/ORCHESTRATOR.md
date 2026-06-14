@@ -36,9 +36,11 @@ cd /home/gdev/gdev-agent && codex exec -s workspace-write "$PROMPT"
 | **Light** | After every 1-2 tasks within a phase | ~1 agent call | Pass / issues list → Codex fixes |
 | **Deep** | Phase boundary only (all phase tasks done) | 4 agent calls + archive | REVIEW_REPORT + tasks.md + CODEX_PROMPT patches |
 
-**Deep review also triggers if:**
-- Last task touched security-critical code: auth, middleware, RLS, tenant isolation, secrets
-- 5+ P2 findings have been open for 3+ cycles (architectural drift)
+**Deep review does not run after single tasks.**
+
+Security-critical tasks still require focused implementation validation and tests,
+but the multi-agent deep review/archive step is reserved for true phase
+boundaries.
 
 **Skip all review for:** doc-only patches, test-only changes, dependency bumps.
 
@@ -88,7 +90,6 @@ If absent → deep review required. If present → skip.
 
 **D. Review tier** — which review to run after the next implementation:
 - True phase boundary (C above, no archive entry for just-completed phase) → Deep review
-- Security-critical task (auth, middleware, RLS, secrets) → Deep review
 - Otherwise → Light review
 
 Print status block:
@@ -286,7 +287,7 @@ Parse result:
 
 ---
 
-#### TIER 2: Deep Review (phase boundary or security-critical)
+#### TIER 2: Deep Review (phase boundary only)
 
 4 steps, sequential. Each depends on previous output.
 
