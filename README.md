@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![278 tests](https://img.shields.io/badge/tests-278%20passing-brightgreen)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![285 tests](https://img.shields.io/badge/tests-285%20passing-brightgreen)
 
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
@@ -68,7 +68,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
 | Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
 | Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
-| Platform | Docker Compose full stack; 278 tests (unit + integration) passing; ruff-clean |
+| Platform | Docker Compose full stack; 285 tests (unit + integration) passing; ruff-clean |
 
 ## Quick Start
 
