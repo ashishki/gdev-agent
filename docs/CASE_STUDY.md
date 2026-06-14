@@ -26,6 +26,7 @@ The architecture is HTTP-first:
 7. Execution writes ticket, audit, metrics, and cost evidence.
 
 Primary proof: [docs/ARCHITECTURE.md](ARCHITECTURE.md),
+[docs/architecture-diagram.md](architecture-diagram.md),
 [docs/data-map.md](data-map.md), and [README.md](../README.md).
 
 ## Control Boundaries
@@ -41,7 +42,8 @@ The project focuses on controls that are inspectable in a local repo:
 - Operational evidence: JSON logs, Prometheus metrics, OpenTelemetry-style
   spans, Grafana/Loki/Tempo local stack, migration checks, and health notes.
 
-Proof starts at [docs/TENANT_ISOLATION.md](TENANT_ISOLATION.md),
+Proof starts at [docs/architecture-diagram.md](architecture-diagram.md),
+[docs/TENANT_ISOLATION.md](TENANT_ISOLATION.md),
 [docs/FAILURE_MODES.md](FAILURE_MODES.md), and
 [docs/observability.md](observability.md).
 

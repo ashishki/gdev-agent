@@ -1,6 +1,6 @@
 # gdev-agent - Compact Session State
 
-Version: 6.4
+Version: 6.5
 Date: 2026-06-14
 Status: portfolio-hardening-active
 
@@ -14,9 +14,9 @@ Phase 7 - Hiring Packaging.
 Business goal: package the evidence so hiring managers and technical
 interviewers can review quickly and drill down when needed.
 
-Phase 6 remediation is complete. T23 one-page case study is complete. Remaining
-Phase 7 packaging must keep all claims backed by runnable or documented
-evidence.
+Phase 6 remediation is complete. T23 one-page case study and T24 architecture
+diagram asset are complete. Remaining Phase 7 packaging must keep all claims
+backed by runnable or documented evidence.
 
 ## Current State
 
@@ -73,7 +73,7 @@ No P0/P1 findings are open.
 
 ## Next Task
 
-`T24`: Architecture Diagram Asset.
+`T25`: Demo Video Or GIF Checklist.
 
 ## Rules
 

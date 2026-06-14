@@ -870,7 +870,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "CASE_STUDY|problem|architecture|failure modes|eval results|load results|production" README.md docs/EVIDENCE_INDEX.md docs/CASE_STUDY.md`
 
-### [ ] T24: Architecture Diagram Asset
+### [x] T24: Architecture Diagram Asset
 
 Owner: Codex
 Priority: P2

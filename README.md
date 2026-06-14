@@ -22,7 +22,7 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Claim to inspect | Start here | Bounded status |
 | --- | --- | --- |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
-| Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Implemented local stack with documented gaps and ADRs |
+| Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md) | 180-case synthetic eval taxonomy with baseline report and CI regression gate |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
@@ -205,6 +205,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 ## Repository Guide
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
+- [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
 - [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
 - [docs/N8N.md](docs/N8N.md): n8n integration and approval workflow blueprint.
