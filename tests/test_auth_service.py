@@ -194,6 +194,35 @@ async def test_login_returns_token_and_records_observability(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
+async def test_login_rejects_user_when_tenant_slug_does_not_match(monkeypatch) -> None:
+    monkeypatch.setattr(auth_service_module.bcrypt, "checkpw", lambda *_: True)
+    service = AuthService(
+        settings=Settings(jwt_secret="x" * 32),
+        db_session_factory=_SessionFactoryStub(
+            {
+                "user_id": str(uuid4()),
+                "tenant_id": str(uuid4()),
+                "role": "support_agent",
+                "password_hash": "stored-hash",
+            },
+            known_tenant_slug="tenant-a",
+        ),
+        jwt_blocklist_redis=_AsyncRedisStub(),
+    )
+
+    result = await service.login(
+        AuthTokenRequest(
+            tenant_slug="tenant-b",
+            email="agent@example.com",
+            password="s3cret!",
+        )
+    )
+
+    assert result.status_code == 401
+    assert result.payload.error.code == "invalid_credentials"
+
+
+@pytest.mark.asyncio
 async def test_login_invalid_credentials_returns_401_and_increments_counter(
     monkeypatch,
 ) -> None:

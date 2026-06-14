@@ -1,7 +1,7 @@
 # gdev-agent Tasks
 
 Status: portfolio-hardening-active
-Last updated: 2026-06-12
+Last updated: 2026-06-14
 Source: `GDEV_AGENT_PORTFOLIO_HARDENING_PLAN.md` provided by human.
 
 This file is the active task graph for the AI-assisted development loop. The
@@ -626,7 +626,7 @@ Acceptance Criteria:
 Validation:
 - `rg -n "TENANT_ISOLATION|RLS|tenant-scoped JWT|webhook signature|cost ledger|not protected" README.md docs/EVIDENCE_INDEX.md docs/TENANT_ISOLATION.md`
 
-### [ ] T19: RLS JWT Secret And Cost Isolation Tests
+### [x] T19: RLS JWT Secret And Cost Isolation Tests
 
 Owner: Codex
 Priority: P0

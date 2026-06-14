@@ -102,3 +102,33 @@ async def test_get_secret_by_slug_reads_tenant_then_secret() -> None:
     assert secret == "secret-b"
     assert "set_config('app.current_tenant_id'" in str(secret_session.execute_calls[0][0])
     assert secret_session.execute_calls[0][1] == {"tenant_id": str(tenant_id)}
+
+
+@pytest.mark.asyncio
+async def test_get_secret_by_slug_returns_slug_specific_secret() -> None:
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    slug_a_session = _SessionStub([{"tenant_id": tenant_a}])
+    secret_a_session = _SessionStub(
+        [{"secret_ciphertext": fernet.encrypt(b"secret-a").decode("utf-8")}]
+    )
+    slug_b_session = _SessionStub([{"tenant_id": tenant_b}])
+    secret_b_session = _SessionStub(
+        [{"secret_ciphertext": fernet.encrypt(b"secret-b").decode("utf-8")}]
+    )
+    store = WebhookSecretStore(
+        _SessionFactoryStub(
+            [slug_a_session, secret_a_session, slug_b_session, secret_b_session]
+        ),
+        key.decode("utf-8"),
+    )
+
+    secret_a = await store.get_secret_by_slug("tenant-a")
+    secret_b = await store.get_secret_by_slug("tenant-b")
+
+    assert secret_a == "secret-a"
+    assert secret_b == "secret-b"
+    assert secret_a_session.execute_calls[0][1] == {"tenant_id": str(tenant_a)}
+    assert secret_b_session.execute_calls[0][1] == {"tenant_id": str(tenant_b)}

@@ -253,6 +253,51 @@ def test_record_uses_upsert_and_accumulates_daily_usage(migrated_postgres: str) 
     assert request_count == 2
 
 
+def test_record_rejects_cross_tenant_usage_under_rls(migrated_postgres: str) -> None:
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    today = datetime.now(UTC).date()
+    asyncio.run(_seed_tenant(migrated_postgres, tenant_a, "budget-cross-a", Decimal("10.0000")))
+    asyncio.run(_seed_tenant(migrated_postgres, tenant_b, "budget-cross-b", Decimal("10.0000")))
+    app_url = asyncio.run(_enable_gdev_app_login(migrated_postgres, "gdev-app-pass"))
+
+    engine = create_async_engine(app_url, poolclass=NullPool)
+    session_factory = make_session_factory(engine)
+    ledger = CostLedger()
+
+    async def _attempt_cross_tenant_record() -> None:
+        async with session_factory() as session:
+            async with session.begin():
+                await _set_tenant_ctx(session, str(tenant_a))
+                await ledger.record(tenant_b, today, 10, 5, Decimal("0.0100"), session)
+
+    async def _count_tenant_b_rows() -> int:
+        admin_engine = create_async_engine(migrated_postgres)
+        try:
+            async with admin_engine.connect() as conn:
+                result = await conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM cost_ledger
+                        WHERE tenant_id = :tenant_id AND date = :date
+                        """
+                    ),
+                    {"tenant_id": str(tenant_b), "date": today},
+                )
+                return int(result.scalar_one())
+        finally:
+            await admin_engine.dispose()
+
+    try:
+        with pytest.raises(Exception):
+            asyncio.run(_attempt_cross_tenant_record())
+    finally:
+        asyncio.run(engine.dispose())
+
+    assert asyncio.run(_count_tenant_b_rows()) == 0
+
+
 def test_check_budget_isolated_per_tenant(migrated_postgres: str) -> None:
     tenant_a = uuid4()
     tenant_b = uuid4()
