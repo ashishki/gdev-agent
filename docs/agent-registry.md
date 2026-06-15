@@ -1,7 +1,6 @@
 # Agent Registry v2.0
 
 _Date: 2026-03-17_
-_Merged from AGENT_SYSTEM.md (pipeline design) + agent-registry.md (agent profiles)._
 _Single source of truth for the AI pipeline. Each agent corresponds to an `agent_configs` row in Postgres. Config changes require a version bump and a PR._
 
 ---

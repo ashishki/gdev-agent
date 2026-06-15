@@ -66,8 +66,8 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Eval API endpoints | `app/routers/eval.py` | ✅ Implemented |
 | Eval runner + persistence | `eval/runner.py`, `app/services/eval_service.py` | ✅ Implemented |
 | RCA clusterer background job | `app/jobs/rca_clusterer.py` | ✅ Implemented |
-| Admin CLI for tenant/budget/RCA operations | `scripts/cli.py` | ✅ CLI-1 (Phase 10) |
-| Demo harness | `scripts/demo.py` | ✅ PORT-3 (Phase 11) |
+| Admin CLI for tenant/budget/RCA operations | `scripts/cli.py` | ✅ Implemented |
+| Demo harness | `scripts/demo.py` | ✅ Implemented |
 | Eval dataset (180 synthetic cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |

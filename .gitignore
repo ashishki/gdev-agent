@@ -44,14 +44,3 @@ dist/
 .vscode/
 .DS_Store
 *.log
-
-# Local documentation drafts
-docs/spec.md
-docs/architecture.md
-docs/data-map.md
-docs/agent-registry.md
-docs/observability.md
-docs/load-profile.md
-docs/llm-usage.md
-docs/devlog-template.md
-docs/adr/
