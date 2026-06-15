@@ -62,7 +62,7 @@ In this stack:
 
 ## Provider Strategy
 
-Default portfolio and CI mode should stay deterministic:
+Default local and CI mode should stay deterministic:
 
 | Mode | Provider | Use |
 | --- | --- | --- |

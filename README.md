@@ -8,20 +8,19 @@ any model call, classifies and extracts structured data with an LLM, routes
 risky actions into human approval, and records the resulting audit, cost, and
 analytics trail behind one HTTP API.
 
-Status: portfolio hardening complete. The current stack is pilot-grade/local
-evidence: Docker Compose setup, synthetic demo and eval paths, and repository
-tests. This README does not claim production SaaS readiness, external
-deployment, or live customer usage. Roadmap: [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
+Status: local evidence baseline complete. The current stack is pilot-grade:
+Docker Compose setup, synthetic demo and eval paths, and repository tests. This
+README does not claim production SaaS readiness, external deployment, or live
+customer usage.
 
 ## Evidence Path
 
 For a claim-by-claim proof map, start with
-[docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md). For a timed review route,
-use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
+[docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md).
 
 | Claim to inspect | Start here | Bounded status |
 | --- | --- | --- |
-| Final portfolio question map | [docs/EVIDENCE_INDEX.md#final-portfolio-questions](docs/EVIDENCE_INDEX.md#final-portfolio-questions) | One-click route for problem, architecture, controls, quality, failure behavior, metrics, demo, limits, and production changes |
+| Evidence question map | [docs/EVIDENCE_INDEX.md#evidence-questions](docs/EVIDENCE_INDEX.md#evidence-questions) | One-click route for problem, architecture, controls, quality, failure behavior, metrics, demo, limits, and production changes |
 | Three-project stack map | [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md) | Explains how gdev-agent, Eval Ground Truth Lab, and Agent Runtime Grid fit together as workflow, quality, and runtime layers |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
@@ -33,8 +32,7 @@ use [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md).
 | Tests | [Current State](#current-state) | Last recorded baseline is 285 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
-| Known limits and production changes | [Known Limits](#known-limits), [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
-| Resume-ready summary | [docs/RESUME_BULLETS.md](docs/RESUME_BULLETS.md) | Measured bullets tied to tests, eval, load, tenant isolation, and observability evidence |
+| Known limits and production changes | [Known Limits](#known-limits), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
 
 ## Why This Project Exists
 
@@ -207,14 +205,12 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 ## Repository Guide
 
-- [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): final question map and claim-by-claim proof table.
+- [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): evidence question map and claim-by-claim proof table.
 - [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md): three-project stack map and provider strategy.
 - [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): explains the internal 180-case smoke eval versus the Eval Lab 55-case integration baseline.
-- [docs/PORTFOLIO_REVIEW_GUIDE.md](docs/PORTFOLIO_REVIEW_GUIDE.md): 5-minute, 15-minute, and deep-dive reviewer paths.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
 - [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
 - [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
-- [docs/RESUME_BULLETS.md](docs/RESUME_BULLETS.md): measured resume-ready bullets with explicit limits.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
 - [docs/N8N.md](docs/N8N.md): n8n integration and approval workflow blueprint.
 - [docs/observability.md](docs/observability.md): metrics, tracing, and logging conventions.

@@ -225,14 +225,14 @@ stack and alerting notes are documented in [docs/observability.md](observability
 rg -n "tests pass|eval|load|tenant isolation|observability" README.md docs/CASE_STUDY.md
 ```
 
-Show where a reviewer can inspect the current test baseline, eval summary, load
+Show where an operator can inspect the current test baseline, eval summary, load
 summary, tenant-isolation proof, and observability proof. If the full test run
 is too long for the recording, show the command and the latest committed
 baseline in README, then keep the full run in terminal history for follow-up.
 
 Recommended output name once manually produced: `docs/assets/gdev-agent-demo.gif`
-or a linked external video. Until that file or link exists, portfolio docs
-should link to this checklist instead of implying a finished demo artifact.
+or a linked external video. Until that file or link exists, docs should link to
+this checklist instead of implying a finished demo artifact.
 
 ## Troubleshooting
 

@@ -157,7 +157,7 @@ This separation matches the code structure:
 | `cost_usd_per_case` | Eval cost / total cases | Stable cost efficiency signal for local and live evals. |
 | `latency_ms_per_case` | Mean runner latency per case | Local timing signal for regression review; interpret with environment variance. |
 | `reviewed_count` | Approval decisions in the recent tenant window | Sample size for team-learning metrics. |
-| `approval_latency_p50_ms` / `approval_latency_p95_ms` | Time from pending creation to human decision | Lower latency means the team is closing the AI-assisted loop faster. |
+| `approval_latency_p50_ms` / `approval_latency_p95_ms` | Time from pending creation to human decision | Lower latency means the team is closing the automated triage loop faster. |
 | `override_rate` | Share of reviewed decisions with an explicit override/correction marker | Rising values suggest tenant policy/prompt/model mismatch. |
 | `rejection_rate` | Share of reviewed decisions rejected by humans | Useful proxy for trust until richer correction feedback is available. |
 | `learning_sample_size_warning` | `true` when reviewed volume is below the configured sample threshold | Avoid over-reading noisy early data. |

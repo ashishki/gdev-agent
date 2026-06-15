@@ -144,7 +144,7 @@ Duration: job completes + 10 min cooldown observation
 
 ## Failure-Mode And SLO Linkage
 
-The local load targets above are inputs to [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They describe portfolio
+The local load targets above are inputs to [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They describe local
 proof targets, not a production SLA. When a load run crosses a failure threshold, classify the result
 with the stable names in [FAILURE_MODES.md](FAILURE_MODES.md):
 
@@ -167,7 +167,7 @@ Runbook ownership and local response steps live in [SLO_RUNBOOK.md](SLO_RUNBOOK.
 ```
 load_tests/
   locustfile.py         — shared scenario configs, fixture validation, HMAC helpers
-  check_kpis.py         — parses Locust CSV and prints portfolio KPIs
+  check_kpis.py         — parses Locust CSV and prints local KPIs
   scenarios/
     burst.py            — high webhook pressure user class
     steady.py           — lower pressure plus read/approval user class

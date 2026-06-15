@@ -1,6 +1,6 @@
 # gdev-agent — Architecture Spec v3.1
 
-_Last updated: 2026-06-14 · Implementation contract for Codex and human reviewers.
+_Last updated: 2026-06-14 · Architecture and operating contract.
 All PRs must keep this document current. Spec version must be bumped on structural change._
 
 ---
@@ -67,9 +67,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Eval runner + persistence | `eval/runner.py`, `app/services/eval_service.py` | ✅ Implemented |
 | RCA clusterer background job | `app/jobs/rca_clusterer.py` | ✅ Implemented |
 | Admin CLI for tenant/budget/RCA operations | `scripts/cli.py` | ✅ CLI-1 (Phase 10) |
-| Workflow operations guide | `docs/WORKFLOW.md` | ✅ PORT-2 (Phase 11) |
 | Demo harness | `scripts/demo.py` | ✅ PORT-3 (Phase 11) |
-| MCP server evaluation ADR | `docs/adr/006-mcp-server-evaluation.md` | ✅ PORT-4 (Phase 11) |
 | Eval dataset (180 synthetic cases) | `eval/cases.jsonl` | ✅ Implemented |
 | `ensure_ascii=False` in logs & store | `app/logging.py`, `app/store.py` | ✅ Implemented |
 | Exception info (`exc_info`) in JSON logs | `app/logging.py` | ✅ Implemented |
@@ -141,10 +139,6 @@ gdev-agent/
 ├── docs/
 │   ├── ARCHITECTURE.md      # this file
 │   ├── N8N.md               # n8n workflow blueprint and integration contract
-│   ├── WORKFLOW.md          # Operations workflow and demo runbook
-│   ├── adr/006-mcp-server-evaluation.md  # MCP deployment/evaluation decision record
-│   ├── tasks.md             # task graph and phase queue (active work)
-│   └── archive/PLAN_v3.md   # delivered history (archived)
 ├── Dockerfile
 ├── docker-compose.yml       # postgres + migrate + agent + redis + observability + n8n
 ├── requirements.txt
@@ -301,8 +295,8 @@ Key modules:
 ### 3.3 Docker Stack
 
 `docker-compose.yml` defines the local full-stack deployment used for
-development, demos, and portfolio smoke flows. This is local/pilot evidence,
-not a production deployment claim.
+development, demos, and smoke flows. This is local/pilot evidence, not a
+production deployment claim.
 
 | Service | Purpose |
 |---------|---------|

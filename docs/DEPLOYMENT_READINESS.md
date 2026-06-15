@@ -1,7 +1,7 @@
 # Deployment Readiness Notes
 
-These notes describe local and production-like setup knowledge for portfolio
-review. They do not claim that this repository is production ready, externally
+These notes describe local and production-like setup knowledge. They do not
+claim that this repository is production ready, externally
 deployed, or operating live tenants.
 
 ## Readiness Scope
@@ -21,7 +21,7 @@ What this proof does not cover:
   tenant operations.
 - Provider-side per-tenant LLM credentials. Tenant spend is controlled locally
   through `cost_ledger`.
-- A production SLA. Current SLOs and load evidence are local portfolio targets.
+- A production SLA. Current SLOs and load evidence are local operating targets.
 
 ## Secrets Checklist
 

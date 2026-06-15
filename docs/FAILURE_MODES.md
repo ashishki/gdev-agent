@@ -1,6 +1,6 @@
 # Failure Modes And Error Taxonomy
 
-This document is the canonical failure-mode taxonomy for the local portfolio hardening track. It
+This document is the canonical failure-mode taxonomy for the local reliability track. It
 defines stable names that tests, logs, traces, and runbooks can reference. It does not claim a
 production SLA or externally operated incident process.
 

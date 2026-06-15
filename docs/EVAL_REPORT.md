@@ -3,7 +3,7 @@
 Date: 2026-06-11
 
 This report records the current local, deterministic eval baseline for the committed synthetic
-dataset. It is portfolio evidence for eval instrumentation and regression visibility, not a claim
+dataset. It is local evidence for eval instrumentation and regression visibility, not a claim
 of production model quality.
 
 ## Command

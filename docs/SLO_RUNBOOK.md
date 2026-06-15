@@ -1,6 +1,6 @@
 # Local SLO And Runbook Notes
 
-This runbook defines local portfolio targets for the demo and test harness. It is not a production
+This runbook defines local operating targets for the demo and test harness. It is not a production
 SLA, pager contract, or customer-facing availability claim.
 
 ## Scope
@@ -57,5 +57,4 @@ pytest tests/test_eval_runner.py tests/test_eval_service.py -q
 
 Some integration tests require Docker or an external test database. If those dependencies are not
 available, record the skip reason and rely on the documented local smoke commands for the current
-portfolio proof.
-
+local proof.

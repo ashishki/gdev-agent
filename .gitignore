@@ -31,6 +31,7 @@ htmlcov/
 
 # Lint/type/tool caches
 .ruff_cache/
+.archive/
 .pyre/
 
 # Build artifacts
@@ -44,7 +45,7 @@ dist/
 .DS_Store
 *.log
 
-# AI-generated documentation
+# Local documentation drafts
 docs/spec.md
 docs/architecture.md
 docs/data-map.md

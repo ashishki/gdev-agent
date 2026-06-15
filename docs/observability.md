@@ -244,7 +244,7 @@ All alerts route to Grafana Alerting → Telegram channel or PagerDuty (configur
 
 The central local runbook is [SLO_RUNBOOK.md](SLO_RUNBOOK.md). It maps alerts and service symptoms
 to stable failure-mode names from [FAILURE_MODES.md](FAILURE_MODES.md). Per-alert runbook files may
-be added later if the project adds an externally operated deployment, but the current portfolio
+be added later if the project adds an externally operated deployment, but the current local
 scope keeps one canonical runbook.
 
 | Signal | Failure taxonomy link | Primary runbook check |
@@ -258,5 +258,5 @@ scope keeps one canonical runbook.
 | Postgres connection or slow-query symptoms | `FM_POSTGRES_UNAVAILABLE` / `FM_POSTGRES_DEGRADED` | Check DB health, failed traces, and side-effect completion before replay. |
 
 Local SLO targets for latency, error rate, approval queue behavior, guard blocks, and dependency
-failure response are defined in [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They are portfolio targets, not a
+failure response are defined in [SLO_RUNBOOK.md](SLO_RUNBOOK.md). They are local targets, not a
 production SLA.

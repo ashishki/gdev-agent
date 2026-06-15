@@ -8,7 +8,7 @@ webhooks and workflow tools. The hard part is not just classification; it is
 keeping risky actions behind review, preserving tenant isolation, and leaving a
 usable audit trail.
 
-`gdev-agent` is a local/pilot portfolio implementation of that workflow. The
+`gdev-agent` is a local/pilot implementation of that workflow. The
 problem is bounded to support triage reliability; this is not an external
 deployment or production SaaS claim.
 
@@ -105,11 +105,6 @@ artifact is committed yet. Recording one is a manual packaging task using the
 checklist in [docs/DEMO.md#recording-checklist](DEMO.md#recording-checklist),
 which covers setup, the deterministic demo run, approval/audit evidence,
 metrics, and test/evidence pointers.
-
-Optional resume-ready packaging lives in
-[docs/RESUME_BULLETS.md](RESUME_BULLETS.md). Those bullets keep tests, eval,
-load, tenant isolation, observability, and production-user limits tied to
-repo evidence.
 
 ## Trade-Offs
 

@@ -2,7 +2,7 @@
 
 Date: 2026-06-12
 
-This report is local deterministic/synthetic portfolio evidence. It proves that
+This report is local deterministic/synthetic evidence. It proves that
 the load harness, KPI checker, and reporting path are reproducible, but it does
 not claim production capacity, external deployment performance, or live tenant
 traffic.
