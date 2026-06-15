@@ -9,7 +9,7 @@ reliable AI/agent systems.
 | --- | --- | --- | --- |
 | Governed workflow | `gdev-agent` | Multi-tenant support-triage workflow with webhook intake, guardrails, approval, audit, cost, and observability controls. | 285 tests, local Compose demo, 180-case internal smoke eval, load and isolation evidence. |
 | Quality layer | `Eval-Ground-Truth-Lab` | Deterministic regression evaluation framework for structured output, routing, unsafe auto-approval, cost, latency, and adapter behavior. | 55-case live local gdev-agent baseline with zero adapter errors and zero validator failures. |
-| Runtime layer | `Agent-Runtime-Grid` | Queue-backed runtime for running many AI/agent jobs with retries, timeouts, idempotent finalization, artifacts, metrics, and cost controls. | 100-job smoke, 500-job reliability proof, failure-injection reports, cross-project artifact proof, and optional live-local HTTP proof. |
+| Runtime layer | `Agent-Runtime-Grid` | Queue-backed runtime for running many AI/agent jobs with retries, timeouts, idempotent finalization, artifacts, metrics, and cost controls. | 100-job smoke, 500-job reliability proof, failure-injection reports, cross-project artifact proof, and 20-job operator-run live-local HTTP proof snapshot. |
 
 ## How They Connect
 
@@ -37,8 +37,10 @@ Agent Runtime Grid
 That Runtime Grid mode does not call live `gdev-agent` over HTTP by default. A
 separate optional `full-stack-live-local` mode now runs Grid workers that call a
 local `gdev-agent` `/webhook` endpoint and write sanitized runtime artifacts.
-That live-local mode is still local/operator-run evidence; it does not claim
-hosted operations, external users, or production traffic.
+The latest committed Runtime Grid snapshot records 20/20 queued local HTTP jobs
+completed against a local demo-mode `gdev-agent` stack on 2026-06-15. That
+live-local mode is still local/operator-run evidence; it does not claim hosted
+operations, external users, or production traffic.
 
 ## What An Agent Means Here
 
