@@ -1,0 +1,8 @@
+{"id":"billing-refund-001","text":"I was charged twice for the starter pack and need a refund review.","category":"billing","requires_human":true,"synthetic":true}
+{"id":"billing-refund-002","text":"Refund my accidental gems purchase from yesterday.","category":"billing","requires_human":true,"synthetic":true}
+{"id":"account-access-001","text":"My verification code never arrives and I am locked out.","category":"account_access","requires_human":true,"synthetic":true}
+{"id":"moderation-001","text":"A player is repeatedly harassing others in chat.","category":"moderation","requires_human":true,"synthetic":true}
+{"id":"legal-privacy-001","text":"Please delete the records for this profile under privacy rights.","category":"legal","requires_human":true,"synthetic":true}
+{"id":"bug-report-001","text":"Game crashes with ERR-0001 on Windows after match start.","category":"bug_report","requires_human":false,"synthetic":true}
+{"id":"bug-report-002","text":"The export button creates an empty CSV for the synthetic project.","category":"bug_report","requires_human":false,"synthetic":true}
+{"id":"gameplay-question-001","text":"How do I craft a healing potion in the tutorial area?","category":"gameplay_question","requires_human":false,"synthetic":true}

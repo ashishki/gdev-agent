@@ -41,6 +41,11 @@ POST /webhook
   Risk conditions: category, urgency, confidence, legal keywords
      │
      ▼
+[Exemplar Consistency Guard]
+  Compare request to curated synthetic triage exemplars
+  Conflict → risky=True, route to pending; never rewrites category
+     │
+     ▼
 [Route Decision]
   risky=True  → pending (RedisApprovalStore)
   risky=False → execute (TOOL_REGISTRY)
@@ -150,6 +155,17 @@ Runs after LLM loop, before routing:
 2. **URL allowlist** — strips/rejects URLs not in `settings.url_allowlist`
 3. **Confidence floor** — `confidence < threshold` → override action to pending
 
+### Exemplar Consistency Guard (`app/exemplar_guard.py`)
+
+Runs after output guard and before route/execute. It compares the incoming text to curated
+synthetic examples in `eval/exemplars/triage_v1.jsonl`. When the nearest example is above
+`EXEMPLAR_GUARD_THRESHOLD` and conflicts with the predicted category or expected human-review
+route, the guard marks the action `risky=True` and sends it to pending approval.
+
+This guard is non-authoritative: it never rewrites the classification and never approves an action.
+It only blocks unsafe auto-execution and emits `exemplar_consistency_conflict` evidence with
+exemplar IDs, categories, and similarity scores. Raw ticket text is not written to the guard event.
+
 ### Confidence Thresholds
 
 | Threshold | Config var | Default | Effect |
@@ -167,6 +183,7 @@ Risk conditions (any one triggers pending):
 - `confidence < AUTO_APPROVE_THRESHOLD`
 - text contains legal keywords: `"lawyer"`, `"lawsuit"`, `"press"`, `"gdpr"`
 - `flag_for_human` called
+- exemplar consistency conflict against curated synthetic cases
 
 Pending flow: `propose_action() → risky=True → Redis store (TTL: 3600s) → Telegram notify → POST /approve → execute/reject → approval_events`.
 
@@ -508,6 +525,7 @@ configuration and must be testable in isolation.
 | Secret detected in output | Redact token; log `output_guard_redacted` |
 | URL not in allowlist | Strip URL or return 500 depending on `output_url_behavior` |
 | Confidence below floor | Override `proposed_action.risky=True` |
+| Exemplar category/routing conflict | Override `proposed_action.risky=True`; log exemplar IDs |
 
 ### Role Sensitivity
 

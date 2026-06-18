@@ -38,6 +38,7 @@ _Date: 2026-03-03 · See ADR-004 for the decision rationale behind this stack._
 |---|---|---|---|
 | `gdev_guard_blocks_total` | Counter | `guard_type` (`input`/`output`), `reason`, `tenant_hash` | Guard block events |
 | `gdev_guard_redactions_total` | Counter | `guard_type`, `tenant_hash` | Redactions (non-blocking) |
+| `gdev_exemplar_consistency_total` | Counter | `status`, `tenant_hash` | Exemplar guard outcomes: disabled, no-match, consistent, or conflict |
 | `gdev_injection_attempts_total` | Counter | `tenant_hash` | Input injection pattern hits |
 
 ### 2.3 LLM metrics
@@ -82,6 +83,7 @@ _Date: 2026-03-03 · See ADR-004 for the decision rationale behind this stack._
 | Dedup replay check | Was this webhook a replay, and did it avoid duplicate side effects? | `gdev_webhook_service_calls_total{method="handle",outcome="dedup_hit"}` | `middleware.dedup`, log `webhook_dedup_hit` | Request Rate and Failure Mode Signals |
 | Input guard | Did unsafe input stop before any model call? | `gdev_guard_blocks_total{guard_type="input"}`, `gdev_injection_attempts_total` | `agent.input_guard`, log `guard_blocked` | Guard Block Rate |
 | LLM classify/extract/draft | Is the provider slow, retrying, or returning malformed output? | `gdev_llm_requests_total`, `gdev_llm_duration_seconds`, `gdev_llm_retry_total`, `gdev_llm_tokens_total` | `agent.llm_classify`, `llm.api_call`, log `llm_call_complete` | LLM Latency p50/p95 and Failure Mode Signals |
+| Exemplar consistency | Did a curated similar case disagree with auto-execution? | `gdev_exemplar_consistency_total{status="conflict"}` | `agent.exemplar_consistency`, log `exemplar_consistency_conflict` | Failure Mode Signals |
 | Approval route | Are risky actions being queued and reviewed? | `gdev_pending_total`, `gdev_approval_queue_depth`, `gdev_approved_total`, `gdev_rejected_total` | `agent.route`, `integration.telegram_notify`, log `pending_created` | Approval Workflow Outcomes and Pending Queue Depth |
 | Execution and audit | Did safe/approved work complete with cost and audit evidence? | `gdev_llm_cost_usd_total`, `gdev_budget_utilization_ratio`, `gdev_budget_exceeded_total`, `gdev_integration_errors_total` | `db.ticket_insert`, `integration.linear_create`, log `action_executed` | LLM Cost, Budget Utilization Ratio, Failure Mode Signals |
 

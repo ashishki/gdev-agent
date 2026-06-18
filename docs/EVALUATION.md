@@ -137,7 +137,24 @@ This separation matches the code structure:
 - `eval/runner.py` is the direct runner surface.
 - `app/routers/eval.py` and `app/services/eval_service.py` cover the persisted API-driven flow.
 
-## 6. Metrics
+## 6. Runtime Exemplar Consistency Guard
+
+`app/exemplar_guard.py` provides a runtime drift signal for the approval workflow. It compares a
+new triage decision with curated synthetic examples from `eval/exemplars/triage_v1.jsonl`.
+
+The guard is intentionally narrower than the batch eval runner:
+
+- It does not score model quality.
+- It does not rewrite the predicted category.
+- It does not approve or reject actions.
+- It only prevents auto-execution when a high-similarity exemplar conflicts with the predicted
+  category or expected human-review route.
+
+This is useful for approval safety because a misclassified refund, account-access, moderation, or
+legal-style request can still be routed to pending even when the classifier returns a low-risk
+category with high confidence.
+
+## 7. Metrics
 
 `eval/runner.py` computes and/or persists the following signals. The older `accuracy`, `total`, and
 `correct` keys remain for compatibility; the stable regression-facing names are the
@@ -162,6 +179,7 @@ This separation matches the code structure:
 | `rejection_rate` | Share of reviewed decisions rejected by humans | Useful proxy for trust until richer correction feedback is available. |
 | `learning_sample_size_warning` | `true` when reviewed volume is below the configured sample threshold | Avoid over-reading noisy early data. |
 | `status` | Run lifecycle state | `completed_with_regression` indicates a meaningful drop versus the prior run. |
+| `gdev_exemplar_consistency_total` | Runtime guard outcomes by status | Indicates disabled/no-match/consistent/conflict decisions before route execution. |
 
 Regression behavior:
 - `run_eval_job()` compares the current score to the previous stored `f1_score` for the tenant.

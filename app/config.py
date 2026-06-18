@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     )
     max_input_length: int = 2000
     auto_approve_threshold: float = 0.85
+    exemplar_guard_enabled: bool = True
+    exemplar_guard_threshold: float = 0.62
+    exemplar_guard_top_k: int = 3
+    exemplar_guard_examples_path: str | None = None
     approval_categories: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["billing"]
     )

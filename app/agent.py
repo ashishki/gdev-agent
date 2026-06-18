@@ -20,6 +20,7 @@ from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import _set_tenant_ctx
 from app.embedding_service import EmbeddingService
 from app.exceptions import AgentError, BudgetError, ValidationError
+from app.exemplar_guard import ExemplarConsistencyGuard
 from app.guardrails.output_guard import OutputGuard
 from app.integrations.sheets import SheetsClient
 from app.integrations.telegram import TelegramClient
@@ -29,6 +30,7 @@ from app.metrics import (
     APPROVED_TOTAL,
     BUDGET_EXCEEDED_TOTAL,
     BUDGET_UTILIZATION_RATIO,
+    EXEMPLAR_CONSISTENCY_TOTAL,
     GUARD_BLOCKS_TOTAL,
     GUARD_REDACTIONS_TOTAL,
     INJECTION_ATTEMPTS_TOTAL,
@@ -117,6 +119,7 @@ class AgentService:
         sheets_client: SheetsClient | None = None,
         cost_ledger: CostLedger | None = None,
         embedding_service: EmbeddingService | None = None,
+        exemplar_guard: ExemplarConsistencyGuard | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -127,6 +130,7 @@ class AgentService:
         self.sheets_client = sheets_client
         self.cost_ledger = cost_ledger or CostLedger()
         self.embedding_service = embedding_service
+        self.exemplar_guard = exemplar_guard or ExemplarConsistencyGuard(settings)
 
     def process_webhook(
         self, payload: WebhookRequest, message_id: str | None = None
@@ -284,6 +288,56 @@ class AgentService:
             )
         draft_response = guard_result.redacted_draft
 
+        with TRACER.start_as_current_span("agent.exemplar_consistency") as span:
+            if tenant_hash is not None:
+                span.set_attribute("tenant_id_hash", tenant_hash)
+            exemplar_consistency = self.exemplar_guard.evaluate(
+                text=payload.text,
+                classification=classification,
+                action=action,
+            )
+            span.set_attribute("status", exemplar_consistency.status)
+            span.set_attribute("match_count", len(exemplar_consistency.matches))
+            EXEMPLAR_CONSISTENCY_TOTAL.labels(
+                status=exemplar_consistency.status,
+                tenant_hash=metric_tenant_hash,
+            ).inc()
+            if exemplar_consistency.status == "conflict":
+                span.set_attribute("reason", exemplar_consistency.reason or "")
+                self.store.log_event(
+                    "exemplar_consistency_conflict",
+                    {
+                        "tenant_id": payload.tenant_id,
+                        "predicted_category": classification.category,
+                        "predicted_urgency": classification.urgency,
+                        "reason": exemplar_consistency.reason,
+                        "matches": [
+                            match.model_dump(mode="json")
+                            for match in exemplar_consistency.matches
+                        ],
+                    },
+                )
+                if not action.risky:
+                    action = action.model_copy(
+                        update={
+                            "risky": True,
+                            "risk_reason": exemplar_consistency.reason,
+                        }
+                    )
+                LOGGER.info(
+                    "exemplar consistency conflict",
+                    extra={
+                        "event": "exemplar_consistency_conflict",
+                        "context": {
+                            "category": classification.category,
+                            "reason": exemplar_consistency.reason,
+                            "match_ids": [
+                                match.exemplar_id for match in exemplar_consistency.matches
+                            ],
+                        },
+                    },
+                )
+
         with TRACER.start_as_current_span("agent.route") as span:
             if tenant_hash is not None:
                 span.set_attribute("tenant_id_hash", tenant_hash)
@@ -377,6 +431,7 @@ class AgentService:
                 requires_human=True,
                 guard_blocked=False,
                 unsafe_auto_approval=False,
+                exemplar_consistency=exemplar_consistency,
             )
 
         action_result = self.execute_action(
@@ -457,6 +512,7 @@ class AgentService:
             requires_human=False,
             guard_blocked=False,
             unsafe_auto_approval=False,
+            exemplar_consistency=exemplar_consistency,
         )
 
     def approve(

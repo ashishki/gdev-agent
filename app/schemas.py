@@ -87,6 +87,24 @@ class ProposedAction(BaseModel):
     risk_reason: str | None = None
 
 
+class ExemplarMatch(BaseModel):
+    """Nearest curated triage exemplar used by the consistency guard."""
+
+    exemplar_id: str
+    category: Category
+    requires_human: bool
+    similarity: float = Field(..., ge=0.0, le=1.0)
+
+
+class ExemplarConsistencyResult(BaseModel):
+    """Non-authoritative runtime drift signal from curated triage exemplars."""
+
+    status: Literal["disabled", "no_match", "consistent", "conflict"]
+    threshold: float
+    matches: list[ExemplarMatch] = Field(default_factory=list)
+    reason: str | None = None
+
+
 class CreateTicketToolResult(BaseModel):
     """Validated action tool payload shape."""
 
@@ -122,6 +140,7 @@ class WebhookResponse(BaseModel):
     requires_human: bool = False
     guard_blocked: bool = False
     unsafe_auto_approval: bool = False
+    exemplar_consistency: ExemplarConsistencyResult | None = None
 
 
 class ApproveRequest(BaseModel):

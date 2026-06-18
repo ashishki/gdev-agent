@@ -45,6 +45,11 @@ GUARD_REDACTIONS_TOTAL = Counter(
     "Guard redactions",
     ["guard_type", "tenant_hash"],
 )
+EXEMPLAR_CONSISTENCY_TOTAL = Counter(
+    "gdev_exemplar_consistency_total",
+    "Exemplar consistency guard outcomes",
+    ["status", "tenant_hash"],
+)
 INJECTION_ATTEMPTS_TOTAL = Counter(
     "gdev_injection_attempts_total",
     "Input injection pattern hits",

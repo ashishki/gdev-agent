@@ -44,6 +44,7 @@ not in application code. See `docs/N8N.md` for the full workflow blueprint.
 | Claude `tool_use` client | `app/llm_client.py` | ✅ Implemented |
 | Input guard (15 pattern classes) | `app/agent.py · _guard_input()` | ✅ Implemented |
 | Output guard (secrets + URL allowlist + confidence floor) | `app/guardrails/output_guard.py` | ✅ Implemented |
+| Exemplar consistency guard | `app/exemplar_guard.py`, `eval/exemplars/triage_v1.jsonl` | ✅ Implemented |
 | JSON structured logger | `app/logging.py` | ✅ Implemented |
 | X-Request-ID middleware | `app/main.py` | ✅ Implemented |
 | Latency measurement (`latency_ms`) | `app/agent.py` | ✅ Implemented |
@@ -1017,6 +1018,10 @@ LLM_OUTPUT_RATE_PER_1K=0.015
 # ── Agent behaviour ───────────────────────────────────────────────────────
 MAX_INPUT_LENGTH=2000
 AUTO_APPROVE_THRESHOLD=0.85          # confidence ≥ this → auto-approve (low/medium urgency only)
+EXEMPLAR_GUARD_ENABLED=true
+EXEMPLAR_GUARD_THRESHOLD=0.62
+EXEMPLAR_GUARD_TOP_K=3
+EXEMPLAR_GUARD_EXAMPLES_PATH=        # empty uses eval/exemplars/triage_v1.jsonl
 APPROVAL_CATEGORIES=billing,account_access
 APPROVAL_TTL_SECONDS=3600            # pending tokens expire after N seconds
 
@@ -1073,6 +1078,7 @@ GOOGLE_SHEETS_ID=                    # spreadsheet ID
 **Configurable only in agent env vars:**
 - `APPROVAL_CATEGORIES` — which categories require human approval.
 - `AUTO_APPROVE_THRESHOLD` — confidence floor for auto-approval.
+- `EXEMPLAR_GUARD_*` — curated-example consistency guard before auto-execution.
 - `APPROVAL_TTL_SECONDS` — pending token validity. **n8n Wait node timeout must be ≤ this value.**
 
 **Shared configuration (must stay in sync):**

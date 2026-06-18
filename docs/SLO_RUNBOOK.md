@@ -33,6 +33,7 @@ SLA, pager contract, or customer-facing availability claim.
 | `FM_LLM_TIMEOUT` | Check `llm.api_call` spans, `gdev_llm_requests_total{status="error"}`, and retry counts. | Verify no action executed without valid classification; retry through upstream only if safe. | Run LLM client/provider degradation tests after T13. |
 | `FM_LLM_MALFORMED_OUTPUT` | Search for `llm_invalid_response` and eval `invalid_structured_output_rate`. | Keep fail-closed behavior; do not relax validators without adding eval cases. | Run `pytest tests/test_eval_runner.py tests/test_eval_service.py -q`. |
 | `FM_OUTPUT_GUARD_BLOCK` | Check output guard block metric and span attributes. | Treat as safety-critical; preserve sample metadata without raw prompt/response text. | Run output guard tests after T12 and eval unsafe-output cases. |
+| `FM_EXEMPLAR_CONSISTENCY_CONFLICT` | Inspect `gdev_exemplar_consistency_total{status="conflict"}` and nearest exemplar IDs. | Keep the action pending; compare classifier output with the exemplar and add or adjust eval cases before tuning thresholds. | Run `pytest tests/test_agent.py::test_exemplar_consistency_conflict_blocks_auto_approval -q`. |
 | `FM_APPROVAL_TTL_EXPIRED` | Check `pending_expired` and approval queue age. | Tell reviewer the approval expired; create a fresh pending action if still needed. | Run `pytest tests/test_redis_approval_store.py -q`; full flow after T12/T14. |
 | `FM_CROSS_TENANT_APPROVAL` | Compare hashed JWT tenant context with pending decision tenant ownership. | Reject as a security event; do not retry with mismatched tenant credentials. | Run T14 cross-tenant approval boundary tests when implemented. |
 | `FM_RATE_LIMIT_EXCEEDED` | Inspect 429 rate, tenant/user distribution, and `rate_limit.blocked=true` spans. | Honor retry delay; tune only if normal demo traffic is blocked. | Run middleware tests and load Scenario A. |
@@ -40,7 +41,8 @@ SLA, pager contract, or customer-facing availability claim.
 
 ## Escalation Rules
 
-- Safety or tenant isolation failures (`FM_OUTPUT_GUARD_BLOCK`, `FM_CROSS_TENANT_APPROVAL`) are
+- Safety or tenant isolation failures (`FM_OUTPUT_GUARD_BLOCK`, `FM_EXEMPLAR_CONSISTENCY_CONFLICT`,
+  `FM_CROSS_TENANT_APPROVAL`) are
   security-critical for review purposes and require deep review before closure.
 - Dependency failures are acceptable only when the documented behavior preserves correctness:
   idempotency, tenant isolation, approval audit, and no unsafe auto-execution.

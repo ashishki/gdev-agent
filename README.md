@@ -142,6 +142,9 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 | `AUTH_RATE_LIMIT_ATTEMPTS` | No | Login throttling |
 | `MAX_INPUT_LENGTH` | No | Input guard length cap |
 | `AUTO_APPROVE_THRESHOLD` | No | Confidence threshold for auto execution |
+| `EXEMPLAR_GUARD_ENABLED` | No | Enables curated-example consistency checks before auto execution |
+| `EXEMPLAR_GUARD_THRESHOLD` / `EXEMPLAR_GUARD_TOP_K` | No | Similarity threshold and nearest-example count |
+| `EXEMPLAR_GUARD_EXAMPLES_PATH` | No | Optional JSONL override; empty uses `eval/exemplars/triage_v1.jsonl` |
 | `APPROVAL_CATEGORIES` | No | Comma-separated category list |
 | `APPROVAL_TTL_SECONDS` | No | Pending approval expiry |
 | `OUTPUT_GUARD_ENABLED` | No | Enables output checks |

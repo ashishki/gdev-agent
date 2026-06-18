@@ -40,6 +40,27 @@ class FakeLLMClient:
         )
 
 
+class FixedTriageLLMClient:
+    def __init__(self, classification: ClassificationResult) -> None:
+        self.classification = classification
+
+    def run_agent(
+        self,
+        text: str,
+        user_id: str | None = None,
+        max_turns: int = 5,
+        tenant_id: str | None = None,
+    ) -> TriageResult:
+        _ = (text, max_turns, tenant_id)
+        return TriageResult(
+            classification=self.classification,
+            extracted=ExtractedFields(user_id=user_id),
+            draft_text="LLM draft response",
+            input_tokens=20,
+            output_tokens=10,
+        )
+
+
 class CapturingStore(EventStore):
     def __init__(self) -> None:
         super().__init__(sqlite_path=None)
@@ -210,6 +231,73 @@ def test_demo_llm_mode_routes_risky_fixture_through_approval_and_audit() -> None
         "I was charged twice for the starter pack and need a refund review."
     )
     assert [event for event, _payload in store.events] == ["pending_created"]
+
+
+def test_exemplar_consistency_conflict_blocks_auto_approval() -> None:
+    settings = Settings(
+        approval_categories=[],
+        auto_approve_threshold=0.5,
+        exemplar_guard_enabled=True,
+    )
+    store = CapturingStore()
+    agent = AgentService(
+        settings=settings,
+        store=store,
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=FixedTriageLLMClient(
+            ClassificationResult(category="bug_report", urgency="low", confidence=0.96)
+        ),
+        cost_ledger=_NoopCostLedger(),
+    )
+
+    response = agent.process_webhook(
+        WebhookRequest(
+            text="I was charged twice for the starter pack and need a refund review.",
+            user_id="u1",
+            tenant_id="11111111-1111-1111-1111-111111111111",
+        )
+    )
+
+    assert response.status == "pending"
+    assert response.action.risky is True
+    assert response.action.risk_reason is not None
+    assert "billing-refund-001" in response.action.risk_reason
+    assert response.exemplar_consistency is not None
+    assert response.exemplar_consistency.status == "conflict"
+    assert response.exemplar_consistency.matches[0].exemplar_id == "billing-refund-001"
+    assert [event for event, _payload in store.events] == [
+        "exemplar_consistency_conflict",
+        "pending_created",
+    ]
+
+
+def test_exemplar_consistency_can_be_disabled() -> None:
+    settings = Settings(
+        approval_categories=[],
+        auto_approve_threshold=0.5,
+        exemplar_guard_enabled=False,
+    )
+    agent = AgentService(
+        settings=settings,
+        store=CapturingStore(),
+        approval_store=RedisApprovalStore(fakeredis.FakeRedis(), ttl_seconds=3600),
+        llm_client=FixedTriageLLMClient(
+            ClassificationResult(category="bug_report", urgency="low", confidence=0.96)
+        ),
+        cost_ledger=_NoopCostLedger(),
+    )
+
+    response = agent.process_webhook(
+        WebhookRequest(
+            text="I was charged twice for the starter pack and need a refund review.",
+            user_id="u1",
+            tenant_id="11111111-1111-1111-1111-111111111111",
+        )
+    )
+
+    assert response.status == "executed"
+    assert response.exemplar_consistency is not None
+    assert response.exemplar_consistency.status == "disabled"
 
 
 def test_demo_llm_mode_still_blocks_adversarial_input_before_model() -> None:
