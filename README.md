@@ -24,6 +24,7 @@ For a claim-by-claim proof map, start with
 | Three-project stack map | [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md) | Explains how gdev-agent, Eval Ground Truth Lab, and Agent Runtime Grid fit together as workflow, quality, and runtime layers |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
+| Agent harness boundary | [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md), [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md), [AGENTS.md](AGENTS.md) | Model + prompt/tool loop + guards + approvals + trace + eval are reviewed as one bounded harness |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab integration baseline, and scope reconciliation |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
@@ -212,6 +213,8 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md): three-project stack map and provider strategy.
 - [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): explains the internal 180-case smoke eval versus the Eval Lab 55-case integration baseline.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
+- [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md): agent harness boundary across model, tools, memory, retries, permissions, HITL, trace, and eval.
+- [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md): trace completeness contract for debugging, eval, audit, and approval retrospectives.
 - [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
 - [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
@@ -224,6 +227,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md): local production-like config, secrets checklist, backup/restore notes, and known limitations.
 - [docs/data-map.md](docs/data-map.md): schema, Redis keys, and tenant-boundary rules.
 - [n8n/README.md](n8n/README.md): workflow assets committed in this repository.
+- [AGENTS.md](AGENTS.md): operating rules for coding/ops agents working in this repo.
 
 ## Known Limits
 

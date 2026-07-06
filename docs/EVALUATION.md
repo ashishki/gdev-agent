@@ -14,6 +14,11 @@ duplicate webhook replay, and tenant-boundary rejection. There is no `eval/datas
 this checkout yet, so local runs should point at `eval/cases.jsonl` unless that layout changes in a
 later task.
 
+`eval/harness_regression.jsonl` is a smaller trace-oriented fixture for harness review. It covers
+ambiguous tickets, injection blocking, approval-required billing, legal/GDPR policy stress, output
+guarding, and tenant-boundary rejection. It is synthetic and does not replace the main runner
+dataset until a future adapter consumes `expected_trace_events`.
+
 ## 2. Dataset Format
 
 The runner consumes JSON Lines. Each line is one independent case object.
@@ -70,6 +75,14 @@ Dataset constraints:
   production tenant identifiers.
 - Keep the dataset between 150 and 300 cases until a future task introduces dataset versioning.
 
+Harness regression constraints:
+- cases must keep `synthetic: true`;
+- every case must include `expected_route`, `expected_guard_behavior`, `risk_expectation`, and
+  `expected_trace_events`;
+- the fixture should stress approval, guard, tenant, and trace completeness paths before any
+  harness change is considered safer or more autonomous;
+- direct runner metrics still come from `eval/cases.jsonl` unless the runner is extended.
+
 ## 4. Running Locally
 
 1. Start the local stack:
@@ -101,6 +114,12 @@ LLM_MODE=demo python -m eval.runner --gate --no-write
 ```
 
 The gate exits non-zero when any default threshold in `eval.runner.DEFAULT_EVAL_THRESHOLDS` fails.
+
+To validate the harness documentation and trace-oriented fixture:
+
+```bash
+pytest tests/test_harness_docs.py -q
+```
 
 5. Trigger a persisted tenant eval through the API path:
 
