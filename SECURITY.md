@@ -28,15 +28,18 @@ configuration. Ordinary reproducible defects belong in the
 
 Do **not** open a public issue for a suspected vulnerability.
 
-1. Prefer GitHub's private
-   [Report a vulnerability](https://github.com/ashishki/gdev-agent/security/advisories/new)
-   path. Include the affected commit, prerequisites, a minimal reproduction,
-   impact, and any suggested mitigation.
-2. If GitHub does not make that private form available to your account, email
-   `verter25@gmail.com` with subject `gdev-agent security report`. Keep the
-   first message minimal and do not attach secrets, tokens, customer data, or
-   an exploit against a system you do not own. A safer detail-transfer channel
-   can be agreed before sending sensitive material.
+1. Email `verter25@gmail.com` with subject `gdev-agent security report`.
+   Include the affected commit, prerequisites, a minimal reproduction, impact,
+   and any suggested mitigation. Keep the first message minimal and do not
+   attach secrets, tokens, customer data, or an exploit against a system you do
+   not own. A safer detail-transfer channel can be agreed before sending
+   sensitive material.
+2. GitHub private vulnerability reporting is not enabled for this repository
+   as of 2026-07-13. If the repository's
+   [Security page](https://github.com/ashishki/gdev-agent/security) later shows
+   a **Report a vulnerability** button, that enabled private form is also an
+   acceptable path. Do not rely on the direct advisory URL unless GitHub shows
+   the feature as enabled.
 
 Please allow coordinated remediation before public disclosure. This
 maintainer-run reference project cannot promise a response or fix deadline, but

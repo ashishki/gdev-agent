@@ -56,9 +56,10 @@ def test_maintainer_intake_is_private_bounded_and_reproducible() -> None:
     bug_form = (ROOT / ".github/ISSUE_TEMPLATE/reproducible-bug.yml").read_text(encoding="utf-8")
     issue_config = (ROOT / ".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
 
-    private_path = "https://github.com/ashishki/gdev-agent/security/advisories/new"
-    assert private_path in security
-    assert private_path in issue_config
+    assert "verter25@gmail.com" in security
+    assert "GitHub private vulnerability reporting is not enabled" in security
+    assert "https://github.com/ashishki/gdev-agent/security/policy" in issue_config
+    assert "security/advisories/new" not in issue_config
     assert "Do **not** open a public issue" in security
     assert "Current `master` at an identified commit SHA" in security
     assert "no tagged stable product release" in security
