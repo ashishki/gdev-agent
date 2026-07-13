@@ -13,6 +13,11 @@ def test_harness_docs_are_linked_and_define_boundaries() -> None:
 
     assert "docs/HARNESS_CARD.md" in readme
     assert "img.shields.io" not in readme
+    assert "## Current Maturity" in readme
+    assert "## Relationship to the Portfolio" in readme
+    assert "## Product Boundary and Non-Goals" in readme
+    assert "pilot-grade" not in readme
+    assert "github.com/your-handle" not in readme
     assert "model + prompt/tool loop + guards + approvals + trace + eval" in harness
     assert "No autonomous long-term memory" in harness
     assert "gdev-agent-trace-v1" in trace

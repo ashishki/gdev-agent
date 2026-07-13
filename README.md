@@ -1,15 +1,39 @@
 # gdev-agent
 
-`gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
-game-studio support: it receives support webhooks, blocks unsafe input before
-any model call, classifies and extracts structured data with an LLM, routes
-risky actions into human approval, and records the resulting audit, cost, and
-analytics trail behind one HTTP API.
+`gdev-agent` is a governed local support-triage reference workload for
+game-studio scenarios. It receives signed support webhooks, blocks unsafe input
+before any model call, classifies and extracts structured data, routes risky
+actions into human approval, and records an audit/cost trail behind one HTTP
+API.
 
-Status: local evidence baseline complete. The current stack is pilot-grade:
-Docker Compose setup, synthetic demo and eval paths, and repository tests. This
-README does not claim production SaaS readiness, external deployment, or live
-customer usage.
+## Current Maturity
+
+The supported proof boundary is a tested local Docker Compose workload with
+synthetic demo/eval data and database-enforced tenant isolation. Its 55-case
+conformance set passes, while the harder published 100-case Eval Lab gate fails.
+There is no claimed pilot, external deployment, live customer traffic,
+production readiness, or production SLO.
+
+## Relationship to the Portfolio
+
+- This repository owns application behavior, signed ingress, approval/audit
+  flows, tenant controls, and candidate fixes.
+- [Eval Ground Truth Lab](https://github.com/ashishki/Eval-Ground-Truth-Lab)
+  owns external workflow-quality gates. Its canonical 100-case result for this
+  revision is FAIL and remains authoritative for those challenge outcomes.
+- [Agent Runtime Grid](https://github.com/ashishki/Agent-Runtime-Grid) is an
+  optional execution layer. It does not replace gdev lifecycle/security tests
+  or Eval Lab quality decisions.
+- [AI Workflow Playbook](https://github.com/ashishki/AI_workflow_playbook) is an
+  independent governance companion, not a runtime dependency.
+- The thin umbrella pins compatible revisions and runs integration evidence; it
+  does not absorb component code or history.
+
+## Product Boundary and Non-Goals
+
+The repository demonstrates one bounded local support workflow. It is not a
+hosted support platform, customer-data product, generic agent framework,
+production multi-tenant SaaS, or proof that the demo classifier generalizes.
 
 ## Evidence Path
 
@@ -31,11 +55,15 @@ For a claim-by-claim proof map, start with
 | Tests | [Current State](#current-state) | 2026-07-13 local baseline: 310 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
-| Known limits and production changes | [Known Limits](#known-limits), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
+| Known limits and production changes | [Known Limits](#known-limits), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as local reference evidence, not production SaaS readiness |
 
 ## Why This Project Exists
 
-Game studios deal with billing disputes, account-access incidents, bug reports, moderation signals, and repetitive gameplay questions at a volume where manual triage becomes slow and brittle. `gdev-agent` is the orchestration layer between inbound support traffic and downstream systems: it keeps routine requests moving, forces human review when confidence or risk is low, and preserves tenant isolation, observability, and cost controls.
+The synthetic reference scenario covers billing disputes, account-access
+incidents, bug reports, moderation signals, and repetitive gameplay questions.
+`gdev-agent` exercises the orchestration boundary between inbound support
+traffic and downstream tools: routine paths move through deterministic controls,
+while low-confidence or risky actions require review.
 
 ## Architecture
 
@@ -77,7 +105,7 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 This path is aligned to [docker-compose.yml](docker-compose.yml) and is the fastest way to get a healthy local stack.
 
 ```bash
-git clone https://github.com/your-handle/gdev-agent.git
+git clone https://github.com/ashishki/gdev-agent.git
 cd gdev-agent
 cp .env.example .env
 docker compose up --build
@@ -235,7 +263,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 ## Known Limits
 
-- The project is pilot-grade/local evidence. It has no claimed external
+- The project is a tested local reference workload. It has no claimed external
   deployment, production SaaS readiness, live tenant traffic, or real customer
   operations.
 - Demo, eval, and load evidence is synthetic unless a later report explicitly
@@ -251,21 +279,20 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
   a threshold pass. See
   [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md).
 - Live load measurements remain out of scope for the current local evidence.
-  Deployment readiness notes are local/pilot-only and explicitly do not prove
+  Deployment readiness notes are local-only and explicitly do not prove
   production readiness.
 - Live LLM behavior requires a real Anthropic API key and budget controls; the
   local stack is the supported review path today.
 
 ## Current State
 
-The local stack is pilot-grade and feature-complete enough to demonstrate the
-governed request pipeline. It includes the multi-tenant storage foundation,
+The local stack demonstrates the governed request pipeline. It includes the
+tenant-scoped storage foundation,
 JWT/RBAC boundary, approval hardening, eval APIs with budget enforcement, auth
 service flows, embedding persistence, RCA clustering with persisted cluster
 membership, service-layer separation for the main write/auth/eval workflows
 with read-route extraction still tracked as architecture drift, Dockerized
-observability, admin CLI, and the n8n workflow artifacts needed for demo or
-pilot-style setups.
+observability, admin CLI, and n8n workflow artifacts for local demonstrations.
 
 At revision `0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc`, the dated 2026-07-13
 local baseline is **310 tests passed** (unit + integration,
