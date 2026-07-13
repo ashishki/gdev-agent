@@ -2,13 +2,16 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: gdev
-      POSTGRES_USER: gdev_app
-      POSTGRES_PASSWORD: gdev-app-pass
+      POSTGRES_DB: ${POSTGRES_DB:-gdev}
+      POSTGRES_USER: gdev_owner
+      POSTGRES_PASSWORD: ${GDEV_OWNER_PASSWORD:?GDEV_OWNER_PASSWORD is required}
+      GDEV_APP_PASSWORD: ${GDEV_APP_PASSWORD:?GDEV_APP_PASSWORD is required}
     ports:
       - "5432:5432"
+    volumes:
+      - ./docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-gdev-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gdev_app -d gdev"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -24,7 +27,7 @@ services:
       - -lc
       - alembic upgrade head && python scripts/cli.py migrations check && python scripts/seed_db.py
     environment:
-      DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
+      DATABASE_URL: postgresql+asyncpg://gdev_owner:${GDEV_OWNER_PASSWORD:?GDEV_OWNER_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-gdev}
       LLM_MODE: demo
     depends_on:
       postgres:
@@ -42,7 +45,7 @@ services:
     environment:
       LLM_MODE: ${LLM_MODE:-demo}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      DATABASE_URL: postgresql+asyncpg://gdev_app:gdev-app-pass@postgres:5432/gdev
+      DATABASE_URL: postgresql+asyncpg://gdev_app:${GDEV_APP_PASSWORD:?GDEV_APP_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-gdev}
       REDIS_URL: redis://redis:6379
       WEBHOOK_SECRET_ENCRYPTION_KEY: kL6h3kArf9nUP9QufR2gY6eebjY5J5A95fYYxRcbk3s=
       JWT_SECRET: dev-jwt-secret-must-be-at-least-32b
@@ -102,8 +105,6 @@ services:
     depends_on:
       prometheus:
         condition: service_started
-      postgres:
-        condition: service_healthy
       loki:
         condition: service_healthy
       tempo:

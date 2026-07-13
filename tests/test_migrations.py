@@ -37,6 +37,7 @@ EXPECTED_TABLES = {
     "cost_ledger",
     "eval_runs",
 }
+TENANT_SCOPED_TABLES = EXPECTED_TABLES - {"tenants"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,7 +63,7 @@ async def _public_tables(database_url: str) -> set[str]:
         await engine.dispose()
 
 
-async def _role_bypassrls(database_url: str, role_name: str) -> bool | None:
+async def _role_flags(database_url: str, role_name: str) -> tuple[bool, bool] | None:
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -70,13 +71,40 @@ async def _role_bypassrls(database_url: str, role_name: str) -> bool | None:
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
-                text("SELECT rolbypassrls FROM pg_roles WHERE rolname = :role_name"),
+                text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = :role_name"),
                 {"role_name": role_name},
             )
             row = result.first()
             if row is None:
                 return None
-            return bool(row[0])
+            return bool(row[0]), bool(row[1])
+    finally:
+        await engine.dispose()
+
+
+async def _tenant_table_topology(
+    database_url: str,
+) -> dict[str, tuple[str, bool, bool]]:
+    from sqlalchemy import bindparam, text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            statement = text(
+                """
+                SELECT c.relname,
+                       pg_get_userbyid(c.relowner) AS owner_name,
+                       c.relrowsecurity,
+                       c.relforcerowsecurity
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relname IN :table_names
+                """
+            ).bindparams(bindparam("table_names", expanding=True))
+            rows = await conn.execute(statement, {"table_names": sorted(TENANT_SCOPED_TABLES)})
+            return {str(row[0]): (str(row[1]), bool(row[2]), bool(row[3])) for row in rows}
     finally:
         await engine.dispose()
 
@@ -161,11 +189,18 @@ def _run_migration_test(async_url: str, monkeypatch: pytest.MonkeyPatch) -> None
 
     assert (_root_dir() / "alembic" / "versions" / "0005_cluster_membership.py").exists()
     assert (_root_dir() / "alembic" / "versions" / "0006_approval_learning_metrics.py").exists()
+    assert (_root_dir() / "alembic" / "versions" / "0007_enforce_compose_rls_topology.py").exists()
     command.upgrade(cfg, "head")
     upgraded = asyncio.run(_public_tables(async_url))
     assert EXPECTED_TABLES.issubset(upgraded), f"Missing tables: {EXPECTED_TABLES - upgraded}"
-    gdev_admin_bypassrls = asyncio.run(_role_bypassrls(async_url, "gdev_admin"))
-    assert gdev_admin_bypassrls is True
+    assert asyncio.run(_role_flags(async_url, "gdev_admin")) == (False, True)
+    assert asyncio.run(_role_flags(async_url, "gdev_app")) == (False, False)
+    tenant_topology = asyncio.run(_tenant_table_topology(async_url))
+    assert tenant_topology.keys() == TENANT_SCOPED_TABLES
+    for owner_name, rls_enabled, rls_forced in tenant_topology.values():
+        assert owner_name != "gdev_app"
+        assert rls_enabled is True
+        assert rls_forced is True
     tenant_users_has_password_hash = asyncio.run(
         _column_exists(async_url, "tenant_users", "password_hash")
     )
