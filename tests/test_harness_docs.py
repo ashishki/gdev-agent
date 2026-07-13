@@ -9,12 +9,17 @@ def test_harness_docs_are_linked_and_define_boundaries() -> None:
     harness = (ROOT / "docs/HARNESS_CARD.md").read_text(encoding="utf-8")
     trace = (ROOT / "docs/TRACE_SCHEMA.md").read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    eval_scope = (ROOT / "docs/EVAL_SCOPE_RECONCILIATION.md").read_text(encoding="utf-8")
 
     assert "docs/HARNESS_CARD.md" in readme
+    assert "img.shields.io" not in readme
     assert "model + prompt/tool loop + guards + approvals + trace + eval" in harness
     assert "No autonomous long-term memory" in harness
     assert "gdev-agent-trace-v1" in trace
     assert "No Silent Workaround Policy" in agents
+    assert "0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc" in eval_scope
+    assert "Gate **FAIL**" in eval_scope
+    assert "sha256:656face21f27b496d4d3e8bb0b588824f5737d122c1275c710f3e5b15ff94b4b" in eval_scope
 
 
 def test_harness_regression_fixture_is_synthetic_and_trace_oriented() -> None:

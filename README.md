@@ -1,7 +1,5 @@
 # gdev-agent
 
-![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
-
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
 any model call, classifies and extracts structured data with an LLM, routes
@@ -26,7 +24,7 @@ For a claim-by-claim proof map, start with
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
 | Agent harness boundary | [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md), [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md), [AGENTS.md](AGENTS.md) | Model + prompt/tool loop + guards + approvals + trace + eval are reviewed as one bounded harness |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
-| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab conformance baseline, and a separately identified unexecuted 100-case challenge scope |
+| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab conformance baseline, and a canonical 100-case challenge run whose stricter gate failed |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
@@ -217,7 +215,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 - [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): evidence question map and claim-by-claim proof table.
 - [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md): three-project stack map and provider strategy.
-- [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): reconciles the internal 180-case smoke, Eval Lab 55-case conformance baseline, unexecuted 100-case challenge scope, and Runtime Grid proofs.
+- [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): reconciles the internal 180-case smoke, Eval Lab 55-case conformance baseline, canonical 100-case challenge failure, and Runtime Grid proofs.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
 - [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md): agent harness boundary across model, tools, memory, retries, permissions, HITL, trace, and eval.
 - [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md): trace completeness contract for debugging, eval, audit, and approval retrospectives.
@@ -245,8 +243,12 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
   live capacity proof.
 - Eval metrics have multiple scopes. The internal 180-case smoke report exposes
   broad demo-mode routing gaps, while the external Eval Lab 55-case baseline is
-  an integration/conformance pass over the configured `/webhook` adapter. The
-  separate 100-case challenge dataset has no canonical executed run yet. See
+  an integration/conformance pass over the configured `/webhook` adapter. A
+  canonical Eval Lab run of the separate 100-case challenge against exact
+  revision `0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc` failed its stricter gate:
+  reconciled pass rate `0.32`, classification accuracy `0.244444`, 68 unexpected
+  failures, and 58 blocking failures. This is published negative evidence, not
+  a threshold pass. See
   [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md).
 - Live load measurements remain out of scope for the current local evidence.
   Deployment readiness notes are local/pilot-only and explicitly do not prove
@@ -265,7 +267,8 @@ with read-route extraction still tracked as architecture drift, Dockerized
 observability, admin CLI, and the n8n workflow artifacts needed for demo or
 pilot-style setups.
 
-The 2026-07-13 local baseline is **310 tests passed** (unit + integration,
+At revision `0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc`, the dated 2026-07-13
+local baseline is **310 tests passed** (unit + integration,
 including migration up/down, role flags, FORCE RLS topology, cross-tenant
 rejection, eval metric validators, load fixtures, observability signals, and
 cluster membership persistence). The same repair run also passed the 180-case

@@ -20,8 +20,9 @@ For cross-project interpretation, read this report with
 internal eval is a broad smoke/gap-discovery surface. The separate Eval Ground
 Truth Lab 55-case baseline is a curated live local integration/conformance eval
 over the configured `/webhook` adapter. Eval Lab also contains a separate
-100-case diagnostic challenge dataset that has not been recorded as a canonical
-executed baseline; see the reconciliation document before comparing counts.
+100-case diagnostic challenge with a canonical failed run against this exact
+gdev-agent revision; see the reconciliation document before comparing counts or
+interpreting the separate gates.
 
 ## Environment Assumptions
 
@@ -92,9 +93,15 @@ current adapter/conformance contract for the curated Eval Lab dataset.
 
 Eval Lab's 100-case `challenge_v1.jsonl` is an executable diagnostic surface
 with a manifest, threshold gate, and explicit deterministic fault injection for
-the final provider-error slice. It is still not a canonical external-system run
-until that command records a fixed gdev-agent revision and verifies its evidence
-manifest.
+the final provider-error slice. Its canonical local run fixed gdev-agent at
+`0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc`, executed 90 HTTP candidate cases,
+and reconciled 10 deterministic fault injections. The gate **failed**: `0.32`
+reconciled pass rate, `0.244444` classification accuracy, 68 unexpected failures,
+58 blocking failures, 46 human-review outcomes, and `0.46` human-escalation
+recall. The verified package is
+[published by Eval Lab](https://github.com/ashishki/Eval-Ground-Truth-Lab/tree/main/docs/evidence/releases/v0.2.0/gdev-agent-challenge)
+with content address
+`sha256:656face21f27b496d4d3e8bb0b588824f5737d122c1275c710f3e5b15ff94b4b`.
 
 It does not invalidate this internal 180-case report. This report remains the
 broader local smoke taxonomy and intentionally keeps weak routing and
