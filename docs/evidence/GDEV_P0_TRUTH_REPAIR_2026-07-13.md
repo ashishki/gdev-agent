@@ -41,6 +41,10 @@ nor staged by this work.
 - The tracked Python bytecode artifacts were removed. Ruff was pinned to the
   version used to produce the formatting baseline, and the five pre-existing
   source/test formatting failures were normalized.
+- CI-facing route-contract tests now verify router inclusion through OpenAPI
+  and inspect the source APIRouters, which works with both eager and FastAPI
+  0.139 lazy router inclusion. The database unit test explicitly clears an
+  inherited `TEST_DATABASE_URL` so its requested URL remains authoritative.
 
 ## Final Verification Results
 
@@ -73,15 +77,17 @@ PYTHONDWRITEBYTECODE=1 LLM_MODE=demo \
 Result:
 
 ```text
-310 passed, 45 warnings in 106.16s
+310 passed, 45 warnings in 108.77s
 ```
 
 All 45 warnings are the existing Alembic `path_separator` deprecation warning
 emitted by container-backed migration fixtures. No test was skipped in the
-final run. The full-suite run initially exposed a teardown case where a test
-intentionally removes `audit_log`; the new downgrade was made idempotent with
-`ALTER TABLE IF EXISTS`, and both the targeted regression and final full suite
-then passed.
+final run. The final suite used a clean environment with the same then-current
+resolution as GitHub Actions (`FastAPI 0.139.0`, `Starlette 1.3.1`, `Pydantic
+2.13.4`, and `pytest 9.1.1`). Earlier verification exposed both a teardown case
+where a test intentionally removes `audit_log` and the new lazy-router
+representation; the downgrade and test contracts were repaired before this
+run.
 
 ### Internal 180-case eval
 

@@ -50,9 +50,10 @@ class _SessionStub:
 
 
 def _role_dependency_for_put_agents():
+    assert "put" in main.app.openapi()["paths"]["/agents/{agent_id}"]
     route = next(
         route
-        for route in main.app.router.routes
+        for route in agents_router.router.routes
         if getattr(route, "path", None) == "/agents/{agent_id}"
         and "PUT" in getattr(route, "methods", set())
     )
