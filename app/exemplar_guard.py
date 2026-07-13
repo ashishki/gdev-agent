@@ -20,7 +20,9 @@ from app.schemas import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_EXEMPLAR_PATH = Path(__file__).resolve().parents[1] / "eval" / "exemplars" / "triage_v1.jsonl"
+DEFAULT_EXEMPLAR_PATH = (
+    Path(__file__).resolve().parents[1] / "eval" / "exemplars" / "triage_v1.jsonl"
+)
 WORD_RE = re.compile(r"[a-z0-9]+")
 VALID_CATEGORIES = set(get_args(Category))
 
@@ -90,11 +92,15 @@ DEFAULT_EXEMPLARS: tuple[TriageExemplar, ...] = (
 class ExemplarConsistencyGuard:
     """Compare a new triage decision against curated synthetic examples."""
 
-    def __init__(self, settings: Settings, exemplars: Iterable[TriageExemplar] | None = None) -> None:
+    def __init__(
+        self, settings: Settings, exemplars: Iterable[TriageExemplar] | None = None
+    ) -> None:
         self.enabled = settings.exemplar_guard_enabled
         self.threshold = settings.exemplar_guard_threshold
         self.top_k = max(1, settings.exemplar_guard_top_k)
-        self.exemplars = tuple(exemplars) if exemplars is not None else self._load_exemplars(settings)
+        self.exemplars = (
+            tuple(exemplars) if exemplars is not None else self._load_exemplars(settings)
+        )
 
     def evaluate(
         self,
@@ -173,7 +179,10 @@ class ExemplarConsistencyGuard:
             LOGGER.warning(
                 "failed loading exemplar guard examples",
                 exc_info=True,
-                extra={"event": "exemplar_guard_examples_load_failed", "context": {"path": str(path)}},
+                extra={
+                    "event": "exemplar_guard_examples_load_failed",
+                    "context": {"path": str(path)},
+                },
             )
             return DEFAULT_EXEMPLARS
 

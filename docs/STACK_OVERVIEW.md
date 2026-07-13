@@ -7,8 +7,8 @@ reliable AI/agent systems.
 
 | Layer | Repository | Role | Current evidence |
 | --- | --- | --- | --- |
-| Governed workflow | `gdev-agent` | Multi-tenant support-triage workflow with webhook intake, guardrails, approval, audit, cost, and observability controls. | 285 tests, local Compose demo, 180-case internal smoke eval, load and isolation evidence. |
-| Quality layer | `Eval-Ground-Truth-Lab` | Deterministic regression evaluation framework for structured output, routing, unsafe auto-approval, cost, latency, and adapter behavior. | 55-case live local gdev-agent baseline with zero adapter errors and zero validator failures. |
+| Governed workflow | `gdev-agent` | Multi-tenant support-triage workflow with webhook intake, guardrails, approval, audit, cost, and observability controls. | 310-test local baseline (2026-07-13), default-Compose FORCE RLS/demo proof, 180-case internal smoke eval, load and isolation evidence. |
+| Quality layer | `Eval-Ground-Truth-Lab` | Deterministic regression evaluation framework for structured output, routing, unsafe auto-approval, cost, latency, and adapter behavior. | 55-case live local gdev-agent conformance baseline; separate 100-case challenge dataset/manifest is diagnostic and has no canonical executed run yet. |
 | Runtime layer | `Agent-Runtime-Grid` | Queue-backed runtime for running many AI/agent jobs with retries, timeouts, idempotent finalization, artifacts, metrics, and cost controls. | 100-job smoke, 500-job reliability proof, failure-injection reports, cross-project artifact proof, and 20-job operator-run live-local HTTP proof snapshot. |
 
 ## How They Connect

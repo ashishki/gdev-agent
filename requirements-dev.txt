@@ -3,6 +3,6 @@ pytest
 pytest-asyncio
 anyio[trio]
 fakeredis
-ruff
+ruff==0.15.4
 mypy
 testcontainers[postgres]

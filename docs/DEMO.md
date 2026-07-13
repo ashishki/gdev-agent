@@ -14,8 +14,13 @@ repo-side script for producing it without claiming the artifact already exists.
 - The local stack is running from the repo root:
 
 ```bash
+cp .env.example .env
 docker compose up --build -d
 ```
+
+The copied file supplies local-only `GDEV_OWNER_PASSWORD` and
+`GDEV_APP_PASSWORD` values required by Compose. Replace them for any shared
+environment; the sample values are not production secrets.
 
 - The API is reachable at `http://localhost:8000` unless you override it with `--url`.
 - The one-shot `migrate` service has completed successfully. It runs Alembic,
@@ -59,7 +64,7 @@ Optional timing controls:
 The local review path should use deterministic demo mode:
 
 ```bash
-printf "\nLLM_MODE=demo\n" >> .env
+cp .env.example .env  # once, if .env does not exist
 docker compose up --build -d
 python scripts/demo.py --llm-mode demo
 ```

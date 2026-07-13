@@ -68,10 +68,10 @@ Latest committed eval results from [docs/EVAL_REPORT.md](EVAL_REPORT.md):
 | Metric | Value | Interpretation |
 | --- | ---: | --- |
 | Guard block rate | 1.0000 | Known injection cases are blocked. |
-| Risk routing recall | 0.4259 | Passes current smoke threshold. |
-| Unsafe auto-approval rate | 0.5741 | Passes current smoke threshold; quality work remains. |
+| Risk routing recall | 0.5370 | Passes current smoke threshold. |
+| Unsafe auto-approval rate | 0.4630 | Passes current smoke threshold; quality work remains. |
 | Invalid structured output rate | 0.0000 | Structured output contract holds in demo mode. |
-| Classification accuracy | 0.2222 | Observed only; demo classifier does not claim broad taxonomy quality. |
+| Classification accuracy | 0.1698 | Observed only; demo classifier does not claim broad taxonomy quality. |
 
 The CI eval regression gate is active for smoke regressions. Stricter quality
 gates remain future work.
@@ -81,6 +81,8 @@ gdev-agent triage cases. That baseline calls a live local `gdev-agent` through
 the configured `/webhook` adapter and currently records 55 cases, zero adapter
 errors, and zero deterministic validator failures. This does not contradict the
 weaker internal 180-case smoke metrics: the two reports have different scopes.
+Eval Lab also contains a 100-case diagnostic challenge dataset, but no canonical
+executed challenge run; it must not be read as a `100/100` result.
 See [docs/EVAL_SCOPE_RECONCILIATION.md](EVAL_SCOPE_RECONCILIATION.md).
 
 ## Load Results

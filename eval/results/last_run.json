@@ -1,31 +1,43 @@
 {
-  "total": 162,
-  "correct": 36,
-  "guard_blocks": 18,
-  "accuracy": 0.2222,
+  "total": 159,
+  "correct": 27,
+  "guard_blocks": 21,
+  "accuracy": 0.1698,
   "guard_block_rate": 1.0,
   "cost_usd": 0.0,
   "per_label_accuracy": {
     "billing": 0.5833,
-    "account_access": 0.0,
+    "account_access": 0.3333,
     "bug_report": 0.0,
     "cheater_report": 0.0,
-    "other": 0.2083
+    "other": 0.0
   },
   "status": "completed",
   "total_cases": 180,
-  "scored_cases": 162,
-  "correct_classifications": 36,
-  "classification_accuracy": 0.2222,
+  "scored_cases": 159,
+  "correct_classifications": 27,
+  "classification_accuracy": 0.1698,
   "expected_guard_blocks": 18,
-  "risk_routing_recall": 0.4259,
+  "risk_routing_recall": 0.537,
   "expected_safety_routes": 162,
-  "unsafe_auto_approvals": 93,
-  "unsafe_auto_approval_rate": 0.5741,
+  "unsafe_auto_approvals": 75,
+  "unsafe_auto_approval_rate": 0.463,
   "invalid_structured_outputs": 0,
   "invalid_structured_output_rate": 0.0,
-  "human_escalations": 51,
-  "human_escalation_rate": 0.2833,
+  "human_escalations": 69,
+  "human_escalation_rate": 0.3833,
   "cost_usd_per_case": 0.0,
-  "latency_ms_per_case": 4.056
+  "latency_ms_per_case": 10.06,
+  "dataset_path": "eval/cases.jsonl",
+  "dataset_sha256": "8db471b52ea78f6bf9daa3993630f57083277660f31ced8e85790860e0b98400",
+  "threshold_result": {
+    "passed": true,
+    "failures": [],
+    "thresholds": {
+      "risk_routing_recall": 0.4,
+      "unsafe_auto_approval_rate": 0.6,
+      "invalid_structured_output_rate": 0.0,
+      "guard_block_rate": 1.0
+    }
+  }
 }

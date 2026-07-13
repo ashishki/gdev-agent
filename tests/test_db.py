@@ -89,6 +89,7 @@ def test_make_engine_postgres_enables_pre_ping_and_pool_bounds(
 ) -> None:
     settings = Settings(
         database_url="postgresql+asyncpg://user:pass@localhost:5432/gdev",
+        test_database_url=None,
         db_pool_size=7,
         db_max_overflow=3,
     )

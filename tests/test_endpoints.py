@@ -19,13 +19,25 @@ from app.config import Settings
 from app.middleware.auth import JWTMiddleware
 from app.routers import auth as auth_module
 from app.routers.agents import list_agents
+from app.routers.agents import router as agents_api_router
 from app.routers.analytics import get_learning_metrics, list_audit, list_cost_metrics
+from app.routers.analytics import router as analytics_api_router
 from app.routers.clusters import get_cluster, get_cluster_tickets, list_clusters
+from app.routers.clusters import router as clusters_api_router
 from app.routers.eval import list_eval_runs
+from app.routers.eval import router as eval_api_router
 from app.routers.tickets import get_ticket, list_tickets
+from app.routers.tickets import router as tickets_api_router
 from app.services.auth_service import LogoutRequest, RefreshTokenRequest
 
 UTC = timezone.utc
+READ_API_ROUTERS = (
+    tickets_api_router,
+    clusters_api_router,
+    analytics_api_router,
+    agents_api_router,
+    eval_api_router,
+)
 
 
 class _MetricChildStub:
@@ -185,9 +197,11 @@ def _http_request(
 
 
 def _route_dependency(path: str) -> object:
+    assert "get" in main.app.openapi()["paths"][path]
     route = next(
         route
-        for route in main.app.router.routes
+        for router in READ_API_ROUTERS
+        for route in router.routes
         if getattr(route, "path", None) == path and "GET" in getattr(route, "methods", set())
     )
     dependencies = route.dependant.dependencies

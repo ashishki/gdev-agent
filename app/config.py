@@ -47,9 +47,7 @@ class Settings(BaseSettings):
     exemplar_guard_threshold: float = 0.62
     exemplar_guard_top_k: int = 3
     exemplar_guard_examples_path: str | None = None
-    approval_categories: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["billing"]
-    )
+    approval_categories: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["billing"])
     approval_ttl_seconds: int = 3600
     sqlite_log_path: str | None = None
     redis_url: str = "redis://redis:6379"

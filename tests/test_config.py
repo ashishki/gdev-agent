@@ -59,6 +59,29 @@ def test_compose_uses_portable_healthcheck_and_live_key_interpolation() -> None:
     assert "curl -fsS" not in compose
 
 
+def test_compose_separates_migration_owner_from_nonsuperuser_app_role() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    init_roles = (ROOT / "docker" / "postgres" / "init-roles.sh").read_text(encoding="utf-8")
+
+    assert "POSTGRES_USER: gdev_owner" in compose
+    assert "GDEV_OWNER_PASSWORD" in compose
+    assert "GDEV_APP_PASSWORD" in compose
+    assert "GDEV_OWNER_PASSWORD:?GDEV_OWNER_PASSWORD is required" in compose
+    assert "GDEV_APP_PASSWORD:?GDEV_APP_PASSWORD is required" in compose
+    assert "postgresql+asyncpg://gdev_owner:" in compose
+    assert "postgresql+asyncpg://gdev_app:" in compose
+    assert "docker-entrypoint-initdb.d/10-gdev-roles.sh" in compose
+    assert "NOSUPERUSER" in init_roles
+    assert "NOBYPASSRLS" in init_roles
+    assert "GDEV_APP_PASSWORD" in init_roles
+
+
+def test_grafana_has_no_unused_postgres_datasource() -> None:
+    datasource_dir = ROOT / "docker" / "grafana" / "provisioning" / "datasources"
+
+    assert not (datasource_dir / "postgres.yaml").exists()
+
+
 def test_dockerignore_excludes_local_secret_files() -> None:
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 

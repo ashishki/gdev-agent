@@ -1,6 +1,6 @@
 # gdev-agent
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white) ![285 tests](https://img.shields.io/badge/tests-285%20passing-brightgreen)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/fastapi-api-009688?logo=fastapi&logoColor=white) ![Postgres](https://img.shields.io/badge/postgres-pgvector-4169E1?logo=postgresql&logoColor=white) ![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 
 `gdev-agent` is a governed, multi-tenant LLM workflow reliability system for
 game-studio support: it receives support webhooks, blocks unsafe input before
@@ -26,11 +26,11 @@ For a claim-by-claim proof map, start with
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
 | Agent harness boundary | [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md), [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md), [AGENTS.md](AGENTS.md) | Model + prompt/tool loop + guards + approvals + trace + eval are reviewed as one bounded harness |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
-| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab integration baseline, and scope reconciliation |
+| Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab conformance baseline, and a separately identified unexecuted 100-case challenge scope |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
-| Tests | [Current State](#current-state) | Last recorded baseline is 285 passing tests; rerun locally before relying on it |
+| Tests | [Current State](#current-state) | 2026-07-13 local baseline: 310 passing tests; rerun locally before relying on it |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as pilot/local evidence, not production SaaS readiness |
@@ -66,11 +66,11 @@ The current stack includes FastAPI, Redis, PostgreSQL with Row-Level Security, p
 | AI pipeline | Claude `tool_use` classification and extraction, guarded draft generation, configurable auto-approve threshold |
 | Safety | Input injection guard, output secret scan, URL allowlist enforcement, approval workflow with `ApprovalService` (HMAC + cross-tenant enforcement) |
 | Execution | Tool registry for ticketing and reply actions, dedup cache for idempotent replays, pending approval storage with TTL |
-| Multi-tenancy | PostgreSQL RLS on all tables (Alembic migrations), tenant registry, per-tenant encrypted secrets |
+| Multi-tenancy | PostgreSQL FORCE RLS on all 16 tenant-scoped tables, non-owner `gdev_app` runtime role, tenant registry, per-tenant encrypted secrets |
 | Operations | Cost ledger with daily budget enforcement, structured JSON logs, Prometheus metrics (OTel child spans on all endpoints), Grafana/Loki/Tempo stack |
 | Analytics | Eval runner with budget check, eval API, tenant learning metrics from approval latency/overrides, RCA clustering job (DBSCAN + pgvector), cluster read endpoints with DB-backed membership |
-| Admin | `gdev-admin` CLI for tenant/budget/RCA operations, admin role with BYPASSRLS |
-| Platform | Docker Compose full stack; 285 tests (unit + integration) passing; ruff-clean |
+| Admin | `gdev-admin` CLI for tenant/budget/RCA operations; separate maintenance role with BYPASSRLS |
+| Platform | Docker Compose full stack; Python 3.12 CI; ruff, full pytest, eval, Compose RLS, and deterministic demo gates |
 
 ## Quick Start
 
@@ -98,12 +98,17 @@ What starts:
 | tempo | `http://localhost:3200` | Trace backend |
 | loki | `http://localhost:3100` | Log backend |
 
-The `migrate` service runs Alembic and seeds the database before the API starts. In the compose stack, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `APPROVE_SECRET`, `WEBHOOK_SECRET_ENCRYPTION_KEY`, and `OTLP_ENDPOINT` are injected automatically. `LLM_MODE` defaults to deterministic `demo` mode.
+The `migrate` service runs Alembic and seeds the database before the API starts.
+Compose creates a bootstrap/migration owner (`gdev_owner`) and a distinct
+non-superuser request role (`gdev_app`). Their local-only passwords come from
+`GDEV_OWNER_PASSWORD` and `GDEV_APP_PASSWORD` in the copied `.env`; Compose has
+no password fallback. `LLM_MODE` defaults to deterministic `demo` mode.
 
 Verify the stack:
 
 ```bash
 curl -i http://localhost:8000/health
+bash scripts/verify_compose_rls.sh
 ```
 
 Expected response:
@@ -131,6 +136,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 | `KB_BASE_URL` | Recommended | FAQ links should also be present in `URL_ALLOWLIST` |
 | `REDIS_URL` | Yes | Approval store, rate limiting, dedup, caching |
 | `DATABASE_URL` | Yes for Postgres features | Compose provides it automatically |
+| `GDEV_OWNER_PASSWORD` / `GDEV_APP_PASSWORD` | Yes for Compose | Separate migration-owner and request-role passwords; local examples are in `.env.example` |
 | `TEST_DATABASE_URL` | No | Test-only override |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | No | Async Postgres pool sizing |
 | `WEBHOOK_SECRET` | Optional legacy path | Global webhook secret; per-tenant secret storage is the main design |
@@ -167,7 +173,7 @@ Copy [.env.example](.env.example) and adjust only what you need for your environ
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /webhook` | Main ingestion path for support messages; returns either `executed` or `pending` |
+| `POST /webhook` | Main ingestion path for support messages; returns `executed`, `pending`, or guard-`blocked` |
 | `POST /approve` | Human decision endpoint for pending actions |
 | `GET /health` | Application liveness check used by Docker health checks |
 | `GET /metrics` | Prometheus scrape endpoint |
@@ -211,7 +217,7 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 
 - [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md): evidence question map and claim-by-claim proof table.
 - [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md): three-project stack map and provider strategy.
-- [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): explains the internal 180-case smoke eval versus the Eval Lab 55-case integration baseline.
+- [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md): reconciles the internal 180-case smoke, Eval Lab 55-case conformance baseline, unexecuted 100-case challenge scope, and Runtime Grid proofs.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system structure, service boundaries, request flow, deployment view.
 - [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md): agent harness boundary across model, tools, memory, retries, permissions, HITL, trace, and eval.
 - [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md): trace completeness contract for debugging, eval, audit, and approval retrospectives.
@@ -239,7 +245,8 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
   live capacity proof.
 - Eval metrics have multiple scopes. The internal 180-case smoke report exposes
   broad demo-mode routing gaps, while the external Eval Lab 55-case baseline is
-  an integration/conformance pass over the configured `/webhook` adapter. See
+  an integration/conformance pass over the configured `/webhook` adapter. The
+  separate 100-case challenge dataset has no canonical executed run yet. See
   [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md).
 - Live load measurements remain out of scope for the current local evidence.
   Deployment readiness notes are local/pilot-only and explicitly do not prove
@@ -258,6 +265,12 @@ with read-route extraction still tracked as architecture drift, Dockerized
 observability, admin CLI, and the n8n workflow artifacts needed for demo or
 pilot-style setups.
 
-**285 tests pass** (unit + integration, including RLS isolation, migration up/down, cross-tenant rejection, eval metric validators, reliability boundary tests, load fixture validation, observability signal checks, and cluster membership persistence). All P0 and P1 findings from 18 review cycles have been resolved.
+The 2026-07-13 local baseline is **310 tests passed** (unit + integration,
+including migration up/down, role flags, FORCE RLS topology, cross-tenant
+rejection, eval metric validators, load fixtures, observability signals, and
+cluster membership persistence). The same repair run also passed the 180-case
+demo eval gate and a clean Compose auth/approval demo. Exact commands and
+bounded outputs are recorded in
+[docs/evidence/GDEV_P0_TRUTH_REPAIR_2026-07-13.md](docs/evidence/GDEV_P0_TRUTH_REPAIR_2026-07-13.md).
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.

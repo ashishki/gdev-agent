@@ -14,9 +14,21 @@ from jose import jwt
 from app import main
 from app.config import Settings
 from app.middleware.auth import JWTMiddleware
+from app.routers.agents import router as agents_api_router
+from app.routers.analytics import router as analytics_api_router
+from app.routers.clusters import router as clusters_api_router
+from app.routers.eval import router as eval_api_router
+from app.routers.tickets import router as tickets_api_router
 from app.schemas import ApproveRequest
 
 UTC = timezone.utc
+READ_API_ROUTERS = (
+    tickets_api_router,
+    clusters_api_router,
+    analytics_api_router,
+    agents_api_router,
+    eval_api_router,
+)
 
 
 def _approve_role_dependency():
@@ -31,9 +43,11 @@ def _approve_role_dependency():
 
 
 def _route_role_dependency(path: str, method: str = "GET"):
+    assert method.lower() in main.app.openapi()["paths"][path]
     route = next(
         r
-        for r in main.app.router.routes
+        for router in READ_API_ROUTERS
+        for r in router.routes
         if getattr(r, "path", None) == path and method in getattr(r, "methods", set())
     )
     dependency = next(

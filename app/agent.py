@@ -312,8 +312,7 @@ class AgentService:
                         "predicted_urgency": classification.urgency,
                         "reason": exemplar_consistency.reason,
                         "matches": [
-                            match.model_dump(mode="json")
-                            for match in exemplar_consistency.matches
+                            match.model_dump(mode="json") for match in exemplar_consistency.matches
                         ],
                     },
                 )

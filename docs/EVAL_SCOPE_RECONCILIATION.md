@@ -1,14 +1,15 @@
 # Eval Scope Reconciliation
 
-`gdev-agent` now appears in three different eval surfaces. They intentionally
+`gdev-agent` now appears in five different eval/runtime surfaces. They intentionally
 answer different questions.
 
-## The Three Eval Scopes
+## The Five Evidence Scopes
 
 | Scope | Location | Cases | Question answered | Current interpretation |
 | --- | --- | ---: | --- | --- |
 | Internal gdev-agent smoke eval | `eval/cases.jsonl`, `docs/EVAL_REPORT.md` | 180 | Does the local demo-mode workflow expose broad taxonomy, guard, routing, and unsafe-auto-approval regressions? | Broad smoke signal. It intentionally exposes known demo-policy quality gaps. |
 | Eval Lab integration baseline | `Eval-Ground-Truth-Lab/datasets/gdev_agent/triage_v1.jsonl`, `Eval-Ground-Truth-Lab/reports/gdev-agent/baseline_report.md` | 55 | Does Eval Lab's configured HTTP adapter reach a live local gdev-agent and validate the agreed triage contract? | Passing integration/conformance baseline: 55 cases, zero adapter errors, zero validator failures. |
+| Eval Lab challenge diagnostic | `Eval-Ground-Truth-Lab/datasets/gdev_agent/challenge_v1.jsonl`, `Eval-Ground-Truth-Lab/datasets/gdev_agent/challenge_manifest.json`, `Eval-Ground-Truth-Lab/reports/gdev-agent/challenge_report.md` | 100 | Where should ambiguous, policy-stress, malformed, and provider-failure cases expose gaps? | The executable challenge command reconciles 90 candidate calls and 10 labeled harness fault injections. There is no canonical external-system run artifact yet. |
 | Runtime Grid artifact proof | `Agent-Runtime-Grid` `proof full-stack` | 20 default | Can selected Eval Lab/gdev evidence be run as queue-backed jobs with runtime artifacts, lifecycle state, and report cross-links? | Default runtime reliability proof over ready artifacts, not a live HTTP gdev-agent quality eval. |
 | Runtime Grid live-local proof | `Agent-Runtime-Grid` `proof full-stack-live-local` | operator-selected; 20 in latest snapshot | Can Grid workers call a local gdev-agent HTTP endpoint while preserving queue lifecycle, sanitized artifacts, and report links? | Optional local HTTP proof. The 2026-06-15 committed snapshot completed 20/20 queued jobs against local demo-mode gdev-agent, but it does not replace Eval Lab's quality report or claim production traffic. |
 
@@ -32,6 +33,11 @@ So `55/55` in Eval Lab does not erase weak routing metrics in the broader
 internal report. It means the integration contract is passing for the current
 conformance set.
 
+Likewise, the existence of 100 challenge cases is not a `100/100` result. Eval
+Lab now represents its expected-failure slice explicitly, but a canonical score
+still requires the fixed external gdev-agent revision to be run and recorded.
+This repository therefore does not infer a pass rate from unit-test fixtures.
+
 ## Smoke Gates vs Quality Targets
 
 | Metric | In internal 180-case eval | In Eval Lab 55-case baseline |
@@ -47,8 +53,8 @@ conformance set.
 - Keep the 180-case internal eval as a broad smoke and gap-discovery surface.
 - Add stricter quality gates only when the demo/live policy is improved across
   the broad taxonomy.
-- Add a harder Eval Lab challenge set with ambiguous, expected-review,
-  expected-failure, malformed, and policy-stress cases.
+- Run Eval Lab's first-class expected-failure/fault-injection command against a
+  fixed clean gdev-agent revision and publish its verified evidence manifest.
 - Keep Runtime Grid `proof full-stack` as the reproducible artifact-linked
   proof, and use `proof full-stack-live-local` only as explicit local HTTP
   evidence when the operator has a local gdev-agent stack running.
@@ -57,6 +63,8 @@ conformance set.
 
 Use the Eval Lab 55-case report to inspect integration correctness. Use the
 internal 180-case report to inspect known quality gaps and regression visibility.
+Use the 100-case challenge assets to inspect planned diagnostic coverage, not as
+an executed score until a canonical run artifact exists.
 Use Runtime Grid artifact evidence to inspect batch execution reliability, and
 use Runtime Grid live-local evidence only when you want to inspect queued local
 HTTP execution against gdev-agent.

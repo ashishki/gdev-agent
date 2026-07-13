@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, get_args
 from uuid import UUID
 
 from sqlalchemy import text
@@ -23,7 +24,7 @@ from app.config import Settings
 from app.cost_ledger import BudgetExhaustedError, CostLedger
 from app.db import _set_tenant_ctx
 from app.exceptions import AgentError, ValidationError
-from app.schemas import WebhookRequest
+from app.schemas import Category, Urgency, WebhookRequest
 from app.services.learning_metrics import fetch_learning_metrics
 from app.store import EventStore
 
@@ -33,15 +34,8 @@ if str(ROOT) not in sys.path:
 
 UTC = timezone.utc
 
-CLASSIFICATION_CATEGORIES = {
-    "bug_report",
-    "billing",
-    "account_access",
-    "cheater_report",
-    "gameplay_question",
-    "other",
-}
-URGENCIES = {"low", "medium", "high", "critical"}
+CLASSIFICATION_CATEGORIES = set(get_args(Category))
+URGENCIES = set(get_args(Urgency))
 AUTO_ROUTE = "auto_execute"
 HUMAN_ROUTE = "human_review"
 INPUT_REJECTED_ROUTE = "input_rejected"
@@ -105,6 +99,18 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
     return cases
 
 
+def _dataset_metadata(path: Path) -> dict[str, str]:
+    resolved = path.resolve()
+    try:
+        display_path = resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        display_path = resolved.as_posix()
+    return {
+        "dataset_path": display_path,
+        "dataset_sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+    }
+
+
 def _safe_rate(numerator: int | float, denominator: int | float) -> float:
     if denominator == 0:
         return 0.0
@@ -139,7 +145,7 @@ def _expected_routing(case: dict[str, Any]) -> str:
     return AUTO_ROUTE
 
 
-def _validate_agent_response(response: Any) -> tuple[str, str, float]:
+def _validate_agent_response(response: Any) -> tuple[str, str, float, bool]:
     classification = getattr(response, "classification", None)
     category = getattr(classification, "category", None)
     urgency = getattr(classification, "urgency", None)
@@ -156,11 +162,15 @@ def _validate_agent_response(response: Any) -> tuple[str, str, float]:
         raise StructuredOutputError(f"invalid confidence: {confidence!r}") from exc
     if not 0.0 <= confidence_value <= 1.0:
         raise StructuredOutputError(f"confidence out of range: {confidence!r}")
-    if status not in {"executed", "pending"}:
+    if status not in {"executed", "pending", "blocked"}:
         raise StructuredOutputError(f"invalid webhook status: {status!r}")
 
-    actual_routing = HUMAN_ROUTE if status == "pending" else AUTO_ROUTE
-    return str(category), actual_routing, confidence_value
+    blocked = status == "blocked" or bool(getattr(response, "guard_blocked", False))
+    if blocked:
+        actual_routing = "tenant_rejected" if category == "boundary" else INPUT_REJECTED_ROUTE
+    else:
+        actual_routing = HUMAN_ROUTE if status == "pending" else AUTO_ROUTE
+    return str(category), actual_routing, confidence_value, blocked
 
 
 def _record_case_outcome(
@@ -344,8 +354,7 @@ def run_eval(cases_path: Path, agent: AgentService | None = None) -> dict[str, A
                     tenant_id=str(tenant_id_value) if tenant_id_value is not None else None,
                 )
             )
-            predicted, actual_routing, _confidence = _validate_agent_response(response)
-            blocked = False
+            predicted, actual_routing, _confidence, blocked = _validate_agent_response(response)
             invalid_structured_output = False
         except BudgetExhaustedError as exc:
             return _build_report(
@@ -468,8 +477,7 @@ async def run_eval_job(
                 response = agent.process_webhook(
                     WebhookRequest(text=str(case["text"]), user_id="eval-user")
                 )
-                predicted, actual_routing, _confidence = _validate_agent_response(response)
-                blocked = False
+                predicted, actual_routing, _confidence, blocked = _validate_agent_response(response)
                 invalid_structured_output = False
             except (ValueError, ValidationError):
                 predicted = None
@@ -624,13 +632,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     report = run_eval(args.cases)
+    report.update(_dataset_metadata(args.cases))
     threshold_result = evaluate_thresholds(report)
     if args.gate:
         report["threshold_result"] = threshold_result
 
     if not args.no_write:
         args.results.parent.mkdir(parents=True, exist_ok=True)
-        args.results.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        args.results.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
     print(json.dumps(report, indent=2))
     if args.gate and not threshold_result["passed"]:

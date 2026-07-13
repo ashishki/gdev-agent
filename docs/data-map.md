@@ -244,6 +244,7 @@ fields retained for audit integrity.
 ```sql
 -- Applied to all tenant-scoped tables:
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tickets
   USING (tenant_id = current_setting('app.current_tenant_id', TRUE)::UUID);
@@ -252,14 +253,22 @@ CREATE POLICY tenant_isolation ON tickets
 SELECT set_config('app.current_tenant_id', '<tenant_id_from_jwt>', TRUE);
 ```
 
-- Application DB user (`gdev_app`) has no `BYPASSRLS` privilege.
-- Migrations and admin operations use a separate `gdev_admin` user with `BYPASSRLS`.
+- The request-serving DB user (`gdev_app`) is a non-owner with `NOSUPERUSER`
+  and `NOBYPASSRLS`.
+- Default Compose bootstrap and migrations use the distinct table owner
+  `gdev_owner`; `gdev_admin` remains a separate maintenance role with
+  deliberate `BYPASSRLS`. Neither privileged identity serves application
+  requests.
+- Migration `0007_enforce_compose_rls_topology.py` enables and forces RLS on all
+  16 tenant-scoped tables, including `rca_cluster_members`, and grants
+  `gdev_app` schema/table/sequence access without ownership.
 - Runtime code sets tenant context through `app/db.py::_set_tenant_ctx()` inside
   `session.begin()`. The third `TRUE` argument to `set_config()` makes the
   value transaction-local, equivalent to `SET LOCAL`, so tenant context is not
   retained on a reused connection.
 - RLS is tested in integration tests: cross-tenant query must return zero rows
-  and cross-tenant writes by `gdev_app` must fail.
+  and cross-tenant writes by `gdev_app` must fail. The executable default-stack
+  proof is `scripts/verify_compose_rls.sh`.
 
 ### Redis layer
 - Key prefix `{tenant_id}:` is enforced in all Redis client methods.
