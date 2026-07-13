@@ -119,9 +119,7 @@ async def test_get_secret_by_slug_returns_slug_specific_secret() -> None:
         [{"secret_ciphertext": fernet.encrypt(b"secret-b").decode("utf-8")}]
     )
     store = WebhookSecretStore(
-        _SessionFactoryStub(
-            [slug_a_session, secret_a_session, slug_b_session, secret_b_session]
-        ),
+        _SessionFactoryStub([slug_a_session, secret_a_session, slug_b_session, secret_b_session]),
         key.decode("utf-8"),
     )
 

@@ -246,9 +246,7 @@ def test_put_pending_uses_shared_run_blocking(monkeypatch) -> None:
     assert called["value"] is True
 
 
-def test_put_pending_logs_and_rolls_back_redis_when_db_persist_fails(
-    monkeypatch, caplog
-) -> None:
+def test_put_pending_logs_and_rolls_back_redis_when_db_persist_fails(monkeypatch, caplog) -> None:
     redis_client = fakeredis.FakeRedis()
     session_factory = _SessionFactoryStub()
     store = RedisApprovalStore(
@@ -278,7 +276,9 @@ def test_put_pending_logs_and_rolls_back_redis_when_db_persist_fails(
 
     assert redis_client.get(f"{pending.tenant_id}:pending:{pending.pending_id}") is None
     record = next(
-        item for item in caplog.records if getattr(item, "event", None) == "pending_persistence_failed"
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "pending_persistence_failed"
     )
     assert record.exc_info is not None
     assert record.context["tenant_id_hash"]
