@@ -27,7 +27,9 @@ What this proof does not cover:
 
 | Variable | Required | Purpose | Local review value |
 |----------|----------|---------|--------------------|
-| `DATABASE_URL` | Required outside Compose | Async Postgres URL for app and CLI migration checks | Compose injects `postgresql+asyncpg://...@postgres:5432/gdev` |
+| `DATABASE_URL` | Required outside Compose | Per-process async Postgres URL: `gdev_app` for request traffic, `gdev_owner` only for migrations/seed/restore | Compose injects distinct owner and app URLs; never reuse the owner URL in the agent process |
+| `GDEV_OWNER_PASSWORD` | Required for Compose | Password for bootstrap/migration owner `gdev_owner`; never use for request traffic | Local-only example in `.env.example`; replace outside an isolated workstation |
+| `GDEV_APP_PASSWORD` | Required for Compose | Password for non-owner `NOSUPERUSER NOBYPASSRLS` request role `gdev_app` | Local-only example in `.env.example`; replace outside an isolated workstation |
 | `REDIS_URL` | Required outside Compose | Redis for dedup, approvals, rate limits, JWT blocklist, tenant config cache | Compose injects `redis://redis:6379` |
 | `JWT_SECRET` | Required | Signs HS256 JWTs for protected REST APIs | Use a 32+ byte random value outside demo |
 | `WEBHOOK_SECRET_ENCRYPTION_KEY` | Required for signed webhooks | Fernet key used to decrypt per-tenant webhook HMAC secrets from Postgres | Compose uses a committed demo key only for local fixtures |
@@ -49,7 +51,9 @@ remaining non-production:
 ```bash
 APP_ENV=staging-like
 LLM_MODE=demo
-DATABASE_URL=postgresql+asyncpg://gdev_app:change-me@postgres:5432/gdev
+GDEV_OWNER_PASSWORD=$(openssl rand -hex 24)
+GDEV_APP_PASSWORD=$(openssl rand -hex 24)
+DATABASE_URL=postgresql+asyncpg://gdev_app:${GDEV_APP_PASSWORD}@postgres:5432/gdev
 REDIS_URL=redis://redis:6379
 JWT_SECRET=$(openssl rand -hex 32)
 WEBHOOK_SECRET_ENCRYPTION_KEY=$(python - <<'PY'
@@ -74,11 +78,17 @@ python scripts/cli.py migrations check
 python scripts/seed_db.py
 ```
 
+That service receives the `gdev_owner` URL. The long-running `agent` service
+receives only the `gdev_app` URL.
+
 Manual verification against a running local stack:
 
 ```bash
 docker compose exec agent python scripts/cli.py migrations check
 curl -i http://localhost:8000/health
+bash scripts/verify_compose_rls.sh
+docker compose exec -T agent \
+  python scripts/demo.py --url http://localhost:8000 --llm-mode demo
 ```
 
 `GET /health` is application liveness only. Compose readiness additionally
@@ -93,7 +103,7 @@ Back up the local Compose database:
 
 ```bash
 mkdir -p ./backups
-docker compose exec -T postgres pg_dump -U gdev_app -d gdev \
+docker compose exec -T postgres pg_dump -U gdev_owner -d gdev \
   --format=custom --file=/tmp/gdev.dump
 docker compose cp postgres:/tmp/gdev.dump ./backups/gdev.dump
 ```
@@ -102,7 +112,7 @@ Restore into a fresh local database:
 
 ```bash
 docker compose cp ./backups/gdev.dump postgres:/tmp/gdev.dump
-docker compose exec -T postgres pg_restore -U gdev_app -d gdev \
+docker compose exec -T postgres pg_restore -U gdev_owner -d gdev \
   --clean --if-exists /tmp/gdev.dump
 docker compose exec agent python scripts/cli.py migrations check
 ```
@@ -131,6 +141,8 @@ should be restored or invalidated after outage.
 
 - The stack is local/pilot evidence, not production readiness.
 - Compose secrets are visible to local Docker users and are not a secret manager.
+- `.env.example` contains workstation-only sample database passwords; Compose
+  requires the environment variables and has no password fallback.
 - `/metrics` is JWT-exempt for Prometheus and must be network-restricted in a
   real deployment.
 - `GET /health` does not check downstream dependencies.

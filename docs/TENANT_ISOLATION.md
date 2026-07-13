@@ -14,7 +14,11 @@ Run the current tenant-boundary proof with:
 
 ```bash
 .venv/bin/python -m pytest tests/test_isolation.py tests/test_rbac.py tests/test_auth_service.py tests/test_secrets_store.py tests/test_cost_ledger.py tests/test_approval_flow.py tests/test_middleware.py tests/test_webhook_service.py tests/test_endpoints.py tests/test_redis_approval_store.py -q
+bash scripts/verify_compose_rls.sh
 ```
+
+The shell proof expects the default Compose stack to be running and emits only
+sanitized role/topology/count assertions; it does not print database passwords.
 
 Some RLS and cost-ledger tests require Docker or `TEST_DATABASE_URL`. If no
 Postgres test database is available, pytest marks those integration checks as
@@ -24,8 +28,8 @@ explicit skips instead of treating infrastructure as silently present.
 
 | Boundary | What is protected | Enforcement | Proof |
 |----------|-------------------|-------------|-------|
-| Postgres RLS | Tenant-scoped durable tables only expose rows matching the transaction tenant context. Cross-tenant reads return no rows. | `alembic/versions/0001_initial_schema.py` enables RLS and creates `tenant_isolation` policies for tenant-scoped tables; `alembic/versions/0005_cluster_membership.py` adds the cluster membership policy. | `tests/test_isolation.py::test_db_rls_read_isolation_for_gdev_app` |
-| RLS writes | The application DB role cannot write rows for a different tenant context. | `gdev_app` receives table grants without `BYPASSRLS`; tenant context is set before scoped queries. | `tests/test_isolation.py::test_db_rls_write_isolation_for_gdev_app` |
+| Postgres RLS | Tenant-scoped durable tables only expose rows matching the transaction tenant context. Cross-tenant reads return no rows, including under the default Compose topology. | `0001`/`0005` create policies; `0007_enforce_compose_rls_topology.py` enables and forces RLS on all 16 tenant-scoped tables, including `rca_cluster_members`. | `tests/test_isolation.py::test_db_rls_read_isolation_for_gdev_app`, `tests/test_migrations.py`, `scripts/verify_compose_rls.sh` |
+| RLS writes | The non-owner application DB role cannot write rows for a different tenant context. | Compose bootstraps/migrates as `gdev_owner`, serves requests as `gdev_app`, and hardens the latter to `NOSUPERUSER NOBYPASSRLS`; tenant context is set before scoped queries. | `tests/test_isolation.py::test_db_rls_write_isolation_for_gdev_app`, `scripts/verify_compose_rls.sh` |
 | Transaction tenant context | Tenant context is transaction-local, not connection-global, so pooled or reused sessions do not retain another tenant's context. | `app/db.py::_set_tenant_ctx` executes `SELECT set_config('app.current_tenant_id', :tenant_id, true)` inside `session.begin()`, equivalent to `SET LOCAL`. | `tests/test_isolation.py::test_db_rls_read_isolation_for_gdev_app`, `tests/test_secrets_store.py::test_get_secret_decrypts_ciphertext` |
 | Pipeline persistence | Ticket, classification, extraction, proposed action, and audit rows are bound to the payload tenant. | `app/store.py::EventStore.persist_pipeline_run` rejects tenant mismatch and writes all rows under one tenant context. | `tests/test_isolation.py::test_event_store_binds_all_rows_to_payload_tenant` |
 | tenant-scoped JWT | Protected read/admin endpoints receive tenant, user, role, and JTI from a signed JWT; route dependencies enforce allowed roles, and read APIs reject tokens missing a tenant claim. | `app/services/auth_service.py` issues `tenant_id` claims after tenant-slug scoping; `app/middleware/auth.py` decodes the token, checks the blocklist, and stores tenant/user/role on `request.state`; `app/dependencies.py::require_role` gates routes. | `tests/test_auth_service.py::test_login_returns_token_and_records_observability`, `tests/test_auth_service.py::test_login_rejects_user_when_tenant_slug_does_not_match`, `tests/test_rbac.py::test_tenant_read_routes_require_jwt_reader_roles`, `tests/test_rbac.py::test_tenant_read_api_rejects_jwt_without_tenant_claim`, `tests/test_endpoints.py::test_auth_logout_revokes_token_for_next_request` |
@@ -45,8 +49,10 @@ These are explicit limits of the current local proof:
   production ingress path.
 - `/metrics` is intentionally JWT-exempt for Prometheus scraping; access is
   expected to be restricted by network placement, not by application JWT auth.
-- `gdev_admin` is intentionally privileged for migrations and maintenance and
-  can bypass RLS. It is not an application request role.
+- Default Compose migrations use the bootstrap owner `gdev_owner`, which is
+  privileged and must never be used by request-serving processes. The separate
+  `gdev_admin` maintenance role also has deliberate `BYPASSRLS`. Neither role is
+  an application request identity.
 - The Anthropic API key is shared at provider level. Per-tenant spend is guarded
   by the local `cost_ledger`, not by provider-side tenant credentials.
 - Redis tenant isolation is application namespace isolation in the local stack.
@@ -61,6 +67,7 @@ These are explicit limits of the current local proof:
 | `alembic/versions/0001_initial_schema.py` | Defines tenant-scoped tables including `tenant_users`, `api_keys`, `webhook_secrets`, `tickets`, `pending_decisions`, `approval_events`, `audit_log`, `agent_configs`, `cost_ledger`, and `eval_runs`; enables RLS for each table; creates `tenant_isolation` policies using `current_setting('app.current_tenant_id', TRUE)::UUID`; creates `gdev_app` and `gdev_admin` roles. |
 | `alembic/versions/0002_grant_admin_bypassrls.py` | Grants `BYPASSRLS` only to `gdev_admin`, keeping the application role separate from migration/admin maintenance privileges. |
 | `alembic/versions/0005_cluster_membership.py` | Adds RLS for `rca_cluster_members` through the owning `cluster_summaries.tenant_id`, so cluster membership reads follow the tenant context. |
+| `alembic/versions/0007_enforce_compose_rls_topology.py` | Hardens `gdev_app` to `NOSUPERUSER NOBYPASSRLS`, grants schema/table/sequence access, and applies `ENABLE` plus `FORCE ROW LEVEL SECURITY` to all 16 tenant-scoped tables. |
 
 ## Exact Test Proof
 
@@ -68,6 +75,7 @@ These are explicit limits of the current local proof:
 |-------|-------|
 | RLS read/write isolation | `tests/test_isolation.py::test_db_rls_read_isolation_for_gdev_app`, `tests/test_isolation.py::test_db_rls_write_isolation_for_gdev_app` |
 | Admin bypass is deliberate and separate from app role | `tests/test_isolation.py::test_gdev_admin_has_bypassrls_and_sees_both_tenants` |
+| Default role flags, ownership, and FORCE RLS topology | `tests/test_migrations.py::test_initial_migration_upgrade_and_downgrade`, `tests/test_config.py::test_compose_separates_migration_owner_from_nonsuperuser_app_role`, `scripts/verify_compose_rls.sh` |
 | Pipeline rows are tenant-bound | `tests/test_isolation.py::test_event_store_binds_all_rows_to_payload_tenant` |
 | JWT tenant and route role boundaries | `tests/test_auth_service.py::test_login_returns_token_and_records_observability`, `tests/test_auth_service.py::test_login_rejects_user_when_tenant_slug_does_not_match`, `tests/test_rbac.py::test_tenant_read_routes_require_jwt_reader_roles`, `tests/test_rbac.py::test_tenant_read_api_rejects_jwt_without_tenant_claim`, `tests/test_endpoints.py::test_auth_logout_revokes_token_for_next_request`, `tests/test_endpoints.py::test_reader_roles_allowed_for_jwt_read_endpoints`, `tests/test_rbac.py::test_viewer_role_cannot_call_approve` |
 | Tenant read API adversarial boundary | `tests/test_endpoints.py::test_tenant_a_cannot_read_tenant_b_audit_logs` |
