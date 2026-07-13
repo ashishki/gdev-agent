@@ -46,16 +46,24 @@ For a claim-by-claim proof map, start with
 | Three-project stack map | [docs/STACK_OVERVIEW.md](docs/STACK_OVERVIEW.md) | Explains how gdev-agent, Eval Ground Truth Lab, and Agent Runtime Grid fit together as workflow, quality, and runtime layers |
 | One-page engineering story | [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Evidence-backed case study for problem, architecture, controls, eval, load, trade-offs, and production changes |
 | Architecture and workflow boundaries | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/architecture-diagram.md](docs/architecture-diagram.md) | Implemented local stack with documented gaps and ADRs |
+| Human approval decision path | [docs/APPROVAL_FLOW.md](docs/APPROVAL_FLOW.md) | Code-and-test-backed risk, tenant, TTL, reject, and one-time execution flow; not an operator UI or routing-quality claim |
 | Agent harness boundary | [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md), [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md), [AGENTS.md](AGENTS.md) | Model + prompt/tool loop + guards + approvals + trace + eval are reviewed as one bounded harness |
 | Repeatable demo path | [docs/DEMO.md](docs/DEMO.md) | Local Compose demo with deterministic/free mode |
 | Evaluation discipline | [docs/EVALUATION.md](docs/EVALUATION.md), [docs/EVAL_REPORT.md](docs/EVAL_REPORT.md), [docs/EVAL_SCOPE_RECONCILIATION.md](docs/EVAL_SCOPE_RECONCILIATION.md) | 180-case internal smoke eval, 55-case Eval Lab conformance baseline, and a canonical 100-case challenge run whose stricter gate failed |
+| Canonical failure preview | [docs/evidence/GDEV_EVAL_FAILURE_PREVIEW_2026-07-13.md](docs/evidence/GDEV_EVAL_FAILURE_PREVIEW_2026-07-13.md) | Rendered from Eval Lab `v0.2.0` content-addressed raw JSON; five failed thresholds remain visible and limitations are explicit |
 | Observability | [docs/observability.md](docs/observability.md) | Metrics, traces, logs, and alerting design for local evidence |
 | Load profile | [docs/load-profile.md](docs/load-profile.md), [docs/LOAD_TEST_REPORT.md](docs/LOAD_TEST_REPORT.md) | Local deterministic/synthetic report and scenario targets; not production capacity claims |
 | Tenant isolation and security | [docs/TENANT_ISOLATION.md](docs/TENANT_ISOLATION.md), [docs/data-map.md#6-tenant-isolation-model](docs/data-map.md#6-tenant-isolation-model), [docs/ARCHITECTURE.md#7-security-model](docs/ARCHITECTURE.md#7-security-model) | RLS, tenant-scoped JWT, webhook signature, secrets, approval, and cost ledger boundaries |
-| Tests | [Current State](#current-state) | 2026-07-13 local baseline: 310 passing tests; rerun locally before relying on it |
+| Tests | [Current State](#current-state), [maintainer-surface verification](docs/evidence/GDEV_MAINTAINER_SURFACE_2026-07-13.md) | P0 code baseline: 310 passing tests at `0e4c5f0`; 2026-07-13 maintainer-surface verification: 312 passing tests after two documentation contract tests |
 | Failure modes and SLO/runbook | [docs/FAILURE_MODES.md](docs/FAILURE_MODES.md), [docs/SLO_RUNBOOK.md](docs/SLO_RUNBOOK.md), [docs/observability.md#alert-runbooks](docs/observability.md#alert-runbooks) | Local taxonomy and runbook evidence; external incident evidence is out of scope |
 | Deployment readiness boundaries | [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md), [Known Limits](#known-limits) | Secrets checklist, backup/restore notes, local production-like config, and known limitations without production readiness claims |
 | Known limits and production changes | [Known Limits](#known-limits), [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md) | Explicitly bounded as local reference evidence, not production SaaS readiness |
+
+[![Canonical Eval Lab challenge failure preview](docs/assets/gdev-eval-lab-challenge-fail.svg)](docs/evidence/GDEV_EVAL_FAILURE_PREVIEW_2026-07-13.md)
+
+The image is a preview of pinned negative evidence, not a current quality-pass
+badge. Follow it to the exact Eval Lab tag, raw JSON hashes, rendering command,
+and interpretation boundary.
 
 ## Why This Project Exists
 
@@ -248,6 +256,9 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/HARNESS_CARD.md](docs/HARNESS_CARD.md): agent harness boundary across model, tools, memory, retries, permissions, HITL, trace, and eval.
 - [docs/TRACE_SCHEMA.md](docs/TRACE_SCHEMA.md): trace completeness contract for debugging, eval, audit, and approval retrospectives.
 - [docs/architecture-diagram.md](docs/architecture-diagram.md): GitHub-rendered architecture diagram for the main workflow.
+- [docs/APPROVAL_FLOW.md](docs/APPROVAL_FLOW.md): implemented human-approval decision path with focused regression commands and limits.
+- [docs/evidence/GDEV_EVAL_FAILURE_PREVIEW_2026-07-13.md](docs/evidence/GDEV_EVAL_FAILURE_PREVIEW_2026-07-13.md): content-addressed preview of the canonical failed Eval Lab challenge.
+- [docs/evidence/GDEV_MAINTAINER_SURFACE_2026-07-13.md](docs/evidence/GDEV_MAINTAINER_SURFACE_2026-07-13.md): local receipt for the maintainer, visual, full-suite, eval, and Compose gates.
 - [docs/CASE_STUDY.md](docs/CASE_STUDY.md): concise evidence-backed engineering case study.
 - [docs/spec.md](docs/spec.md): product scope, API intent, and behavioral contract.
 - [docs/N8N.md](docs/N8N.md): n8n integration and approval workflow blueprint.
@@ -260,6 +271,17 @@ Most endpoints outside `/health`, `/webhook`, and `/metrics` require JWT auth pl
 - [docs/data-map.md](docs/data-map.md): schema, Redis keys, and tenant-boundary rules.
 - [n8n/README.md](n8n/README.md): workflow assets committed in this repository.
 - [AGENTS.md](AGENTS.md): operating rules for coding/ops agents working in this repo.
+
+## Maintainer Paths
+
+- Suspected vulnerabilities must follow the private path in
+  [SECURITY.md](SECURITY.md); do not disclose them in a public issue.
+- Supported local defects use the
+  [reproducible bug form](https://github.com/ashishki/gdev-agent/issues/new?template=reproducible-bug.yml)
+  with an exact commit, sanitized environment, and deterministic commands.
+- There is no generic feature or hosted-product roadmap intake. The maintained
+  boundary is the current local reference workload described in
+  [Current Maturity](#current-maturity).
 
 ## Known Limits
 
@@ -302,5 +324,11 @@ cluster membership persistence). The same repair run also passed the 180-case
 demo eval gate and a clean Compose auth/approval demo. Exact commands and
 bounded outputs are recorded in
 [docs/evidence/GDEV_P0_TRUTH_REPAIR_2026-07-13.md](docs/evidence/GDEV_P0_TRUTH_REPAIR_2026-07-13.md).
+
+The later maintainer/evidence-surface tranche added two focused documentation
+contracts and reran the complete local suite at 312 passing tests, along with
+Ruff, the non-writing 180-case eval gate, and an isolated default-Compose RLS
+and approval demo. Its bounded receipt is
+[docs/evidence/GDEV_MAINTAINER_SURFACE_2026-07-13.md](docs/evidence/GDEV_MAINTAINER_SURFACE_2026-07-13.md).
 
 The main value is the governed request pipeline: webhook in → guardrails → LLM-assisted triage → human approval where needed → auditable execution throughout, with tenant isolation enforced at the database layer and observable at every step.
