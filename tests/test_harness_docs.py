@@ -103,7 +103,7 @@ def test_visual_evidence_surfaces_are_pinned_and_bounded() -> None:
     content_address = "sha256:656face21f27b496d4d3e8bb0b588824f5737d122c1275c710f3e5b15ff94b4b"
     component_revision = "0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc"
     summary_hash = "d4bb0dec70d75de8d33d16f583a01ecbc17bf202ae04509d3dec63087a7b3a3b"
-    svg_hash = "091ad0ad87bab99b8216603f57ef79266ce6f9950ed33a77a4167f04a58ec770"
+    svg_hash = "e422da461ba3c133667d65dce3068cf65b689d9f98848c5c8184e9b89e051110"
 
     for claim in (content_address, component_revision, summary_hash):
         assert claim in preview
@@ -114,6 +114,8 @@ def test_visual_evidence_surfaces_are_pinned_and_bounded() -> None:
     assert "10 labeled deterministic" in preview
     assert "not a rerun" in preview
     assert "--check" in preview
+    assert "Human review required" in svg
+    assert "Five cards show every failed threshold" in svg
     assert hashlib.sha256(svg_path.read_bytes()).hexdigest() == svg_hash
 
     renderer = (ROOT / "scripts/render_eval_failure_preview.py").read_text(encoding="utf-8")

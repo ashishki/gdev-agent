@@ -64,7 +64,7 @@ python scripts/render_eval_failure_preview.py \
 ```
 
 Result: exit `0`. Generated SVG SHA-256:
-`091ad0ad87bab99b8216603f57ef79266ce6f9950ed33a77a4167f04a58ec770`.
+`e422da461ba3c133667d65dce3068cf65b689d9f98848c5c8184e9b89e051110`.
 An intentionally modified temporary copy of `challenge-run.json` was rejected
 with `challenge-run.json does not match its manifest digest`; no preview was
 accepted from the tampered input.

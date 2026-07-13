@@ -18,7 +18,7 @@ without replacing the raw report or machine-readable artifacts.
 | Dataset | `challenge_v1`, 100 synthetic cases, logical hash `151e5eec83373b92cf263aa1f32edb26ed780c260ce32a9d084ba8f3f38e53b0` |
 | Raw summary | [`challenge-run.json`](https://github.com/ashishki/Eval-Ground-Truth-Lab/blob/v0.2.0/docs/evidence/releases/v0.2.0/gdev-agent-challenge/challenge-run.json), SHA-256 `d4bb0dec70d75de8d33d16f583a01ecbc17bf202ae04509d3dec63087a7b3a3b` |
 | Manifest | [`sha256-656face...manifest.json`](https://github.com/ashishki/Eval-Ground-Truth-Lab/blob/v0.2.0/docs/evidence/releases/v0.2.0/gdev-agent-challenge/sha256-656face21f27b496d4d3e8bb0b588824f5737d122c1275c710f3e5b15ff94b4b.manifest.json), file SHA-256 `b793cc7cc63e0ded101ce14ea879fa61378d752ebf7426b8da8d50dd00bddd1d` |
-| Generated SVG | [`docs/assets/gdev-eval-lab-challenge-fail.svg`](../assets/gdev-eval-lab-challenge-fail.svg), SHA-256 `091ad0ad87bab99b8216603f57ef79266ce6f9950ed33a77a4167f04a58ec770` |
+| Generated SVG | [`docs/assets/gdev-eval-lab-challenge-fail.svg`](../assets/gdev-eval-lab-challenge-fail.svg), SHA-256 `e422da461ba3c133667d65dce3068cf65b689d9f98848c5c8184e9b89e051110` |
 
 The renderer first checks the pinned manifest file digest and content address;
 the manifest then binds the raw summary digest before any metric is read. It

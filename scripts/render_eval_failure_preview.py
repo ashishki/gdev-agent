@@ -77,6 +77,7 @@ def _validate(summary_path: Path, manifest_path: Path) -> tuple[dict[str, Any], 
         "classification_accuracy",
         "diagnostic_failure_count",
         "human_escalation_recall",
+        "human_review_required_count",
         "reconciled_pass_rate",
         "total_case_count",
         "unexpected_fail_count",
@@ -108,11 +109,6 @@ def render_svg(summary: dict[str, Any], manifest: dict[str, Any]) -> str:
 
     cards = [
         (
-            "Reconciled pass",
-            _percent(metrics["reconciled_pass_rate"]),
-            "diagnostic aggregate",
-        ),
-        (
             "Blocking failures",
             str(metrics["blocking_failure_count"]),
             "maximum 0",
@@ -121,6 +117,11 @@ def render_svg(summary: dict[str, Any], manifest: dict[str, Any]) -> str:
             "Classification",
             _percent(metrics["classification_accuracy"], 2),
             "minimum 70%",
+        ),
+        (
+            "Human review required",
+            str(metrics["human_review_required_count"]),
+            "minimum 80",
         ),
         (
             "Escalation recall",
@@ -161,7 +162,7 @@ def render_svg(summary: dict[str, Any], manifest: dict[str, Any]) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title description">
   <title id="title">Canonical Eval Lab gdev-agent challenge: failed gate</title>
-  <desc id="description">The v0.2.0 local synthetic challenge recorded a failed gate for gdev-agent revision {html.escape(revision)}. Five threshold cards summarize the content-addressed raw evidence. This is not production proof.</desc>
+  <desc id="description">The v0.2.0 local synthetic challenge recorded a failed gate for gdev-agent revision {html.escape(revision)}. Five cards show every failed threshold from the content-addressed raw evidence. This is not production proof.</desc>
   <metadata>{metadata_text}</metadata>
   <style>
     text {{ font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #172033; }}
@@ -190,7 +191,7 @@ def render_svg(summary: dict[str, Any], manifest: dict[str, Any]) -> str:
 {chr(10).join(card_svg)}
 
   <text x="54" y="447" class="detail">Execution: {int(metrics["candidate_scope_case_count"])} candidate HTTP calls + {int(metrics["diagnostic_failure_count"])} labeled deterministic provider-fault injections.</text>
-  <text x="54" y="477" class="detail">Separate passing checks included invalid-output, cost, local-latency, and aggregate unsafe-auto-approval bounds.</text>
+  <text x="54" y="477" class="detail">Diagnostic aggregate: {_percent(metrics["reconciled_pass_rate"])} reconciled pass. Other checks passed invalid-output, cost, local-latency, and unsafe-auto-approval bounds.</text>
   <line x1="54" y1="510" x2="1146" y2="510" stroke="#d8dee9"/>
   <text x="54" y="544" class="mono">run {html.escape(str(run["run_id"]))}</text>
   <text x="54" y="568" class="mono">manifest {html.escape(content_address)}</text>
