@@ -14,9 +14,9 @@ Environment:
   DEMO_LLM_MODE    demo or live, default demo
   PYTHON           Python executable, default .venv/bin/python then python3
 
-Deterministic mode requires the running API to have LLM_MODE=demo in .env:
-  printf "\nLLM_MODE=demo\n" >> .env
-  docker compose up --build -d
+Deterministic mode requires the running API to have LLM_MODE=demo. The Compose
+default already uses demo mode; set it explicitly when overriding the stack:
+  LLM_MODE=demo docker compose up --build -d
   make demo
 
 Use DEMO_LLM_MODE=live only with LLM_MODE=live, ANTHROPIC_API_KEY, and a small
@@ -40,9 +40,14 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 if [[ "$DEMO_LLM_MODE" == "demo" ]]; then
-  if [[ ! -f .env ]] || ! grep -Eq '^LLM_MODE=demo([[:space:]#]|$)' .env; then
-    echo "ERROR: deterministic demo requires LLM_MODE=demo in .env." >&2
-    echo 'Run: printf "\nLLM_MODE=demo\n" >> .env && docker compose up --build -d' >&2
+  CONFIGURED_LLM_MODE="${LLM_MODE:-}"
+  if [[ -z "$CONFIGURED_LLM_MODE" && -f .env ]]; then
+    CONFIGURED_LLM_MODE="$(sed -nE 's/^LLM_MODE=([^[:space:]#]+).*/\1/p' .env | tail -n 1)"
+  fi
+  CONFIGURED_LLM_MODE="${CONFIGURED_LLM_MODE:-demo}"
+  if [[ "$CONFIGURED_LLM_MODE" != "demo" ]]; then
+    echo "ERROR: deterministic demo requires LLM_MODE=demo; found ${CONFIGURED_LLM_MODE}." >&2
+    echo 'Run: LLM_MODE=demo docker compose up --build -d' >&2
     exit 2
   fi
 fi
