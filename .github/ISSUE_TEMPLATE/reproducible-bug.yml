@@ -1,0 +1,96 @@
+name: Reproducible defect
+description: Report a deterministic defect in the supported local reference workload.
+title: "[bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for reproducible defects in the supported local boundary. Do not include credentials, private data, or vulnerability details. Security concerns must use the private path in [SECURITY.md](https://github.com/ashishki/gdev-agent/security/policy).
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      description: Choose the narrowest surface that reproduces the defect.
+      options:
+        - Default Docker Compose or tenant/RLS proof
+        - Signed webhook, guard, routing, or approval flow
+        - Internal deterministic eval or evidence command
+        - API, CLI, or local demo
+        - Documentation or evidence provenance
+    validations:
+      required: true
+
+  - type: input
+    id: revision
+    attributes:
+      label: Exact commit SHA
+      description: Run `git rev-parse HEAD` in the checkout that reproduced the defect.
+      placeholder: 40-character commit SHA
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Sanitized environment
+      description: Include OS, Python and Docker versions, run mode, and relevant non-secret configuration.
+      placeholder: |
+        OS:
+        Python:
+        Docker / Compose:
+        LLM_MODE:
+        Relevant configuration (redacted):
+    validations:
+      required: true
+
+  - type: textarea
+    id: prerequisites
+    attributes:
+      label: Minimal prerequisites
+      description: State the clean-checkout setup and synthetic fixtures needed before reproduction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction commands
+      description: Provide the shortest deterministic command sequence, including every required environment variable with values redacted.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include the exit code, failing assertion or sanitized response, and a link to any evidence artifact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: Point to the repository contract, test, or documented behavior that differs from the observation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional sanitized evidence
+      description: Optional logs, traceback, minimal fixture, or regression-test sketch. Remove tokens, credentials, user content, and tenant data.
+
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Boundary confirmation
+      options:
+        - label: I reproduced this at the exact commit above with synthetic or sanitized data.
+          required: true
+        - label: This is a defect report, not a feature or hosted-product roadmap request.
+          required: true
+        - label: This report contains no vulnerability details, credentials, private data, or secrets.
+          required: true
