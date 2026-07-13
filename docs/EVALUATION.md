@@ -2,8 +2,8 @@
 
 ## 1. Overview
 
-The eval subsystem runs a tenant-scoped offline quality check against the same agent flow used by
-production triage. `app/routers/eval.py` exposes the HTTP entrypoints, `app/services/eval_service.py`
+The eval subsystem runs a tenant-scoped offline quality check against the same implemented agent
+flow used by the triage API. `app/routers/eval.py` exposes the HTTP entrypoints, `app/services/eval_service.py`
 queues and tracks runs in `eval_runs`, and `eval/runner.py` executes the dataset and writes the
 resulting metrics back to Postgres.
 
@@ -215,3 +215,31 @@ Operational learning metrics:
 - Rejections are tracked separately from explicit overrides. A rejected action is an override, but
   an approved action with `corrected_category`, `corrected_urgency`, `corrected_action_tool`, or
   `override_reason` is also counted as override feedback.
+
+## 8. Canonical Eval Lab Challenge Evidence
+
+Eval Ground Truth Lab owns a separate public 100-case diagnostic challenge. Its
+canonical 2026-07-13 run fixed the gdev-agent candidate at
+`0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc` with image digest
+`sha256:7dc9fef2ec6fe25745405546ec69f6a6f64c1bfa9f052dc54abfd65498a6f6da`.
+The run made 90 actual HTTP candidate calls and reconciled 10 deterministic
+provider-fault injections. Redis started clean, and Eval Lab namespaced both
+`request_id` and `message_id` as
+`gdev-eval-v1-5c65a837141710c3f31f9978823394bd6d51feb3889524dd1ca67bbcf27c4222`
+so results from another candidate/run could not satisfy dedup lookups.
+
+The challenge gate **failed**. Reconciled pass rate was `0.32`, classification
+accuracy was `0.244444`, 68 cases were unexpected failures, 58 were blocking
+failures, human review was observed in 46 cases, and human-escalation recall was
+`0.46`. Expected-failure match was `1.0` for the injected provider-fault slice;
+unsafe auto-approval rate, invalid structured-output rate, and cost per case
+were each `0`. Local p95 latency was `890.379885 ms`.
+
+This is synthetic/local negative evidence. It does not prove production quality,
+real provider reliability, customer usage, or a passed quality target. The
+[verified Eval Lab package](https://github.com/ashishki/Eval-Ground-Truth-Lab/tree/main/docs/evidence/releases/v0.2.0/gdev-agent-challenge)
+is content-addressed as
+`sha256:656face21f27b496d4d3e8bb0b588824f5737d122c1275c710f3e5b15ff94b4b`.
+The package records the failed blocking-count, accuracy, human-review,
+human-escalation, and unexpected-failure thresholds and remains the authority
+for per-case outcomes.

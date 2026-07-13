@@ -128,9 +128,11 @@ Eval scopes are deliberately separate:
 
 - internal gdev-agent smoke: 180 cases, executed above;
 - Eval Lab conformance baseline: 55 cases, separately committed as 55/55;
-- Eval Lab challenge diagnostic: an executable 100-case gate with 90 external
-  candidate calls and 10 labeled deterministic fault injections, but no
-  canonical external-system run for this fixed gdev revision yet.
+- Eval Lab challenge diagnostic: an executable 100-case gate with 90 local HTTP
+  candidate calls and 10 labeled deterministic fault injections. At the time
+  of this repair proof, no canonical run had been recorded. The later
+  [canonical package](https://github.com/ashishki/Eval-Ground-Truth-Lab/tree/main/docs/evidence/releases/v0.2.0/gdev-agent-challenge)
+  fixes this gdev revision and records a challenge gate **FAIL**.
 
 ### Clean default-Compose isolation proof
 
@@ -164,6 +166,7 @@ all temporary project containers and its network were removed with Compose
 - The demo tenants, messages, and credentials are synthetic fixtures.
 - The test and latency numbers are a dated local run, not performance or
   reliability claims for external traffic.
-- The Eval Lab 100-case challenge remains without a canonical external-system
-  result until its executable gate records this fixed gdev revision; unit-test
-  fixtures are not promoted as evidence of the service.
+- This artifact predates the Eval Lab 100-case canonical result. The later
+  content-addressed package records this fixed revision, real local HTTP calls,
+  deterministic fault injections, and the failed gate; unit-test fixtures are
+  still not promoted as evidence of the service.

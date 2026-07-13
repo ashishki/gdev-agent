@@ -73,17 +73,22 @@ Latest committed eval results from [docs/EVAL_REPORT.md](EVAL_REPORT.md):
 | Invalid structured output rate | 0.0000 | Structured output contract holds in demo mode. |
 | Classification accuracy | 0.1698 | Observed only; demo classifier does not claim broad taxonomy quality. |
 
-The CI eval regression gate is active for smoke regressions. Stricter quality
-gates remain future work.
+The CI eval regression gate is active for smoke regressions. A separate,
+stricter Eval Lab challenge gate now exists and the canonical run failed it.
 
 There is also an external Eval Lab integration baseline over 55 curated
 gdev-agent triage cases. That baseline calls a live local `gdev-agent` through
 the configured `/webhook` adapter and currently records 55 cases, zero adapter
 errors, and zero deterministic validator failures. This does not contradict the
 weaker internal 180-case smoke metrics: the two reports have different scopes.
-Eval Lab also contains a 100-case diagnostic challenge dataset, but no canonical
-executed challenge run; it must not be read as a `100/100` result.
-See [docs/EVAL_SCOPE_RECONCILIATION.md](EVAL_SCOPE_RECONCILIATION.md).
+Eval Lab also ran its 100-case diagnostic challenge against exact revision
+`0e4c5f0fd50382bbf12ffd35cfca4632384fb0cc`: 90 HTTP candidate cases plus 10
+deterministic provider-fault injections. The canonical gate **failed** with a
+`0.32` reconciled pass rate, `0.244444` classification accuracy, 68 unexpected
+failures, and 58 blocking failures. The provider-fault slice matched `10/10`,
+but that is harness evidence, not observed provider reliability. See the
+[content-addressed Eval Lab package](https://github.com/ashishki/Eval-Ground-Truth-Lab/tree/main/docs/evidence/releases/v0.2.0/gdev-agent-challenge)
+and [scope reconciliation](EVAL_SCOPE_RECONCILIATION.md).
 
 ## Load Results
 
@@ -116,6 +121,9 @@ metrics, and test/evidence pointers.
   proven by the committed baseline.
 - The clean 55-case Eval Lab baseline proves the current integration contract,
   not broad production triage quality across every internal smoke taxonomy.
+- The failed 100-case challenge is a public diagnostic set, not a blind or
+  real-customer benchmark; improving it must not mean copying case phrases into
+  routing rules or weakening the frozen thresholds.
 - Redis stores ephemeral coordination state; Postgres is the durable source of
   record.
 - Read APIs still have known service-extraction debt for ticket, analytics, and
