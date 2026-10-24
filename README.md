@@ -1,12 +1,27 @@
 # gdev-agent
 
-`gdev-agent` is a governed local support-triage reference workload for
-game-studio scenarios. It receives signed support webhooks, blocks unsafe input
-before any model call, classifies and extracts structured data, routes risky
-actions into human approval, and records an audit/cost trail behind one HTTP
-API.
+`gdev-agent` is a Python/FastAPI reference backend for game-studio support teams.
+It turns incoming player messages into structured triage, draft replies, and
+reviewable actions. Signed webhooks, tenant isolation, human approval, and audit
+trails connect the workflow to downstream services.
+
+## Representative workflow
+
+A player reports a billing problem. A signed webhook brings the message into the
+backend, which checks the input, classifies the issue, and extracts structured
+fields. A risky action waits for a human decision; execution and its outcome
+leave an audit trail. Try the synthetic [local demo](docs/DEMO.md).
+
+## Project origin
+
+The project began as paid work for a game studio on a concrete player-support
+workflow. The public repository now demonstrates a local reference implementation
+using synthetic tickets. Its published tests and evaluations describe that public
+implementation; they do not establish the original client's deployment or results.
 
 ## Current Maturity
+
+Status reviewed on 24 October 2026; [evidence index](docs/EVIDENCE_INDEX.md).
 
 The supported proof boundary is a tested local Docker Compose workload with
 synthetic demo/eval data and database-enforced tenant isolation. Its 55-case

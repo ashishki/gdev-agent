@@ -8,7 +8,7 @@ webhooks and workflow tools. The hard part is not just classification; it is
 keeping risky actions behind review, preserving tenant isolation, and leaving a
 usable audit trail.
 
-`gdev-agent` is a local/pilot implementation of that workflow. The
+`gdev-agent` is a local reference implementation of that workflow. The
 problem is bounded to support triage reliability; this is not an external
 deployment or production SaaS claim.
 
